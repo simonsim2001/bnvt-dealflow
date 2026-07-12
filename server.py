@@ -1336,7 +1336,7 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                         },
                         {
                             "typeId": "ResearchQuery",
-                            "displayName": "Research Query",
+                            "displayName": "ResearchQuery",
                             "readable": False,
                             "writable": True
                         }
@@ -1352,7 +1352,7 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                     if type_id == 'ResearchQuery':
                         res = {
                             "typeId": "ResearchQuery",
-                            "displayName": "Research Query",
+                            "displayName": "ResearchQuery",
                             "fields": [
                                 { "fieldId": "CompanyName", "displayName": "Company Name", "kind": "string", "writable": True, "required": False },
                                 { "fieldId": "Question", "displayName": "Question", "kind": "string", "writable": True, "required": True },
