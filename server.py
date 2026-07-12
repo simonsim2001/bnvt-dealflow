@@ -1354,9 +1354,9 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                             "typeId": "ResearchQuery",
                             "displayName": "ResearchQuery",
                             "fields": [
-                                { "fieldId": "CompanyName", "displayName": "Company Name", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "CompanyName", "displayName": "CompanyName", "kind": "string", "writable": True, "required": False },
                                 { "fieldId": "Question", "displayName": "Question", "kind": "string", "writable": True, "required": True },
-                                { "fieldId": "Answer", "displayName": "Answer", "kind": "string", "writable": False, "required": False }
+                                { "fieldId": "Answer", "displayName": "Answer", "kind": "string", "writable": True, "required": False }
                             ],
                             "references": []
                         }
