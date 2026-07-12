@@ -2,7 +2,7 @@
   "adapterType": "dealflow-pipeline-v9",
   "displayName": "BNVT Dealflow Pipeline",
   "description": "Adapter connecting Azava to the BNVT Dealflow Pipeline database.",
-  "baseUrl": "https://huikx-2a00-23c5-e081-e401-b5f0-650d-40c5-9788.run.pinggy-free.link/api/azava",
+  "baseUrl": "https://bnvt-dealflow.onrender.com/api/azava",
   "authStrategy": {
     "kind": "bearer"
   },
