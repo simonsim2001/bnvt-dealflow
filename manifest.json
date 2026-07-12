@@ -1,5 +1,5 @@
 {
-  "adapterType": "dealflow-pipeline-v9",
+  "adapterType": "dealflow-pipeline-v10",
   "displayName": "BNVT Dealflow Pipeline",
   "description": "Adapter connecting Azava to the BNVT Dealflow Pipeline database.",
   "baseUrl": "https://bnvt-dealflow.onrender.com/api/azava",
