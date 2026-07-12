@@ -3023,6 +3023,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
 
   const tabs = [
     ["pipeline", "Pipeline"],
+    ["chat", "AI Assistant"],
     ["dtm", "Deal Team Meeting"],
     ["preemption", "Pre-emption Sandbox"],
     ["add", "Add company"],
@@ -3284,6 +3285,11 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
             founderProfiles={founderProfiles} 
             setFounderProfiles={setFounderProfiles}
             apiKey={apiKey}
+          />
+        )}
+        {tab === "chat" && (
+          <AIAssistant 
+            companies={companies} 
           />
         )}
       </div>
@@ -21136,6 +21142,176 @@ function FounderAssessmentDashboard({ founderProfiles, setFounderProfiles, apiKe
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function AIAssistant({ companies }) {
+  const [messages, setMessages] = useState([
+    { role: "assistant", text: "Hello! I am your BNVT Dealflow Assistant. I have full access to your pipeline database. How can I help you today? You can type or tap the microphone to talk to me!" }
+  ]);
+  const [inputText, setInputText] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [useSpeech, setUseSpeech] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const speakText = (text) => {
+    if (!useSpeech || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const cleanText = text.replace(/[*#`_\-]/g, "");
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.05;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const startListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser. Please try in Safari or Chrome on iOS.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+    recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      setInputText(text);
+      handleSend(text);
+    };
+    recognition.onerror = (e) => {
+      console.error("Speech recognition error:", e.error);
+      setIsListening(false);
+    };
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+    recognition.start();
+  };
+
+  const handleSend = async (textToSend) => {
+    const query = (textToSend || inputText).trim();
+    if (!query) return;
+
+    setInputText("");
+    setMessages((prev) => [...prev, { role: "user", text: query }]);
+    setIsLoading(true);
+
+    try {
+      const dbContext = companies.map(c => `- ${c.name} | Stage: ${c.stage || "Unknown"} | Sector: ${c.sector || "Unknown"} | Amount: ${c.amount || "Unknown"} | Notes: ${c.notes?.map(n => n.text).join("; ") || "None"}`).join("\n");
+      const systemPrompt = `You are a senior investment analyst for a venture capital firm, BNVT Capital.
+You are helping the team interact with their dealflow pipeline database.
+
+Here is the list of all deals currently in our pipeline database:
+${dbContext}
+
+Question: ${query}
+
+Instructions:
+1. Answer the question thoroughly and accurately using the database context.
+2. If the user asks you to list deals, group them, count them, or summarize details, perform the analysis and format it cleanly using markdown tables or bullet points.
+3. If the question asks for external research about a specific company, answer it using your general knowledge or search tool.
+4. Be professional, direct, and concise.`;
+
+      const response = await callClaude(systemPrompt, true);
+      setMessages((prev) => [...prev, { role: "assistant", text: response }]);
+      speakText(response);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: "assistant", text: `⚠️ Error: ${err.message}` }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 250px)", background: "#fff", border: `1px solid ${LINE}`, padding: 20, position: "relative", borderRadius: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${LINE}`, paddingBottom: 10, marginBottom: 15 }}>
+        <h3 style={{ margin: 0, fontFamily: fontStack.ui }}>VC Dealflow Assistant</h3>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontFamily: fontStack.mono, color: FADE, cursor: "pointer" }}>
+          <input type="checkbox" checked={useSpeech} onChange={(e) => setUseSpeech(e.target.checked)} />
+          Auto-Speak Response
+        </label>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, paddingBottom: 20 }}>
+        {messages.map((m, idx) => (
+          <div key={idx} style={{ 
+            alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+            maxWidth: "85%",
+            background: m.role === "user" ? "#0066CC" : "#F4F4F0",
+            color: m.role === "user" ? "#fff" : INK,
+            padding: "10px 14px",
+            borderRadius: 12,
+            borderTopRightRadius: m.role === "user" ? 0 : 12,
+            borderTopLeftRadius: m.role === "assistant" ? 0 : 12,
+            fontSize: 14,
+            whiteSpace: "pre-wrap",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            {m.text}
+          </div>
+        ))}
+        {isLoading && (
+          <div style={{ alignSelf: "flex-start", background: "#F4F4F0", padding: "10px 14px", borderRadius: 12, borderTopLeftRadius: 0, fontSize: 13, color: FADE, fontStyle: "italic" }}>
+            Thinking...
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", borderTop: `1px solid ${LINE}`, paddingTop: 15 }}>
+        <button 
+          onClick={startListening} 
+          style={{ 
+            background: isListening ? "#FF3B30" : "#F4F4F0", 
+            border: "none", 
+            width: 44, 
+            height: 44, 
+            borderRadius: "50%", 
+            cursor: "pointer", 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "center",
+            boxShadow: isListening ? "0 0 8px rgba(255, 59, 48, 0.4)" : "none"
+          }}
+          title="Tap to speak"
+        >
+          <span style={{ fontSize: 20 }}>{isListening ? "🎙️" : "🎤"}</span>
+        </button>
+        <input 
+          type="text" 
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+          placeholder="Ask a question about your dealflow..."
+          style={{ flex: 1, height: 44, padding: "0 14px", border: `1px solid ${LINE}`, borderRadius: 22, fontSize: 16, outline: "none" }}
+        />
+        <button 
+          onClick={() => handleSend()} 
+          style={{ 
+            background: "#0066CC", 
+            color: "#fff", 
+            border: "none", 
+            padding: "0 20px", 
+            height: 44, 
+            borderRadius: 22, 
+            fontWeight: 600, 
+            cursor: "pointer" 
+          }}
+        >
+          Send
+        </button>
       </div>
     </div>
   );
