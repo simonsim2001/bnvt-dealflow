@@ -1,0 +1,21 @@
+# Ignore virtual environments
+venv/
+.venv/
+env/
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore operating system files
+.DS_Store
+Thumbs.db
+
+# Ignore keys and credentials in db_storage
+db_storage/openai_api_key.json
+db_storage/anthropic_api_key.json
+
+# Ignore scratch files and temporary uploads
+scratch/
+uploads/

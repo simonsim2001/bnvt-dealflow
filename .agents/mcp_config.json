@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "azava": {
+      "url": "https://app.azava.com/api/v1/mcp/automation",
+      "serverUrl": "https://app.azava.com/api/v1/mcp/automation",
+      "serverURL": "https://app.azava.com/api/v1/mcp/automation",
+      "headers": {
+        "Authorization": "Bearer az_GkIwL4xXe3qQtevPO68tEtTh1aQ92OAjzhMRVQSKtfg"
+      }
+    }
+  }
+}

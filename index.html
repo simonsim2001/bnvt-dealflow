@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BNVT Dealflow Atelier</title>
+    <!-- Load React and ReactDOM UMD builds -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <!-- Load Babel Standalone -->
+    <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+    <!-- Load PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <!-- Load PptxGenJS for PPTX generation -->
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <!-- Load jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #F4F4F0; /* PAPER */
+        }
+        /* Global table cell wrapping & word break rule to prevent overflow */
+        table {
+            table-layout: auto;
+            width: 100%;
+        }
+        th, td {
+            word-break: break-word !important;
+            overflow-wrap: anywhere !important;
+            white-space: normal !important;
+        }
+        p, li, span, div, h1, h2, h3, h4, h5, h6 {
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script>
+        // Set up PDF.js worker
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        }
+
+        // Polyfill window.storage using localStorage since it's used in the app for persistence
+        // We override this to sync storage to/from the server, enabling WhatsApp webhook to write directly to the db.
+        const originalSetItem = localStorage.setItem;
+        localStorage.setItem = function(key, value) {
+            originalSetItem.call(localStorage, key, value);
+            fetch('/api/storage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key, value })
+            }).catch(err => console.warn("Failed to sync localStorage item to server:", err));
+        };
+
+        if (!window.storage) {
+            window.storage = {
+                get: async (key) => {
+                    try {
+                        const res = await fetch(`/api/storage?key=${encodeURIComponent(key)}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.value !== undefined && data.value !== null) {
+                                return { value: data.value };
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Server storage get failed, falling back to localStorage", e);
+                    }
+                    try {
+                        const val = localStorage.getItem(key);
+                        return val ? { value: val } : null;
+                    } catch (e) {
+                        console.error("Storage get error", e);
+                        return null;
+                    }
+                },
+                set: async (key, value) => {
+                    try {
+                        localStorage.setItem(key, value);
+                    } catch (e) {
+                        console.error("Storage set error", e);
+                    }
+                }
+            };
+        }
+    </script>
+    <!-- Load our App component from bnvt-dealflow.jsx -->
+    <script type="text/babel" src="bnvt-dealflow.jsx?v=49.0"></script>
+    <!-- Render the App once it's loaded and defined on window -->
+    <script type="text/babel">
+        const preSyncAndRender = async () => {
+            try {
+                const keys = ["anthropic_api_key", "granola_api_key", "bnvt-dealflow-v1"];
+                for (const key of keys) {
+                    const res = await fetch(`/api/storage?key=${encodeURIComponent(key)}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.value !== undefined && data.value !== null) {
+                            originalSetItem.call(localStorage, key, data.value);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to pre-sync storage from server:", e);
+            }
+            
+            const checkAndRender = () => {
+                if (window.App) {
+                    const root = ReactDOM.createRoot(document.getElementById('root'));
+                    root.render(
+                        <React.StrictMode>
+                            <window.App />
+                        </React.StrictMode>
+                    );
+                } else {
+                    setTimeout(checkAndRender, 50);
+                }
+            };
+            checkAndRender();
+        };
+        preSyncAndRender();
+    </script>
+</body>
+</html>
