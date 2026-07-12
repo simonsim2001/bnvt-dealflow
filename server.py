@@ -1249,6 +1249,8 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
+        import uuid
+        import traceback
         parsed_url = urlparse(self.path)
         
         # Auth check for Azava & Ingest endpoints
