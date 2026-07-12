@@ -15,7 +15,81 @@ from urllib.parse import urlparse, parse_qs, unquote
 
 PORT = int(os.environ.get("PORT", 8000))
 
+# ---- PostgreSQL Storage Fallback Helpers ------------------------------------------
+
+def get_db_connection():
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        return None
+    try:
+        import psycopg2
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True
+        return conn
+    except Exception as e:
+        print(f"[PostgreSQL Connection Error] {e}")
+        return None
+
+def init_postgres():
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS key_value_store (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+        print("[PostgreSQL] Table initialized successfully.")
+    except Exception as e:
+        print(f"[PostgreSQL Init Error] {e}")
+    finally:
+        conn.close()
+
+def get_sql_value(key):
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT value FROM key_value_store WHERE key = %s", (key,))
+            row = cur.fetchone()
+            if row:
+                return row[0]
+    except Exception as e:
+        print(f"[PostgreSQL Get Error for {key}] {e}")
+    finally:
+        conn.close()
+    return None
+
+def set_sql_value(key, value):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO key_value_store (key, value)
+                VALUES (%s, %s)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """, (key, value))
+        return True
+    except Exception as e:
+        print(f"[PostgreSQL Set Error for {key}] {e}")
+        return False
+    finally:
+        conn.close()
+
 def get_stored_value(key):
+    if os.environ.get("DATABASE_URL"):
+        sql_val = get_sql_value(key)
+        if sql_val is not None:
+            return sql_val
+            
     path = os.path.join('db_storage', f"{key}.json")
     if os.path.exists(path):
         try:
@@ -26,6 +100,8 @@ def get_stored_value(key):
             pass
     if key == 'anthropic_api_key':
         return os.environ.get("ANTHROPIC_API_KEY")
+    elif key == 'granola_api_key':
+        return os.environ.get("GRANOLA_API_KEY")
     return None
 
 def call_claude_api(api_key, prompt, use_search=False):
@@ -238,17 +314,7 @@ Do not include any markdown styling, conversational filler, or code blocks in yo
         return False, f"Message classified as '{entity_type}', ignoring."
         
     # Read database
-    db_path = os.path.join('db_storage', 'bnvt-dealflow-v1.json')
-    db = {"companies": [], "investors": [], "deepDives": []}
-    if os.path.exists(db_path):
-        try:
-            with open(db_path, 'r', encoding='utf-8') as f:
-                outer_data = json.load(f)
-                value_str = outer_data.get('value', '')
-                if value_str:
-                    db = json.loads(value_str)
-        except Exception as e:
-            print(f"Error reading database: {e}")
+    db = read_db()
             
     if entity_type == 'company':
         company_data = parsed.get('data', {})
@@ -366,14 +432,7 @@ Do not include any markdown styling, conversational filler, or code blocks in yo
             response_msg = f"Added new investor: {name} ({fund})"
             
     # Save back database
-    db_str = json.dumps(db, ensure_ascii=False)
-    outer_data = {
-        "key": "bnvt-dealflow-v1",
-        "value": db_str
-    }
-    os.makedirs('db_storage', exist_ok=True)
-    with open(db_path, 'w', encoding='utf-8') as f:
-        json.dump(outer_data, f, indent=2, ensure_ascii=False)
+    write_db(db)
         
     return True, response_msg
 
@@ -483,6 +542,10 @@ def extract_xlsx_text(path):
 # ---- Azava & Inbound Intake Helpers ----------------------------------------------
 
 def get_azava_secret():
+    env_secret = os.environ.get("AZAVA_SECRET") or os.environ.get("AZAVA_SECRET_TOKEN")
+    if env_secret:
+        return env_secret.strip()
+
     secret_path = os.path.join('db_storage', 'azava_secret.json')
     if os.path.exists(secret_path):
         try:
@@ -520,8 +583,17 @@ def check_auth(handler):
     return False
 
 def read_db():
-    db_path = os.path.join('db_storage', 'bnvt-dealflow-v1.json')
     db = {"companies": [], "investors": [], "deepDives": [], "founderProfiles": []}
+    if os.environ.get("DATABASE_URL"):
+        sql_val = get_sql_value("bnvt-dealflow-v1")
+        if sql_val:
+            try:
+                db = json.loads(sql_val)
+                return db
+            except Exception as e:
+                print(f"[Error parsing SQL db JSON] {e}")
+                
+    db_path = os.path.join('db_storage', 'bnvt-dealflow-v1.json')
     if os.path.exists(db_path):
         try:
             with open(db_path, 'r', encoding='utf-8') as f:
@@ -534,9 +606,13 @@ def read_db():
     return db
 
 def write_db(db):
+    db_str = json.dumps(db, ensure_ascii=False)
+    if os.environ.get("DATABASE_URL"):
+        if set_sql_value("bnvt-dealflow-v1", db_str):
+            return True
+            
     db_path = os.path.join('db_storage', 'bnvt-dealflow-v1.json')
     try:
-        db_str = json.dumps(db, ensure_ascii=False)
         outer_data = {
             "key": "bnvt-dealflow-v1",
             "value": db_str
@@ -1073,6 +1149,15 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "Missing key"}).encode('utf-8'))
                 return
                 
+            if os.environ.get("DATABASE_URL"):
+                sql_val = get_sql_value(key)
+                if sql_val is not None:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"key": key, "value": sql_val}).encode('utf-8'))
+                    return
+                    
             os.makedirs('db_storage', exist_ok=True)
             path = os.path.join('db_storage', f"{key}.json")
             if os.path.exists(path):
@@ -1964,6 +2049,9 @@ Respond ONLY with valid JSON.
                 if not key:
                     raise Exception("Missing key")
                 
+                if os.environ.get("DATABASE_URL"):
+                    set_sql_value(key, value)
+                    
                 os.makedirs('db_storage', exist_ok=True)
                 path = os.path.join('db_storage', f"{key}.json")
                 with open(path, 'w', encoding='utf-8') as f:
@@ -2052,14 +2140,7 @@ Respond ONLY with valid JSON.
                     raise Exception("Anthropic API key not configured on server or client")
                 
                 # Read db
-                db_path = os.path.join('db_storage', 'bnvt-dealflow-v1.json')
-                db = {"companies": [], "investors": [], "deepDives": [], "founderProfiles": []}
-                if os.path.exists(db_path):
-                    with open(db_path, 'r', encoding='utf-8') as f:
-                        outer_data = json.load(f)
-                        value_str = outer_data.get('value', '')
-                        if value_str:
-                            db = json.loads(value_str)
+                db = read_db()
                 
                 db.setdefault('founderProfiles', [])
                 
@@ -2183,13 +2264,7 @@ Instructions:
                     db['founderProfiles'].insert(0, profile)
                 
                 # Save database
-                db_str = json.dumps(db, ensure_ascii=False)
-                outer_data = {
-                    "key": "bnvt-dealflow-v1",
-                    "value": db_str
-                }
-                with open(db_path, 'w', encoding='utf-8') as f:
-                    json.dump(outer_data, f, indent=2, ensure_ascii=False)
+                write_db(db)
                 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -2257,6 +2332,10 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     pass
 
 def run():
+    if os.environ.get("DATABASE_URL"):
+        print("[PostgreSQL] Initializing database...")
+        init_postgres()
+        
     socketserver.TCPServer.allow_reuse_address = True
     server_address = ('', PORT)
     httpd = ThreadingTCPServer(server_address, DealflowHandler)
