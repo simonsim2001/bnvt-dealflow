@@ -1242,6 +1242,12 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                             "displayName": "Deal",
                             "readable": True,
                             "writable": True
+                        },
+                        {
+                            "typeId": "ResearchQuery",
+                            "displayName": "Research Query",
+                            "readable": False,
+                            "writable": True
                         }
                     ]
                     self.send_response(200)
@@ -1251,23 +1257,36 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                     return
                     
                 elif method == 'describe':
-                    res = {
-                        "typeId": "Deal",
-                        "displayName": "Deal",
-                        "fields": [
-                            { "fieldId": "Name", "displayName": "Name", "kind": "string", "writable": True, "required": True },
-                            { "fieldId": "Stage", "displayName": "Stage", "kind": "string", "writable": True, "required": False },
-                            { "fieldId": "Source", "displayName": "Source", "kind": "string", "writable": True, "required": False },
-                            { "fieldId": "Notes", "displayName": "Notes", "kind": "string", "writable": True, "required": False },
-                            { "fieldId": "ContactName", "displayName": "ContactName", "kind": "string", "writable": True, "required": False },
-                            { "fieldId": "ContactPhone", "displayName": "ContactPhone", "kind": "string", "writable": True, "required": False },
-                            { "fieldId": "DeckUrl", "displayName": "DeckUrl", "kind": "string", "writable": True, "required": False },
-                            { "fieldId": "Amount", "displayName": "Amount", "kind": "string", "writable": True, "required": False },
-                            { "fieldId": "Sector", "displayName": "Sector", "kind": "string", "writable": True, "required": False },
-                            { "fieldId": "CreatedAt", "displayName": "CreatedAt", "kind": "number", "writable": True, "required": False }
-                        ],
-                        "references": []
-                    }
+                    type_id = params.get('typeId') or params.get('recordType')
+                    if type_id == 'ResearchQuery':
+                        res = {
+                            "typeId": "ResearchQuery",
+                            "displayName": "Research Query",
+                            "fields": [
+                                { "fieldId": "CompanyName", "displayName": "Company Name", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "Question", "displayName": "Question", "kind": "string", "writable": True, "required": True },
+                                { "fieldId": "Answer", "displayName": "Answer", "kind": "string", "writable": False, "required": False }
+                            ],
+                            "references": []
+                        }
+                    else:
+                        res = {
+                            "typeId": "Deal",
+                            "displayName": "Deal",
+                            "fields": [
+                                { "fieldId": "Name", "displayName": "Name", "kind": "string", "writable": True, "required": True },
+                                { "fieldId": "Stage", "displayName": "Stage", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "Source", "displayName": "Source", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "Notes", "displayName": "Notes", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "ContactName", "displayName": "ContactName", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "ContactPhone", "displayName": "ContactPhone", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "DeckUrl", "displayName": "DeckUrl", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "Amount", "displayName": "Amount", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "Sector", "displayName": "Sector", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "CreatedAt", "displayName": "CreatedAt", "kind": "number", "writable": True, "required": False }
+                            ],
+                            "references": []
+                        }
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
@@ -1324,8 +1343,57 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                     type_id = params.get('typeId') or params.get('recordType')
                     fields = params.get('fields', {})
                     db = read_db()
-                    mapped = map_azava_fields_to_db(fields)
                     
+                    if type_id == 'ResearchQuery':
+                        company_name = fields.get('CompanyName') or ""
+                        question = fields.get('Question') or ""
+                        
+                        # Gather context from existing deals
+                        context = ""
+                        if company_name:
+                            matched = resolve_entity_match(db, company_name, "")
+                            if matched:
+                                context = f"\nHere is the existing info about {matched.get('name')} in our database:\n"
+                                context += f"Stage: {matched.get('stage')}\n"
+                                context += f"Sector: {matched.get('sector')}\n"
+                                context += f"Amount: {matched.get('amount')}\n"
+                                context += f"Notes: {matched.get('notes')}\n"
+                                
+                        # Call Claude with web search
+                        api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
+                            
+                        if not api_key:
+                            answer = "⚠️ Anthropic API key is not configured on the server. Please set it to enable deal research."
+                        else:
+                            research_prompt = f"""You are a senior investment analyst researching a startup for a venture capital firm.
+Question: {question}
+Company Name: {company_name}
+{context}
+
+Please conduct a web search using your web_search tool if needed to answer the question thoroughly and accurately. Provide a professional, concise summary of your findings."""
+                            try:
+                                answer = call_claude_api(api_key, research_prompt, use_search=True)
+                            except Exception as e:
+                                answer = f"⚠️ Error performing research: {str(e)}"
+                                
+                        res = {
+                            "id": str(uuid.uuid4()),
+                            "externalId": str(uuid.uuid4()),
+                            "adapterType": "dealflow-pipeline",
+                            "recordType": "ResearchQuery",
+                            "data": {
+                                "CompanyName": company_name,
+                                "Question": question,
+                                "Answer": answer
+                            }
+                        }
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"ok": True, "result": res}).encode('utf-8'))
+                        return
+                        
+                    mapped = map_azava_fields_to_db(fields)
                     if not mapped.get('source'):
                         mapped['source'] = 'WhatsApp'
                         
