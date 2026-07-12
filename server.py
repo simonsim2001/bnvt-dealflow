@@ -1589,7 +1589,6 @@ Instructions:
                                     if company_name and ("Perform comprehensive" in question or not question) and "⚠️" not in answer:
                                         matched = resolve_entity_match(db, company_name, "")
                                         if matched:
-                                            import time
                                             for comp in db.get('companies', []):
                                                 if comp.get('id') == matched.get('id'):
                                                     if 'notes' not in comp or not isinstance(comp['notes'], list):
