@@ -1464,7 +1464,23 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                         if not api_key:
                             answer = "⚠️ Anthropic API key is not configured on the server. Please set it to enable deal research."
                         else:
-                            research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
+                            # Optimize prompt for automated research vs general questions
+                            if "Perform comprehensive VC research" in question or (company_name and not question):
+                                research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
+Provide a highly concise, crisp, and professional bulleted summary of the target company.
+
+Target Company Name: {company_name}
+
+Instructions:
+1. Search the web to find the company's website, product, team, and funding.
+2. Structure your answer using these EXACT headings (keep it extremely concise and under 120 words total):
+   - **What it does**: 1-sentence crisp description of product/proposition.
+   - **Market (TAM)**: Target market segment / size in 1 quick bullet.
+   - **Founders**: Names (and LinkedIn URLs if available).
+   - **Funding**: Total raised, latest round, and notable investors.
+3. Keep details tight. No pleasantries or meta-commentary."""
+                            else:
+                                research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
 You are helping the team interact with their dealflow pipeline database.
 
 {db_context}
@@ -1477,8 +1493,31 @@ Instructions:
 1. If the question is about the pipeline database (e.g. listing deals, counting deals, summary statistics, grouping by stage/sector, finding specific deals in the list), answer it using the database context provided above.
 2. If the question asks for external research about a specific company (e.g. team size, competitors, founders, latest news), use your web_search tool to conduct web research and answer it.
 3. Be professional, direct, and concise."""
+
                             try:
-                                answer = call_claude_api(api_key, research_prompt, use_search=True)
+                                is_external = bool(company_name) or "Perform comprehensive" in question
+                                answer = call_claude_api(api_key, research_prompt, use_search=is_external)
+                                
+                                # Update database notes with the automated research overview
+                                if company_name and ("Perform comprehensive" in question or not question) and "⚠️" not in answer:
+                                    matched = resolve_entity_match(db, company_name, "")
+                                    if matched:
+                                        import time
+                                        for comp in db.get('companies', []):
+                                            if comp.get('id') == matched.get('id'):
+                                                if 'notes' not in comp or not isinstance(comp['notes'], list):
+                                                    comp['notes'] = []
+                                                # Remove previous automated research
+                                                comp['notes'] = [n for n in comp['notes'] if "[Automated Research]" not in n.get('text', '')]
+                                                # Insert new concise research note
+                                                comp['notes'].insert(0, {
+                                                    "id": str(uuid.uuid4()),
+                                                    "text": f"[Automated Research] {answer}",
+                                                    "date": int(time.time() * 1000),
+                                                    "author": "Azava AI"
+                                                })
+                                                break
+                                        write_db(db)
                             except Exception as e:
                                 answer = f"⚠️ Error performing research: {str(e)}"
                                 
