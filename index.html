@@ -41,22 +41,22 @@
             /* 1. Force grid layouts into single-column stacking */
             div[style*="display: grid"], div[style*="display:grid"] {
                 grid-template-columns: 1fr !important;
-                gap: 16px !important;
+                gap: 12px !important;
             }
 
             /* 2. Adjust main content page padding */
             div[style*="padding: 24px 28px"], div[style*="padding:24px 28px"] {
-                padding: 16px 16px !important;
+                padding: 12px 12px !important;
             }
 
             /* 3. Make header rows wrap nicely */
             div[style*="justify-content: space-between"], div[style*="justify-content:space-between"] {
                 flex-direction: column !important;
                 align-items: stretch !important;
-                gap: 12px !important;
+                gap: 10px !important;
             }
 
-            /* 4. Fix top navigation/tab bar so it scrolls horizontally instead of squishing */
+            /* 4. Fix top navigation/tab bar so it scrolls horizontally instead of squishing, and hide scrollbars */
             div[style*="display: flex"][style*="gap: 0"], div[style*="display:flex"][style*="gap:0"] {
                 flex-direction: row !important;
                 flex-wrap: nowrap !important;
@@ -65,20 +65,33 @@
                 border-bottom: 1px solid #ccc !important;
                 padding-bottom: 2px !important;
             }
+            div[style*="display: flex"][style*="gap: 0"]::-webkit-scrollbar, div[style*="display:flex"][style*="gap:0"]::-webkit-scrollbar {
+                display: none !important;
+            }
             div[style*="display: flex"][style*="gap: 0"] button, div[style*="display:flex"][style*="gap:0"] button {
                 flex: 0 0 auto !important;
                 width: auto !important;
+                padding: 10px 12px !important;
             }
 
             /* 5. Make modals, side sheets, and details panels full width on small screens */
             div[style*="width: 320px"], div[style*="width: 350px"], div[style*="width: 400px"], div[style*="width: 30%"], div[style*="width: 40%"] {
                 width: 100% !important;
                 max-width: 100% !important;
+                position: fixed !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                top: auto !important;
+                height: 80% !important;
+                border-radius: 16px 16px 0 0 !important;
+                z-index: 1000 !important;
             }
 
-            /* 6. Ensure inputs and action bars wrap gracefully */
+            /* 6. Ensure inputs have at least 16px font-size to prevent automatic iOS Safari zoom-on-focus */
             input, select, textarea {
                 max-width: 100% !important;
+                font-size: 16px !important;
             }
         }
     </style>
