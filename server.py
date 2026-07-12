@@ -1353,7 +1353,10 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                             "fields": [
                                 { "fieldId": "CompanyName", "displayName": "CompanyName", "kind": "string", "writable": True, "required": False },
                                 { "fieldId": "Question", "displayName": "Question", "kind": "string", "writable": True, "required": True },
-                                { "fieldId": "Answer", "displayName": "Answer", "kind": "string", "writable": True, "required": False }
+                                { "fieldId": "Answer", "displayName": "Answer", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "DeckUrl", "displayName": "DeckUrl", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "DeckEmail", "displayName": "DeckEmail", "kind": "string", "writable": True, "required": False },
+                                { "fieldId": "DeckPassword", "displayName": "DeckPassword", "kind": "string", "writable": True, "required": False }
                             ],
                             "references": []
                         }
@@ -1435,33 +1438,105 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                     if type_id == 'ResearchQuery':
                         company_name = fields.get('CompanyName') or ""
                         question = fields.get('Question') or ""
+                        deck_url = fields.get('DeckUrl') or ""
+                        deck_email = fields.get('DeckEmail') or "simon@bnvtcapital.com"
+                        deck_password = fields.get('DeckPassword') or ""
                         
-                        # Gather context from all deals in the database for pipeline-wide queries
-                        db_deals = db.get('companies', [])
-                        db_context = "Here is the list of all deals currently in our pipeline database:\n"
-                        for idx, deal in enumerate(db_deals):
-                            db_context += f"- {deal.get('name', 'Unknown')} | Stage: {deal.get('stage', 'Unknown')} | Sector: {deal.get('sector', 'Unknown')} | Amount: {deal.get('amount', 'Unknown')} | Notes: {deal.get('notes', 'None')}\n"
-                        
-                        # Gather context from specific matched deal if name is provided
-                        specific_context = ""
-                        if company_name:
-                            matched = resolve_entity_match(db, company_name, "")
-                            if matched:
-                                specific_context = f"\nHere is the detailed existing info about the matched company '{matched.get('name')}' in our database:\n"
-                                specific_context += f"Stage: {matched.get('stage')}\n"
-                                specific_context += f"Sector: {matched.get('sector')}\n"
-                                specific_context += f"Amount: {matched.get('amount')}\n"
-                                specific_context += f"Notes: {matched.get('notes')}\n"
+                        # Handle Pitch Deck Ingestion Flow
+                        if deck_url:
+                            print(f"[Research Query Deck Ingest] Ingesting deck from URL: {deck_url} (Email: {deck_email}, Password: {bool(deck_password)})")
+                            try:
+                                ingest_res = ingest_pitch_deck(deck_url, deck_email, deck_password)
+                                if not ingest_res.get('success'):
+                                    raise Exception(ingest_res.get('error', 'Failed to ingest deck'))
+                                    
+                                deck_text = ingest_res.get('text', '')
+                                pdf_path = ingest_res.get('pdf_path', '')
                                 
-                        # Call Claude with web search
-                        api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
-                            
-                        if not api_key:
-                            answer = "⚠️ Anthropic API key is not configured on the server. Please set it to enable deal research."
+                                if not deck_text.strip():
+                                    raise Exception("Pitch deck text extraction yielded empty content.")
+                                    
+                                print("[Research Query Deck Ingest] Extracting metadata via Claude...")
+                                extracted_data = extract_deck_data_via_claude(deck_text)
+                                
+                                local_asset_url = ""
+                                if pdf_path:
+                                    local_asset_url = f"/{pdf_path.replace(os.sep, '/')}"
+                                    extracted_data['deckUrl'] = local_asset_url
+                                else:
+                                    extracted_data['deckUrl'] = deck_url
+                                    
+                                # Upsert deal to database
+                                deal = upsert_deal_record(db, extracted_data, extra_notes_header="[WhatsApp PDF/DocSend Ingest]")
+                                write_db(db)
+                                
+                                # Perform concise VC research on the deck's content
+                                api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
+                                if not api_key:
+                                    answer = f"📥 *Import Completed!* Added *{deal.get('name')}* to your pipeline.\n\n⚠️ Anthropic API key is not configured on the server to run deck research."
+                                else:
+                                    research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
+Provide a highly concise, crisp, and professional bulleted summary of this pitch deck.
+
+Pitch Deck Text Content:
+{deck_text[:4000]}
+
+Instructions:
+1. Analyze the pitch deck content.
+2. Structure your answer using these EXACT headings (keep it extremely concise and under 120 words total):
+   - **What it does**: 1-sentence crisp description of product/proposition.
+   - **Market (TAM)**: Target market segment / size in 1 quick bullet.
+   - **Founders**: Names of founders and their LinkedIn URLs (if found).
+   - **Funding**: Total raised, latest round, and notable investors.
+3. Keep details tight. No pleasantries or meta-commentary."""
+                                    
+                                    answer_text = call_claude_api(api_key, research_prompt, use_search=False)
+                                    answer = f"📥 *Import Completed!* Added *{deal.get('name')}* to your pipeline.\n\n" + answer_text
+                                    
+                                    # Write research summary back to deal notes
+                                    for comp in db.get('companies', []):
+                                        if comp.get('id') == deal.get('id'):
+                                            if 'notes' not in comp or not isinstance(comp['notes'], list):
+                                                comp['notes'] = []
+                                            comp['notes'].insert(0, {
+                                                "id": str(uuid.uuid4()),
+                                                "text": f"[Automated Pitch Deck Research] {answer_text}",
+                                                "date": int(time.time() * 1000),
+                                                "author": "Azava AI"
+                                            })
+                                            break
+                                    write_db(db)
+                            except Exception as e:
+                                answer = f"⚠️ Failed to parse pitch deck: {str(e)}"
+                        
                         else:
-                            # Optimize prompt for automated research vs general questions
-                            if "Perform comprehensive VC research" in question or (company_name and not question):
-                                research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
+                            # Standard ResearchQuery processing logic
+                            # Gather context from all deals in the database for pipeline-wide queries
+                            db_deals = db.get('companies', [])
+                            db_context = "Here is the list of all deals currently in our pipeline database:\n"
+                            for idx, deal in enumerate(db_deals):
+                                db_context += f"- {deal.get('name', 'Unknown')} | Stage: {deal.get('stage', 'Unknown')} | Sector: {deal.get('sector', 'Unknown')} | Amount: {deal.get('amount', 'Unknown')} | Notes: {deal.get('notes', 'None')}\n"
+                            
+                            # Gather context from specific matched deal if name is provided
+                            specific_context = ""
+                            if company_name:
+                                matched = resolve_entity_match(db, company_name, "")
+                                if matched:
+                                    specific_context = f"\nHere is the detailed existing info about the matched company '{matched.get('name')}' in our database:\n"
+                                    specific_context += f"Stage: {matched.get('stage')}\n"
+                                    specific_context += f"Sector: {matched.get('sector')}\n"
+                                    specific_context += f"Amount: {matched.get('amount')}\n"
+                                    specific_context += f"Notes: {matched.get('notes')}\n"
+                                    
+                            # Call Claude with web search
+                            api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
+                                
+                            if not api_key:
+                                answer = "⚠️ Anthropic API key is not configured on the server. Please set it to enable deal research."
+                            else:
+                                # Optimize prompt for automated research vs general questions
+                                if "Perform comprehensive VC research" in question or (company_name and not question):
+                                    research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
 Provide a highly concise, crisp, and professional bulleted summary of the target company.
 
 Target Company Name: {company_name}
@@ -1474,8 +1549,8 @@ Instructions:
    - **Founders**: Names (and LinkedIn URLs if available).
    - **Funding**: Total raised, latest round, and notable investors.
 3. Keep details tight. No pleasantries or meta-commentary."""
-                            else:
-                                research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
+                                else:
+                                    research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
 You are helping the team interact with their dealflow pipeline database.
 
 {db_context}
@@ -1489,32 +1564,32 @@ Instructions:
 2. If the question asks for external research about a specific company (e.g. team size, competitors, founders, latest news), use your web_search tool to conduct web research and answer it.
 3. Be professional, direct, and concise."""
 
-                            try:
-                                is_external = bool(company_name) or "Perform comprehensive" in question
-                                answer = call_claude_api(api_key, research_prompt, use_search=is_external)
-                                
-                                # Update database notes with the automated research overview
-                                if company_name and ("Perform comprehensive" in question or not question) and "⚠️" not in answer:
-                                    matched = resolve_entity_match(db, company_name, "")
-                                    if matched:
-                                        import time
-                                        for comp in db.get('companies', []):
-                                            if comp.get('id') == matched.get('id'):
-                                                if 'notes' not in comp or not isinstance(comp['notes'], list):
-                                                    comp['notes'] = []
-                                                # Remove previous automated research
-                                                comp['notes'] = [n for n in comp['notes'] if "[Automated Research]" not in n.get('text', '')]
-                                                # Insert new concise research note
-                                                comp['notes'].insert(0, {
-                                                    "id": str(uuid.uuid4()),
-                                                    "text": f"[Automated Research] {answer}",
-                                                    "date": int(time.time() * 1000),
-                                                    "author": "Azava AI"
-                                                })
-                                                break
-                                        write_db(db)
-                            except Exception as e:
-                                answer = f"⚠️ Error performing research: {str(e)}"
+                                try:
+                                    is_external = bool(company_name) or "Perform comprehensive" in question
+                                    answer = call_claude_api(api_key, research_prompt, use_search=is_external)
+                                    
+                                    # Update database notes with the automated research overview
+                                    if company_name and ("Perform comprehensive" in question or not question) and "⚠️" not in answer:
+                                        matched = resolve_entity_match(db, company_name, "")
+                                        if matched:
+                                            import time
+                                            for comp in db.get('companies', []):
+                                                if comp.get('id') == matched.get('id'):
+                                                    if 'notes' not in comp or not isinstance(comp['notes'], list):
+                                                        comp['notes'] = []
+                                                    # Remove previous automated research
+                                                    comp['notes'] = [n for n in comp['notes'] if "[Automated Research]" not in n.get('text', '')]
+                                                    # Insert new concise research note
+                                                    comp['notes'].insert(0, {
+                                                        "id": str(uuid.uuid4()),
+                                                        "text": f"[Automated Research] {answer}",
+                                                        "date": int(time.time() * 1000),
+                                                        "author": "Azava AI"
+                                                    })
+                                                    break
+                                            write_db(db)
+                                except Exception as e:
+                                    answer = f"⚠️ Error performing research: {str(e)}"
                                 
                         res = {
                             "id": str(uuid.uuid4()),
