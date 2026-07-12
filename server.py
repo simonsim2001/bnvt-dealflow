@@ -1292,6 +1292,10 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             
             try:
                 if method == 'manifest':
+                    host = self.headers.get('Host', 'localhost:8000')
+                    proto = self.headers.get('X-Forwarded-Proto', 'http')
+                    dynamic_base_url = f"{proto}://{host}/api/azava"
+                    
                     try:
                         with open('manifest.json', 'r', encoding='utf-8') as mf:
                             res = json.load(mf)
@@ -1300,7 +1304,7 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                             "adapterType": "dealflow-pipeline-v9",
                             "displayName": "BNVT Dealflow Pipeline",
                             "description": "Adapter connecting Azava to the BNVT Dealflow Pipeline database.",
-                             "baseUrl": "https://huikx-2a00-23c5-e081-e401-b5f0-650d-40c5-9788.run.pinggy-free.link/api/azava",
+                            "baseUrl": dynamic_base_url,
                             "authStrategy": { "kind": "bearer" },
                             "methods": [
                                 "manifest",
@@ -1314,6 +1318,8 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                                 "deleteRecord"
                             ]
                         }
+                    res["baseUrl"] = dynamic_base_url
+                    
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
