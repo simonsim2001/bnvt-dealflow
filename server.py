@@ -147,14 +147,9 @@ def call_claude_api(api_key, prompt, use_search=False):
                 has_tool_use = any(block.get('type') in ('server_tool_use', 'tool_use') for block in content)
                 
                 if stop_reason == 'end_turn' and not has_tool_use:
-                    for block in content:
-                        if block.get('type') == 'text':
-                            text_val = block.get('text', '').strip()
-                            print(f"[DEBUG CLAUDE] Loop {loop_idx} returning text: {text_val}")
-                            return text_val
                     text_blocks = [b.get('text', '') for b in content if b.get('type') == 'text']
                     if text_blocks:
-                        text_val = "\n".join(text_blocks).strip()
+                        text_val = "".join(text_blocks).strip()
                         print(f"[DEBUG CLAUDE] Loop {loop_idx} returning combined: {text_val}")
                         return text_val
                     raise Exception(f"Claude resolved request, but no text output was returned: {res_json}")
