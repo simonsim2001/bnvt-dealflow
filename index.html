@@ -35,6 +35,52 @@
             word-break: break-word;
             overflow-wrap: anywhere;
         }
+
+        /* Mobile Responsive Overrides */
+        @media (max-width: 768px) {
+            /* 1. Force grid layouts into single-column stacking */
+            div[style*="display: grid"], div[style*="display:grid"] {
+                grid-template-columns: 1fr !important;
+                gap: 16px !important;
+            }
+
+            /* 2. Adjust main content page padding */
+            div[style*="padding: 24px 28px"], div[style*="padding:24px 28px"] {
+                padding: 16px 16px !important;
+            }
+
+            /* 3. Make header rows wrap nicely */
+            div[style*="justify-content: space-between"], div[style*="justify-content:space-between"] {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                gap: 12px !important;
+            }
+
+            /* 4. Fix top navigation/tab bar so it scrolls horizontally instead of squishing */
+            div[style*="display: flex"][style*="gap: 0"], div[style*="display:flex"][style*="gap:0"] {
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch;
+                border-bottom: 1px solid #ccc !important;
+                padding-bottom: 2px !important;
+            }
+            div[style*="display: flex"][style*="gap: 0"] button, div[style*="display:flex"][style*="gap:0"] button {
+                flex: 0 0 auto !important;
+                width: auto !important;
+            }
+
+            /* 5. Make modals, side sheets, and details panels full width on small screens */
+            div[style*="width: 320px"], div[style*="width: 350px"], div[style*="width: 400px"], div[style*="width: 30%"], div[style*="width: 40%"] {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            /* 6. Ensure inputs and action bars wrap gracefully */
+            input, select, textarea {
+                max-width: 100% !important;
+            }
+        }
     </style>
 </head>
 <body>
