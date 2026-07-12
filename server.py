@@ -1442,6 +1442,23 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                         deck_email = fields.get('DeckEmail') or "simon@bnvtcapital.com"
                         deck_password = fields.get('DeckPassword') or ""
                         
+                        # Support parsing encoded parameters from Question (e.g. from WhatsApp automation):
+                        # "DECK_INGEST: url={url} email={email} password={password}"
+                        if question.startswith("DECK_INGEST:"):
+                            try:
+                                url_idx = question.find("url=")
+                                email_idx = question.find("email=")
+                                pass_idx = question.find("password=")
+                                
+                                if url_idx != -1 and email_idx != -1:
+                                    deck_url = question[url_idx+4:email_idx].strip()
+                                if email_idx != -1 and pass_idx != -1:
+                                    deck_email = question[email_idx+6:pass_idx].strip()
+                                if pass_idx != -1:
+                                    deck_password = question[pass_idx+9:].strip()
+                            except Exception as parse_err:
+                                print(f"Error parsing encoded deck question: {parse_err}")
+                                
                         # Handle Pitch Deck Ingestion Flow
                         if deck_url:
                             print(f"[Research Query Deck Ingest] Ingesting deck from URL: {deck_url} (Email: {deck_email}, Password: {bool(deck_password)})")
