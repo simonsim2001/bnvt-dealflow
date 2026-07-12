@@ -1439,16 +1439,22 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                         company_name = fields.get('CompanyName') or ""
                         question = fields.get('Question') or ""
                         
-                        # Gather context from existing deals
-                        context = ""
+                        # Gather context from all deals in the database for pipeline-wide queries
+                        db_deals = db.get('companies', [])
+                        db_context = "Here is the list of all deals currently in our pipeline database:\n"
+                        for idx, deal in enumerate(db_deals):
+                            db_context += f"- {deal.get('name', 'Unknown')} | Stage: {deal.get('stage', 'Unknown')} | Sector: {deal.get('sector', 'Unknown')} | Amount: {deal.get('amount', 'Unknown')} | Notes: {deal.get('notes', 'None')}\n"
+                        
+                        # Gather context from specific matched deal if name is provided
+                        specific_context = ""
                         if company_name:
                             matched = resolve_entity_match(db, company_name, "")
                             if matched:
-                                context = f"\nHere is the existing info about {matched.get('name')} in our database:\n"
-                                context += f"Stage: {matched.get('stage')}\n"
-                                context += f"Sector: {matched.get('sector')}\n"
-                                context += f"Amount: {matched.get('amount')}\n"
-                                context += f"Notes: {matched.get('notes')}\n"
+                                specific_context = f"\nHere is the detailed existing info about the matched company '{matched.get('name')}' in our database:\n"
+                                specific_context += f"Stage: {matched.get('stage')}\n"
+                                specific_context += f"Sector: {matched.get('sector')}\n"
+                                specific_context += f"Amount: {matched.get('amount')}\n"
+                                specific_context += f"Notes: {matched.get('notes')}\n"
                                 
                         # Call Claude with web search
                         api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
@@ -1456,12 +1462,19 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                         if not api_key:
                             answer = "⚠️ Anthropic API key is not configured on the server. Please set it to enable deal research."
                         else:
-                            research_prompt = f"""You are a senior investment analyst researching a startup for a venture capital firm.
-Question: {question}
-Company Name: {company_name}
-{context}
+                            research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
+You are helping the team interact with their dealflow pipeline database.
 
-Please conduct a web search using your web_search tool if needed to answer the question thoroughly and accurately. Provide a professional, concise summary of your findings."""
+{db_context}
+{specific_context}
+
+Question: {question}
+Target Company Name: {company_name or 'None specified'}
+
+Instructions:
+1. If the question is about the pipeline database (e.g. listing deals, counting deals, summary statistics, grouping by stage/sector, finding specific deals in the list), answer it using the database context provided above.
+2. If the question asks for external research about a specific company (e.g. team size, competitors, founders, latest news), use your web_search tool to conduct web research and answer it.
+3. Be professional, direct, and concise."""
                             try:
                                 answer = call_claude_api(api_key, research_prompt, use_search=True)
                             except Exception as e:
