@@ -2227,6 +2227,7 @@ window.App = function App() {
   const [queueTotal, setQueueTotal] = useState(0);
   const [queueLog, setQueueLog] = useState("");
   const [researchingIds, setResearchingIds] = useState({});
+  const [researchingTamIds, setResearchingTamIds] = useState({});
 
   // AI TAM Queue States
   const [tamQueueActive, setTamQueueActive] = useState(false);
@@ -2799,6 +2800,100 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
     }
   };
 
+  const runTamForId = async (id) => {
+    const comp = companies.find(c => c.id === id);
+    if (!comp) return;
+    setResearchingTamIds(prev => ({ ...prev, [id]: true }));
+    try {
+      let granolaContext = "";
+      try {
+        granolaContext = await getGranolaContextForCompany(comp.name, comp.url, comp.granolaNotes);
+      } catch (e) {
+        console.warn("Failed to get Granola context for market study:", e);
+      }
+      const foundersList = (comp.founders || []).map(f => `${f.name}${f.linkedin ? ` (LinkedIn: ${f.linkedin})` : ""}`).join(", ");
+      const notesText = (comp.notes || []).map((n) => "- " + n.text).join("\n");
+      const prompt = `You are a principal investment analyst at BNVT Capital, a premium early-stage AI venture capital fund.
+We need a deep, analytically dense, one-pager market overview and TAM/SAM/SOM sizing study for:
+Company: ${comp.name}
+One-liner: ${comp.oneLiner}
+Sector: ${comp.sector}
+Stage: ${comp.stage}
+Geography: ${comp.geo || "US/EU"}
+Founders: ${foundersList || "(none listed)"}
+Product Details: ${comp.overview?.product || ""}
+Market Context: ${comp.overview?.market || ""}
+Traction Context: ${comp.overview?.traction || ""}
+Proprietary Notes & Meeting Context:
+${notesText || "(none)"}
+${granolaContext || ""}
+
+Based on this information and web search, produce a structured sizing study. To calculate the TAM (Total Addressable Market) accurately, you must specifically investigate and request information about standard B2B pricing model structures (e.g. ACV) and units of demand (e.g. warehouses, clients, target companies).
+
+CRITICAL RULES:
+1. Your analysis MUST be highly customized to ${comp.name}'s specific product wedge and target customer segment. Avoid generic market descriptions or general technology definitions.
+2. Every field must be extremely concise, direct, and factual (under 40 words per text field).
+3. The pricing structure, Average Contract Value (ACV), and demand unit counts must align logically with the company's vertical, notes, and stage.
+
+Calculate/estimate:
+- The standard B2B pricing model structure and estimated Average Contract Value (ACV) in USD (an integer, e.g. 50000).
+- The unit of demand (e.g. "warehouses", "clients", "target companies", "seats", "active developers", "hospitals", "robot fleets").
+- Total Addressable Market (TAM) unit count (total count of such units globally or in target regions) to calculate TAM accurately.
+- Serviceable Addressable Market (SAM) unit count (realistic count BNVT's target sweet spot can address).
+- Serviceable Obtainable Market (SOM) unit count (realistic short-to-medium term target units BNVT expects the company can capture in 3-5 years).
+
+Ensure that:
+1. The pricing model matches the company's B2B vertical, tech stack, or customer segment.
+2. The unit name is lowercase plural (e.g., "warehouses").
+3. The count of units is estimated logically.
+
+Respond ONLY with valid JSON in this exact structure, with no markdown fences, no preamble, no explanation:
+{
+  "problemThesis": "A concise paragraph explaining the macro problem, industry tailwinds/blockers, and why a solution is needed now.",
+  "companyOverview": "A concise paragraph describing how the company solves this problem, their unique wedge, and technical delivery.",
+  "willingnessToPay": "A bulleted description or summary of the drivers of Willingness to Pay (e.g. ROI metrics, cost savings, labor shortages). Use bullets starting with • character.",
+  "businessModel": {
+    "pricingStructure": "A description of the business model and pricing (e.g. per-device SaaS, annual license, transaction fee).",
+    "estimatedAcv": 50000,
+    "unitName": "warehouses",
+    "tamUnits": 100000,
+    "samUnits": 20000,
+    "somUnits": 2000
+  },
+  "methodology": "A short summary of how the unit counts were estimated (e.g., source statistics, target segment sizing)."
+}`;
+
+      const outText = await callClaude(prompt, true);
+      const out = parseJSON(outText);
+      
+      const study = {
+        problemThesis: out.problemThesis || "",
+        companyOverview: out.companyOverview || "",
+        willingnessToPay: out.willingnessToPay || "",
+        businessModel: {
+          pricingStructure: out.businessModel?.pricingStructure || "",
+          estimatedAcv: out.businessModel?.estimatedAcv != null ? Number(out.businessModel.estimatedAcv) : 0,
+          unitName: out.businessModel?.unitName || "units",
+          tamUnits: out.businessModel?.tamUnits != null ? Number(out.businessModel.tamUnits) : 0,
+          samUnits: out.businessModel?.samUnits != null ? Number(out.businessModel.samUnits) : 0,
+          somUnits: out.businessModel?.somUnits != null ? Number(out.businessModel.somUnits) : 0
+        },
+        methodology: out.methodology || ""
+      };
+      
+      updateCompany(id, { marketStudy: study });
+    } catch (e) {
+      console.error("Single TAM calculation failed:", e);
+      alert("TAM calculation failed: " + e.message);
+    } finally {
+      setResearchingTamIds(prev => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+    }
+  };
+
   const exportWholeDatabaseExcel = () => {
     const escapeXml = (unsafe) => {
       if (unsafe === null || unsafe === undefined) return "";
@@ -3155,6 +3250,8 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
             setQueueLog={setQueueLog}
             researchingIds={researchingIds}
             runDiligenceForId={runDiligenceForId}
+            researchingTamIds={researchingTamIds}
+            runTamForId={runTamForId}
             tamQueueActive={tamQueueActive}
             setTamQueueActive={setTamQueueActive}
             tamQueueIndex={tamQueueIndex}
@@ -3320,6 +3417,8 @@ function Pipeline({
   setQueueLog,
   researchingIds,
   runDiligenceForId,
+  researchingTamIds = {},
+  runTamForId,
   tamQueueActive,
   setTamQueueActive,
   tamQueueIndex,
@@ -3731,7 +3830,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
   
   const sel = companies.find((c) => c.id === selected);
 
-  if (sel) return <CompanyDetail company={sel} investors={investors} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => removeCompany(sel.id)} founderProfiles={founderProfiles} />;
+  if (sel) return <CompanyDetail company={sel} investors={investors} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => removeCompany(sel.id)} founderProfiles={founderProfiles} researchingTamIds={researchingTamIds} runTamForId={runTamForId} />;
 
   const unscoredCount = companies.filter(c => c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:"))).length;
   const unSizedTamCount = companies.filter(c => {
@@ -4582,17 +4681,29 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                         </span>
                       )}
                       <span style={{ fontFamily: fontStack.mono, fontSize: 10, color: FADE }}>{c.stage}</span>
-                      <span style={{ 
-                        fontSize: 9.5, 
-                        fontFamily: fontStack.mono, 
-                        padding: "1px 4px", 
-                        borderRadius: 2, 
-                        background: getTamValue(c) > 0 ? "rgba(16, 185, 129, 0.06)" : "rgba(107, 114, 128, 0.06)",
-                        color: getTamValue(c) > 0 ? "rgb(5, 150, 105)" : "#666",
-                        border: getTamValue(c) > 0 ? `1px solid rgba(16, 185, 129, 0.12)` : `1px solid rgba(107, 114, 128, 0.12)`,
-                        fontWeight: 600
-                      }}>
-                        TAM: {getTamValue(c) > 0 ? formatCompactUSD(getTamValue(c)) : "—"}
+                      <span 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!localStorage.getItem("anthropic_api_key")) {
+                            alert("Please set your Anthropic API Key in the header first.");
+                            return;
+                          }
+                          runTamForId(c.id);
+                        }}
+                        style={{ 
+                          fontSize: 9.5, 
+                          fontFamily: fontStack.mono, 
+                          padding: "1px 6px", 
+                          borderRadius: 2, 
+                          background: researchingTamIds[c.id] ? "rgba(192, 38, 211, 0.08)" : (getTamValue(c) > 0 ? "rgba(16, 185, 129, 0.06)" : "rgba(107, 114, 128, 0.06)"),
+                          color: researchingTamIds[c.id] ? "#C026D3" : (getTamValue(c) > 0 ? "rgb(5, 150, 105)" : "#666"),
+                          border: researchingTamIds[c.id] ? "1px solid rgba(192, 38, 211, 0.2)" : (getTamValue(c) > 0 ? `1px solid rgba(16, 185, 129, 0.12)` : `1px solid rgba(107, 114, 128, 0.12)`),
+                          fontWeight: 600,
+                          cursor: localStorage.getItem("anthropic_api_key") ? "pointer" : "default"
+                        }}
+                        title={researchingTamIds[c.id] ? "Sizing TAM using AI..." : (getTamValue(c) > 0 ? "TAM size generated" : "Click to size TAM using AI")}
+                      >
+                        {researchingTamIds[c.id] ? "⏳ SIZING..." : (getTamValue(c) > 0 ? `TAM: ${formatCompactUSD(getTamValue(c))}` : "📊 SIZE TAM")}
                       </span>
                     </div>
                   </div>
@@ -5059,7 +5170,7 @@ ${syndicateAngelsStr || 'None listed'}
 
 // ---- Company detail --------------------------------------------------------------
 
-function CompanyDetail({ company: c, investors, update, back, remove, founderProfiles = [] }) {
+function CompanyDetail({ company: c, investors, update, back, remove, founderProfiles = [], researchingTamIds = {}, runTamForId }) {
   const [noteDraft, setNoteDraft] = useState("");
   const [rescoring, setRescoring] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -10792,18 +10903,31 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   {c.sector && <Tag>{c.sector}</Tag>}
                   <Tag>{c.stage}</Tag>
                   {c.geo && <Tag color={BLUE}>{c.geo}</Tag>}
-                  <span style={{ 
-                    fontFamily: fontStack.mono, 
-                    fontSize: 10, 
-                    padding: "2px 7px", 
-                    border: getTamValue(c) > 0 ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid rgba(107, 114, 128, 0.4)",
-                    color: getTamValue(c) > 0 ? "rgb(5, 150, 105)" : "#666",
-                    background: getTamValue(c) > 0 ? "rgba(16, 185, 129, 0.05)" : "rgba(107, 114, 128, 0.05)",
-                    borderRadius: 999, 
-                    marginRight: 5, 
-                    whiteSpace: "nowrap" 
-                  }}>
-                    TAM: {getTamValue(c) > 0 ? formatCompactUSD(getTamValue(c)) : "—"}
+                  <span 
+                    onClick={() => {
+                      if (getTamValue(c) === 0 && !generatingStudy) {
+                        if (!localStorage.getItem("anthropic_api_key")) {
+                          alert("Please set your Anthropic API Key in the header first.");
+                          return;
+                        }
+                        runMarketStudy();
+                      }
+                    }}
+                    style={{ 
+                      fontFamily: fontStack.mono, 
+                      fontSize: 10, 
+                      padding: "2px 7px", 
+                      border: generatingStudy ? "1px solid rgba(192, 38, 211, 0.4)" : (getTamValue(c) > 0 ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid rgba(107, 114, 128, 0.4)"),
+                      color: generatingStudy ? "#C026D3" : (getTamValue(c) > 0 ? "rgb(5, 150, 105)" : "#666"),
+                      background: generatingStudy ? "rgba(192, 38, 211, 0.05)" : (getTamValue(c) > 0 ? "rgba(16, 185, 129, 0.05)" : "rgba(107, 114, 128, 0.05)"),
+                      borderRadius: 999, 
+                      marginRight: 5, 
+                      whiteSpace: "nowrap",
+                      cursor: (getTamValue(c) === 0 && !generatingStudy && localStorage.getItem("anthropic_api_key")) ? "pointer" : "default"
+                    }}
+                    title={generatingStudy ? "Sizing TAM..." : (getTamValue(c) > 0 ? "TAM size generated" : "Click to size TAM using AI")}
+                  >
+                    {generatingStudy ? "⏳ SIZING..." : (getTamValue(c) > 0 ? `TAM: ${formatCompactUSD(getTamValue(c))}` : "📊 SIZE TAM")}
                   </span>
                   <label style={{ 
                     display: "inline-flex", 
@@ -14132,7 +14256,31 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             {DIMS.map((d) => (
               <div key={d.key} style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, fontWeight: 500 }}>
-                  <span>{d.label}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {d.label}
+                    {d.key === "tam" && !isEditing && getTamValue(c) === 0 && (
+                      <span 
+                        onClick={() => {
+                          if (!localStorage.getItem("anthropic_api_key")) {
+                            alert("Please set your Anthropic API Key in the header first.");
+                            return;
+                          }
+                          runMarketStudy();
+                        }}
+                        style={{ 
+                          fontSize: 10, 
+                          color: BLUE, 
+                          cursor: "pointer", 
+                          textDecoration: "underline", 
+                          fontWeight: "normal",
+                          fontFamily: fontStack.ui 
+                        }}
+                        title={generatingStudy ? "Sizing TAM..." : "Run AI Market Study & TAM Calculation"}
+                      >
+                        {generatingStudy ? "(⏳ Sizing)" : "(📊 Calculate)"}
+                      </span>
+                    )}
+                  </span>
                   {isEditing ? (
                     <select
                       value={editScores[d.key] ?? ""}
