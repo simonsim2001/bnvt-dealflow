@@ -4681,30 +4681,20 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                         </span>
                       )}
                       <span style={{ fontFamily: fontStack.mono, fontSize: 10, color: FADE }}>{c.stage}</span>
-                      <span 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!localStorage.getItem("anthropic_api_key")) {
-                            alert("Please set your Anthropic API Key in the header first.");
-                            return;
-                          }
-                          runTamForId(c.id);
-                        }}
-                        style={{ 
+                      {getTamValue(c) > 0 && (
+                        <span style={{ 
                           fontSize: 9.5, 
                           fontFamily: fontStack.mono, 
-                          padding: "1px 6px", 
+                          padding: "1px 4px", 
                           borderRadius: 2, 
-                          background: researchingTamIds[c.id] ? "rgba(192, 38, 211, 0.08)" : (getTamValue(c) > 0 ? "rgba(16, 185, 129, 0.06)" : "rgba(107, 114, 128, 0.06)"),
-                          color: researchingTamIds[c.id] ? "#C026D3" : (getTamValue(c) > 0 ? "rgb(5, 150, 105)" : "#666"),
-                          border: researchingTamIds[c.id] ? "1px solid rgba(192, 38, 211, 0.2)" : (getTamValue(c) > 0 ? `1px solid rgba(16, 185, 129, 0.12)` : `1px solid rgba(107, 114, 128, 0.12)`),
-                          fontWeight: 600,
-                          cursor: localStorage.getItem("anthropic_api_key") ? "pointer" : "default"
-                        }}
-                        title={researchingTamIds[c.id] ? "Sizing TAM using AI..." : (getTamValue(c) > 0 ? "TAM size generated" : "Click to size TAM using AI")}
-                      >
-                        {researchingTamIds[c.id] ? "⏳ SIZING..." : (getTamValue(c) > 0 ? `TAM: ${formatCompactUSD(getTamValue(c))}` : "📊 SIZE TAM")}
-                      </span>
+                          background: "rgba(16, 185, 129, 0.06)",
+                          color: "rgb(5, 150, 105)",
+                          border: `1px solid rgba(16, 185, 129, 0.12)`,
+                          fontWeight: 600
+                        }}>
+                          TAM: {formatCompactUSD(getTamValue(c))}
+                        </span>
+                      )}
                     </div>
                   </div>
                   {c.url && (
@@ -4891,53 +4881,83 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                   {c.sector && <Tag>{c.sector}</Tag>}
 
                   {!researchingIds[c.id] && (
-                    (c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:"))) ? (
+                    <>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          runDiligenceForId(c.id);
+                          if (!localStorage.getItem("anthropic_api_key")) {
+                            alert("Please set your Anthropic API Key in the header first.");
+                            return;
+                          }
+                          runTamForId(c.id);
                         }}
-                        disabled={!localStorage.getItem("anthropic_api_key")}
+                        disabled={researchingTamIds[c.id] || !localStorage.getItem("anthropic_api_key")}
                         style={{
                           marginLeft: "auto",
                           fontFamily: fontStack.mono,
                           fontSize: 9,
                           padding: "2px 6px",
-                          background: (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? RUST : BLUE,
-                          color: "#fff",
-                          border: "none",
+                          background: researchingTamIds[c.id] ? "rgba(192, 38, 211, 0.08)" : (getTamValue(c) > 0 ? "transparent" : "#10B981"),
+                          color: researchingTamIds[c.id] ? "#C026D3" : (getTamValue(c) > 0 ? "#10B981" : "#fff"),
+                          border: getTamValue(c) > 0 ? "1px solid #10B981" : "none",
                           borderRadius: 2,
                           cursor: "pointer",
-                          opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1
+                          opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1,
+                          fontWeight: 600,
                         }}
-                        title={!localStorage.getItem("anthropic_api_key") ? "Enter API Key in header to enable" : "Run web research & score now"}
+                        title={researchingTamIds[c.id] ? "Sizing TAM using AI..." : "Run AI TAM Sizer calculation"}
                       >
-                        {c.oneLiner && c.oneLiner.startsWith("Research failed:") ? "🔄 RETRY" : "⚡ SCORE"}
+                        {researchingTamIds[c.id] ? "⏳ SIZING TAM" : (getTamValue(c) > 0 ? `📊 TAM: ${formatCompactUSD(getTamValue(c))}` : "📊 SIZE TAM")}
                       </button>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          runDiligenceForId(c.id);
-                        }}
-                        disabled={!localStorage.getItem("anthropic_api_key")}
-                        style={{
-                          marginLeft: "auto",
-                          fontFamily: fontStack.mono,
-                          fontSize: 9,
-                          padding: "2px 6px",
-                          background: "transparent",
-                          color: BLUE,
-                          border: `1px solid ${BLUE}`,
-                          borderRadius: 2,
-                          cursor: "pointer",
-                          opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1
-                        }}
-                        title="Rerun web research & rescore"
-                      >
-                        🧠 RESCORE
-                      </button>
-                    )
+
+                      {c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            runDiligenceForId(c.id);
+                          }}
+                          disabled={!localStorage.getItem("anthropic_api_key")}
+                          style={{
+                            marginLeft: 6,
+                            fontFamily: fontStack.mono,
+                            fontSize: 9,
+                            padding: "2px 6px",
+                            background: (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? RUST : BLUE,
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 2,
+                            cursor: "pointer",
+                            opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1
+                          }}
+                          title={!localStorage.getItem("anthropic_api_key") ? "Enter API Key in header to enable" : "Run web research & score now"}
+                        >
+                          {c.oneLiner && c.oneLiner.startsWith("Research failed:") ? "🔄 RETRY" : "⚡ SCORE"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            runDiligenceForId(c.id);
+                          }}
+                          disabled={!localStorage.getItem("anthropic_api_key")}
+                          style={{
+                            marginLeft: 6,
+                            fontFamily: fontStack.mono,
+                            fontSize: 9,
+                            padding: "2px 6px",
+                            background: "transparent",
+                            color: BLUE,
+                            border: `1px solid ${BLUE}`,
+                            borderRadius: 2,
+                            cursor: "pointer",
+                            opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1
+                          }}
+                          title="Rerun web research & rescore"
+                        >
+                          🧠 RESCORE
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
