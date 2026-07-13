@@ -62,8 +62,25 @@ def main():
 
     password = sys.argv[4] if len(sys.argv) >= 5 else ""
 
-    # Check if direct PDF link
+    # Check if direct PDF link (either via extension, Content-Type header, or %PDF magic bytes)
+    is_pdf = False
     if url.lower().endswith('.pdf') or '.pdf?' in url.lower():
+        is_pdf = True
+    else:
+        try:
+            res_head = requests.head(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}, timeout=5, allow_redirects=True)
+            if 'application/pdf' in res_head.headers.get('Content-Type', '').lower():
+                is_pdf = True
+        except Exception:
+            try:
+                res_get = requests.get(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}, timeout=5, stream=True)
+                peek = res_get.raw.read(4)
+                if peek == b'%PDF':
+                    is_pdf = True
+            except Exception:
+                pass
+
+    if is_pdf:
         print(f"[Scraper] Direct PDF URL detected: {url}. Downloading...")
         try:
             headers = {
