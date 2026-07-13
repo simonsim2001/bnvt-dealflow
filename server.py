@@ -12,6 +12,16 @@ import re
 import traceback
 from urllib.parse import urlparse, parse_qs, unquote
 
+def get_adapter_type():
+    try:
+        with open('manifest.json', 'r', encoding='utf-8') as f:
+            manifest = json.load(f)
+            return manifest.get('adapterType', 'dealflow-pipeline')
+    except Exception:
+        return 'dealflow-pipeline'
+
+ADAPTER_TYPE = get_adapter_type()
+
 
 PORT = int(os.environ.get("PORT", 8000))
 
@@ -884,32 +894,53 @@ def ingest_pitch_deck(url, email='simon@bnvtcapital.com', code=''):
     unique_id = uuid.uuid4().hex[:8]
     pdf_path = os.path.join('uploads', f"deck_{unique_id}.pdf")
     
-    # Check if direct PDF URL
+    # Check if direct PDF URL (either via extension, Content-Type header, or %PDF magic bytes)
+    is_pdf = False
     if url.lower().endswith('.pdf') or '.pdf?' in url.lower():
+        is_pdf = True
+    else:
+        try:
+            import requests
+            res_head = requests.head(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}, timeout=5, allow_redirects=True)
+            if 'application/pdf' in res_head.headers.get('Content-Type', '').lower():
+                is_pdf = True
+        except Exception:
+            try:
+                import requests
+                res_get = requests.get(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}, timeout=5, stream=True)
+                peek = res_get.raw.read(4)
+                if peek == b'%PDF':
+                    is_pdf = True
+            except Exception:
+                pass
+
+    if is_pdf:
         print(f"[Deck Ingest] Plain PDF URL detected: {url}")
         try:
-            req = urllib.request.Request(
-                url,
-                headers={'User-Agent': 'Mozilla/5.0'}
-            )
-            with urllib.request.urlopen(req) as res:
-                content = res.read()
-                with open(pdf_path, 'wb') as f:
-                    f.write(content)
-            
-            # Extract text
-            import pypdf
-            reader = pypdf.PdfReader(pdf_path)
-            text = ""
-            for idx, page in enumerate(reader.pages):
-                text += f"\n--- Slide {idx+1} ---\n"
-                text += page.extract_text() or ""
-            
-            return {
-                "success": True,
-                "pdf_path": pdf_path,
-                "text": text
+            import requests
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
+            res = requests.get(url, headers=headers, timeout=30)
+            if res.status_code == 200:
+                with open(pdf_path, 'wb') as f:
+                    f.write(res.content)
+                
+                # Extract text
+                import pypdf
+                reader = pypdf.PdfReader(pdf_path)
+                text = ""
+                for idx, page in enumerate(reader.pages):
+                    text += f"\n--- Slide {idx+1} ---\n"
+                    text += page.extract_text() or ""
+                
+                return {
+                    "success": True,
+                    "pdf_path": pdf_path,
+                    "text": text
+                }
+            else:
+                raise Exception(f"HTTP {res.status_code}")
         except Exception as e:
             return {
                 "success": False,
@@ -1123,7 +1154,7 @@ def handle_update_record(db, type_id, record_id, fields):
         "result": {
             "id": str(record_id),
             "externalId": str(record_id),
-            "adapterType": "dealflow-pipeline",
+            "adapterType": ADAPTER_TYPE,
             "recordType": type_id or "Deal",
             "data": {}
         }
@@ -1298,7 +1329,7 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                             res = json.load(mf)
                     except Exception:
                         res = {
-                            "adapterType": "dealflow-pipeline-v9",
+                            "adapterType": ADAPTER_TYPE,
                             "displayName": "BNVT Dealflow Pipeline",
                             "description": "Adapter connecting Azava to the BNVT Dealflow Pipeline database.",
                             "baseUrl": dynamic_base_url,
@@ -1398,7 +1429,7 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                         candidates.append({
                             "id": str(matched["id"]),
                             "externalId": str(matched["id"]),
-                            "adapterType": "dealflow-pipeline",
+                            "adapterType": ADAPTER_TYPE,
                             "recordType": type_id or "Deal",
                             "data": {}
                         })
@@ -1444,18 +1475,31 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                         
                         # Support parsing encoded parameters from Question (e.g. from WhatsApp automation):
                         # "DECK_INGEST: url={url} email={email} password={password}"
-                        if question.startswith("DECK_INGEST:"):
-                            try:
-                                url_idx = question.find("url=")
-                                email_idx = question.find("email=")
-                                pass_idx = question.find("password=")
+                        # Automatically detect if Question contains a DocSend or PDF URL
+                        is_deck_query = False
+                        urls = re.findall(r'https?://[^\s]+', question)
+                        if urls:
+                            first_url = urls[0].split('?')[0].lower()
+                            if "docsend.com/view" in first_url or first_url.endswith(".pdf"):
+                                is_deck_query = True
                                 
-                                if url_idx != -1 and email_idx != -1:
-                                    deck_url = question[url_idx+4:email_idx].strip()
-                                if email_idx != -1 and pass_idx != -1:
-                                    deck_email = question[email_idx+6:pass_idx].strip()
-                                if pass_idx != -1:
-                                    deck_password = question[pass_idx+9:].strip()
+                        if question.startswith("DECK_INGEST:") or is_deck_query:
+                            try:
+                                if urls:
+                                    deck_url = urls[0].rstrip('.,;()[]{}')
+                                    
+                                # Robust parsing of space-separated or keyword-based arguments
+                                email_match = re.search(r'email[=:\s]+([^\s]+)', question, re.IGNORECASE)
+                                if email_match:
+                                    deck_email = email_match.group(1).strip().rstrip('.,;()[]{}')
+                                else:
+                                    deck_email = "simon@bnvtcapital.com"
+                                    
+                                pass_match = re.search(r'(?:password|code|pass)[=:\s]+([^\s]+)', question, re.IGNORECASE)
+                                if pass_match:
+                                    deck_password = pass_match.group(1).strip().rstrip('.,;()[]{}')
+                                else:
+                                    deck_password = ""
                             except Exception as parse_err:
                                 print(f"Error parsing encoded deck question: {parse_err}")
                                 
@@ -1610,7 +1654,7 @@ Instructions:
                         res = {
                             "id": str(uuid.uuid4()),
                             "externalId": str(uuid.uuid4()),
-                            "adapterType": "dealflow-pipeline",
+                            "adapterType": ADAPTER_TYPE,
                             "recordType": "ResearchQuery",
                             "data": {
                                 "CompanyName": company_name,
@@ -1634,7 +1678,7 @@ Instructions:
                     res = {
                         "id": str(new_deal["id"]),
                         "externalId": str(new_deal["id"]),
-                        "adapterType": "dealflow-pipeline",
+                        "adapterType": ADAPTER_TYPE,
                         "recordType": type_id or "Deal",
                         "data": {}
                     }
