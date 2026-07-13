@@ -1167,6 +1167,57 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         query = parse_qs(parsed_url.query)
         
+        if parsed_url.path == '/api/debug_ingest':
+            import requests
+            import pypdf
+            url = 'https://api.azava.com/api/files/blob/b317d781-bf4c-4dd2-8622-f0cd77524c57'
+            
+            ingest_res = ingest_pitch_deck(url)
+            success = ingest_res.get('success')
+            text = ingest_res.get('text', '')
+            pdf_path = ingest_res.get('pdf_path', '')
+            
+            extracted_data = {}
+            extract_err = None
+            if success:
+                try:
+                    extracted_data = extract_deck_data_via_claude(text)
+                except Exception as ex:
+                    extract_err = str(ex)
+                    
+            research_ans = ""
+            research_err = None
+            if success and not extract_err:
+                try:
+                    api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
+                    research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
+Provide a highly concise, crisp, and professional bulleted summary of this pitch deck.
+
+Pitch Deck Text Content:
+{text[:4000]}
+
+Instructions:
+- Provide a summary covering: What it does, TAM, Founders, Funding.
+"""
+                    research_ans = call_claude_api(api_key, research_prompt)
+                except Exception as ex:
+                    research_err = str(ex)
+                    
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "ingest_success": success,
+                "text_len": len(text),
+                "text_preview": text[:200],
+                "pdf_path": pdf_path,
+                "extracted_data": extracted_data,
+                "extract_err": extract_err,
+                "research_ans": research_ans,
+                "research_err": research_err
+            }).encode('utf-8'))
+            return
+
         if parsed_url.path == '/api/debug_pdf':
             import requests
             import pypdf
@@ -1212,7 +1263,7 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"version": "v13-debug-pdf"}).encode('utf-8'))
+            self.wfile.write(json.dumps({"version": "v14-debug-ingest"}).encode('utf-8'))
             return
             
         elif parsed_url.path == '/api/storage':
