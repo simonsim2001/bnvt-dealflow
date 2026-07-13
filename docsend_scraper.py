@@ -64,21 +64,23 @@ def main():
 
     # Check if direct PDF link (either via extension, Content-Type header, or %PDF magic bytes)
     is_pdf = False
-    if url.lower().endswith('.pdf') or '.pdf?' in url.lower():
+    if url.lower().endswith('.pdf') or '.pdf?' in url.lower() or '/files/blob/' in url.lower():
         is_pdf = True
     else:
         try:
-            res_head = requests.head(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}, timeout=5, allow_redirects=True)
-            if 'application/pdf' in res_head.headers.get('Content-Type', '').lower():
+            # Try a quick GET with stream=True to read headers (much more reliable than HEAD for pre-signed/S3 URLs)
+            headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+            res_get = requests.get(url, headers=headers, timeout=10, stream=True)
+            content_type = res_get.headers.get('Content-Type', '').lower()
+            if 'application/pdf' in content_type:
                 is_pdf = True
-        except Exception:
-            try:
-                res_get = requests.get(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}, timeout=5, stream=True)
-                peek = res_get.raw.read(4)
-                if peek == b'%PDF':
+            else:
+                # Fallback: check magic bytes
+                peek = next(res_get.iter_content(chunk_size=4), b'')
+                if peek.startswith(b'%PDF'):
                     is_pdf = True
-            except Exception:
-                pass
+        except Exception as e:
+            print(f"[Scraper] PDF detection error: {e}")
 
     if is_pdf:
         print(f"[Scraper] Direct PDF URL detected: {url}. Downloading...")
@@ -122,8 +124,16 @@ def main():
     success = False
     try:
         with sync_playwright() as p:
-            # Launch browser
-            browser = p.chromium.launch(headless=True)
+            # Launch browser with dynamic install fallback if binary is missing
+            try:
+                browser = p.chromium.launch(headless=True)
+            except Exception as launch_err:
+                print(f"[Scraper] Chromium launch failed: {launch_err}. Attempting dynamic install...")
+                import subprocess
+                subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+                # Retry launching
+                browser = p.chromium.launch(headless=True)
+                
             context = browser.new_context(
                 viewport={"width": 1280, "height": 720},
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
