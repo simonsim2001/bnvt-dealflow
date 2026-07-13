@@ -50,6 +50,7 @@ const DIMS = [
   { key: "distributionSwitching", label: "Distribution / Switching" },
   { key: "modelAgnostic", label: "Model-Agnostic Architecture" },
   { key: "ipTimeToReplicate", label: "IP / Time-to-Replicate" },
+  { key: "tam", label: "TAM (Total Addressable Market)" },
 ];
 
 const SOURCES = ["Manual", "Email", "WhatsApp", "Agent", "Event", "Referral"];
@@ -343,7 +344,7 @@ function RadarSeal({ scores, size = 56, stroke = BLUE }) {
   const r = c - 4;
   const pts = (vals) =>
     DIMS.map((d, i) => {
-      const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+      const a = -Math.PI / 2 + (i * 2 * Math.PI) / DIMS.length;
       const v = (vals ? Math.max(0.4, Number(vals[d.key]) || 0) / 5 : 1) * r;
       return `${c + v * Math.cos(a)},${c + v * Math.sin(a)}`;
     }).join(" ");
@@ -359,7 +360,7 @@ function compositeScore(scores) {
   if (!scores) return null;
   const vals = DIMS.map((d) => Number(scores[d.key]) || 0);
   const sum = vals.reduce((a, b) => a + b, 0);
-  return Math.round((sum / 25) * 100) / 20; // /5 with 2 decimals-ish
+  return Math.round((sum / (DIMS.length * 5)) * 100) / 20; // scale back to 0-5
 }
 
 function founderQualitativeAverage(obj) {
@@ -2384,10 +2385,10 @@ For the JSON output:
   - market: The market they target or industry space.
   - team: A summary of the individual's background (past work experience, education, credentials) or company founders.
   - traction: Their achievements, academic citations, past startup success, or sourcing/reputation signals.
-- scores & rationale: Score the defensibility of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, and distribution/switching cost of their project). Keep it on the standard 1-5 scale.
+- scores & rationale: Score the defensibility and market scale of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, distribution/switching cost of their project, and the Total Addressable Market (TAM) size/potential). Keep it on the standard 1-5 scale.
 
 Respond ONLY with valid JSON, no markdown fences, no preamble:
-{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"tags":["Second-time Founder","Young/Fearless/Creative"],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"..."}}`;
+{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"tags":["Second-time Founder","Young/Fearless/Creative"],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n,"tam":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"...","tam":"..."}}`;
         
         const out = parseJSON(await callClaude(prompt, true, "light"));
         
@@ -2410,7 +2411,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
         setQueueLog(`[Error] Skipping ${nextComp.name}: ${err.message}`);
         // Fallback placeholder scores to prevent loop stuck
         updateCompany(nextComp.id, {
-          scores: { proprietaryTech: 1, dataMoat: 1, distributionSwitching: 1, modelAgnostic: 1, ipTimeToReplicate: 1 },
+          scores: { proprietaryTech: 1, dataMoat: 1, distributionSwitching: 1, modelAgnostic: 1, ipTimeToReplicate: 1, tam: 1 },
           rationale: { error: err.message },
           oneLiner: "Research failed: " + err.message
         });
@@ -2426,6 +2427,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
     if (!tamQueueActive) return;
 
     const needsTam = (c) => {
+      if (c.excludeFromTamQueue) return false;
       return !c.marketStudy || 
              !c.marketStudy.businessModel || 
              !c.marketStudy.problemThesis || 
@@ -2767,10 +2769,10 @@ For the JSON output:
   - market: The market they target or industry space.
   - team: A summary of the individual's background (past work experience, education, credentials) or company founders.
   - traction: Their achievements, academic citations, past startup success, or sourcing/reputation signals.
-- scores & rationale: Score the defensibility of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, and distribution/switching cost of their project). Keep it on the standard 1-5 scale.
+- scores & rationale: Score the defensibility and market scale of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, distribution/switching cost of their project, and the Total Addressable Market (TAM) size/potential). Keep it on the standard 1-5 scale.
 
 Respond ONLY with valid JSON, no markdown fences, no preamble:
-{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"tags":["Second-time Founder","Young/Fearless/Creative"],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"..."}}`;
+{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"tags":["Second-time Founder","Young/Fearless/Creative"],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n,"tam":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"...","tam":"..."}}`;
       
       const out = parseJSON(await callClaude(prompt, true, "light"));
       updateCompany(id, {
@@ -3388,6 +3390,7 @@ Voice guidelines:
   - Distribution/Switching: ${comp.scores?.distributionSwitching || "unassessed"}/5
   - Model-Agnostic Architecture: ${comp.scores?.modelAgnostic || "unassessed"}/5
   - IP/Time-to-Replicate: ${comp.scores?.ipTimeToReplicate || "unassessed"}/5
+  - Total Addressable Market (TAM): ${comp.scores?.tam || "unassessed"}/5
 - Incorporate the key description of the company:
   - One-liner: ${oneLiner || "unassessed"}
   - Sector: ${sector || "unassessed"}
@@ -3732,6 +3735,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
 
   const unscoredCount = companies.filter(c => c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:"))).length;
   const unSizedTamCount = companies.filter(c => {
+    if (c.excludeFromTamQueue) return false;
     return !c.marketStudy || 
            !c.marketStudy.businessModel || 
            !c.marketStudy.problemThesis || 
@@ -5046,6 +5050,7 @@ Defensibility Scores:
 - Distribution & Switching Costs: ${c.scores?.distributionSwitching || '—'}/5
 - Model Agnosticism: ${c.scores?.modelAgnostic || '—'}/5
 - IP & Time to Replicate: ${c.scores?.ipTimeToReplicate || '—'}/5
+- Total Addressable Market (TAM): ${c.scores?.tam || '—'}/5
 
 Syndicate Angels Memo:
 ${syndicateAngelsStr || 'None listed'}
@@ -5711,6 +5716,9 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
     (c.founders || []).map(f => `${f.name}${f.linkedin ? ` (${f.linkedin})` : ""}`).join(", ")
   );
   const [editTags, setEditTags] = useState(c.tags || []);
+  const [editScores, setEditScores] = useState({});
+  const [editRationale, setEditRationale] = useState({});
+  const [editExcludeFromTamQueue, setEditExcludeFromTamQueue] = useState(c.excludeFromTamQueue || false);
 
   useEffect(() => {
     setEditName(c.name || "");
@@ -5723,6 +5731,9 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
     setEditEmail(c.email || "");
     setEditFoundersText((c.founders || []).map(f => `${f.name}${f.linkedin ? ` (${f.linkedin})` : ""}`).join(", "));
     setEditTags(c.tags || []);
+    setEditScores(c.scores || {});
+    setEditRationale(c.rationale || {});
+    setEditExcludeFromTamQueue(c.excludeFromTamQueue || false);
   }, [c.id]);
 
   // Market Study Sizing Engine states
@@ -10061,7 +10072,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     setRescoring(true); setErr("");
     try {
       const notes = (c.notes || []).map((n) => "- " + n.text).join("\n");
-      const prompt = `You are an analyst at BNVT Capital, an early-stage AI fund. Based on the details and the proprietary notes below, analyze the entity (which could be a company or an individual founder) and score it on the 5-dimension defensibility matrix.
+      const prompt = `You are an analyst at BNVT Capital, an early-stage AI fund. Based on the details and the proprietary notes below, analyze the entity (which could be a company or an individual founder) and score it on the 6-dimension defensibility and market matrix (Proprietary Tech, Data Moat, Distribution / Switching, Model-Agnostic Architecture, IP / Time-to-Replicate, and TAM).
 Infer and summarize the product, market, team, and traction details based on the provided notes and context (extrapolate logically, but flag what is inferred vs direct fact). If the entity is an individual founder, 'team' should summarize their background, career/research history, credentials, and 'product' should describe their current startup focus, projects, or stealth venture.
 
 Entity: ${c.name}
@@ -10072,7 +10083,7 @@ Proprietary notes:
 ${notes || "(none)"}
 
 Respond ONLY with valid JSON, no markdown fences, no preamble:
-{"oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences","team":"2-3 sentences","traction":"2-3 sentences"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"..."}}`;
+{"oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences","team":"2-3 sentences","traction":"2-3 sentences"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n,"tam":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"...","tam":"..."}}`;
       
       const out = parseJSON(await callClaude(prompt));
       update({
@@ -10114,10 +10125,10 @@ For the JSON output:
   - market: The market they target or industry space.
   - team: A summary of the individual's background (past work experience, education, credentials) or company founders.
   - traction: Their achievements, academic citations, past startup success, or sourcing/reputation signals.
-- scores & rationale: Score the defensibility of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, and distribution/switching cost of their project). Keep it on the standard 1-5 scale.
+- scores & rationale: Score the defensibility and market scale of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, distribution/switching cost of their project, and the Total Addressable Market (TAM) size/potential). Keep it on the standard 1-5 scale.
 
 Respond ONLY with valid JSON in this exact structure, with no markdown fences, no preamble, no explanation:
-{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"..."}}`;
+{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n,"tam":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"...","tam":"..."}}`;
       
       const out = parseJSON(await callClaude(prompt, true));
       update({
@@ -10425,7 +10436,7 @@ ${ingestContext.trim() ? `New Partner Context / Notes:\n${ingestContext.trim()}\
 4. Output a highly structured, accurate JSON schema matching the profile exactly.
 
 Respond ONLY with valid JSON in this format, with no markdown fences, no preamble:
-{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"..."}}`;
+{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n,"tam":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"...","tam":"..."}}`;
 
       const out = parseJSON(await callClaude(prompt, true));
 
@@ -10579,7 +10590,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   url: editUrl,
                   email: editEmail,
                   founders: parsedFounders,
-                  tags: editTags
+                  tags: editTags,
+                  scores: editScores,
+                  rationale: editRationale,
+                  excludeFromTamQueue: editExcludeFromTamQueue
                 });
               }
               setIsEditing(!isEditing);
@@ -10617,6 +10631,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 setEditEmail(c.email || "");
                 setEditFoundersText((c.founders || []).map(f => `${f.name}${f.linkedin ? ` (${f.linkedin})` : ""}`).join(", "));
                 setEditTags(c.tags || []);
+                setEditScores(c.scores || {});
+                setEditRationale(c.rationale || {});
+                setEditExcludeFromTamQueue(c.excludeFromTamQueue || false);
                 setIsEditing(false);
               }}
             >
@@ -10717,6 +10734,18 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       );
                     })}
                   </div>
+                </div>
+
+                <div style={{ marginTop: 12, marginBottom: 4 }}>
+                  <Label>Queue & Automation Settings</Label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", fontFamily: fontStack.ui }}>
+                    <input 
+                      type="checkbox" 
+                      checked={editExcludeFromTamQueue} 
+                      onChange={(e) => setEditExcludeFromTamQueue(e.target.checked)} 
+                    />
+                    Manual TAM/Score Only (Exclude from AI TAM Sizer Queue)
+                  </label>
                 </div>
               </div>
             ) : (
@@ -14102,14 +14131,41 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
           <div style={{ background: CARD, border: `1px solid ${LINE}`, borderTop: "none", padding: 18 }}>
             {DIMS.map((d) => (
               <div key={d.key} style={{ marginBottom: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 500 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, fontWeight: 500 }}>
                   <span>{d.label}</span>
-                  <span style={{ fontFamily: fontStack.mono, color: scoreColor(c.scores?.[d.key]) }}>{c.scores?.[d.key] ?? "—"}</span>
+                  {isEditing ? (
+                    <select
+                      value={editScores[d.key] ?? ""}
+                      onChange={(e) => setEditScores({ ...editScores, [d.key]: e.target.value === "" ? "" : Number(e.target.value) })}
+                      style={{ fontSize: 12, padding: "2px 4px", border: `1px solid ${LINE}`, background: PAPER, color: INK, borderRadius: 4 }}
+                    >
+                      <option value="">—</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                    </select>
+                  ) : (
+                    <span style={{ fontFamily: fontStack.mono, color: scoreColor(c.scores?.[d.key]) }}>{c.scores?.[d.key] ?? "—"}</span>
+                  )}
                 </div>
-                <div style={{ height: 4, background: PAPER, marginTop: 4 }}>
-                  <div style={{ height: 4, width: `${((c.scores?.[d.key] || 0) / 5) * 100}%`, background: scoreColor(c.scores?.[d.key]) }} />
-                </div>
-                {c.rationale?.[d.key] && <div style={{ fontSize: 11.5, color: FADE, marginTop: 4, lineHeight: 1.4 }}>{c.rationale[d.key]}</div>}
+                {!isEditing && (
+                  <div style={{ height: 4, background: PAPER, marginTop: 4 }}>
+                    <div style={{ height: 4, width: `${((c.scores?.[d.key] || 0) / 5) * 100}%`, background: scoreColor(c.scores?.[d.key]) }} />
+                  </div>
+                )}
+                {isEditing ? (
+                  <textarea
+                    value={editRationale[d.key] || ""}
+                    onChange={(e) => setEditRationale({ ...editRationale, [d.key]: e.target.value })}
+                    style={{ width: "100%", fontSize: 11.5, padding: 6, border: `1px solid ${LINE}`, background: PAPER, color: INK, borderRadius: 4, marginTop: 4, resize: "vertical", fontFamily: fontStack.ui }}
+                    placeholder={`Rationale for ${d.label}...`}
+                    rows={2}
+                  />
+                ) : (
+                  c.rationale?.[d.key] && <div style={{ fontSize: 11.5, color: FADE, marginTop: 4, lineHeight: 1.4 }}>{c.rationale[d.key]}</div>
+                )}
               </div>
             ))}
 
@@ -14122,10 +14178,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   <div>
                     <strong>Defensibility Composite Score:</strong>
                     <div style={{ fontFamily: fontStack.mono, fontSize: "10px", color: FADE, background: PAPER, padding: "3px 5px", margin: "3px 0", border: `1px solid ${LINE}` }}>
-                      (Proprietary Tech + Data Moat + Distribution Switching + Model Agnostic + Time to Replicate) / 5
+                      ({DIMS.map(d => d.label).join(" + ")}) / {DIMS.length}
                     </div>
                     <div style={{ color: INK, fontSize: "10.5px" }}>
-                      Calculation: ({(c.scores?.proprietaryTech || 0).toFixed(1)} + {(c.scores?.dataMoat || 0).toFixed(1)} + {(c.scores?.distributionSwitching || 0).toFixed(1)} + {(c.scores?.modelAgnostic || 0).toFixed(1)} + {(c.scores?.ipTimeToReplicate || 0).toFixed(1)}) / 5 = <strong>{comp.toFixed(2)}</strong> (Scaled to <strong>{comp.toFixed(1)}</strong>)
+                      Calculation: ({DIMS.map(d => (c.scores?.[d.key] || 0).toFixed(1)).join(" + ")}) / {DIMS.length} = <strong>{comp.toFixed(2)}</strong> (Scaled to <strong>{comp.toFixed(1)}</strong>)
                     </div>
                   </div>
                 </div>
@@ -14375,6 +14431,7 @@ Voice guidelines:
   - Distribution/Switching: ${c.scores?.distributionSwitching || "unassessed"}/5
   - Model-Agnostic Architecture: ${c.scores?.modelAgnostic || "unassessed"}/5
   - IP/Time-to-Replicate: ${c.scores?.ipTimeToReplicate || "unassessed"}/5
+  - Total Addressable Market (TAM): ${c.scores?.tam || "unassessed"}/5
 - Incorporate our internal notes on the company:
 ${notes || "(none)"}
 - Also incorporate this specific angle/context Simon added for this email: ${angle || "(none)"}
@@ -14639,10 +14696,10 @@ For the JSON output:
   - market: The market they target or industry space.
   - team: A summary of the individual's background (past work experience, education, credentials) or company founders.
   - traction: Their achievements, academic citations, past startup success, or sourcing/reputation signals.
-- scores & rationale: Score the defensibility of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, and distribution/switching cost of their project). Keep it on the standard 1-5 scale.
+- scores & rationale: Score the defensibility and market scale of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, distribution/switching cost of their project, and the Total Addressable Market (TAM) size/potential). Keep it on the standard 1-5 scale.
 
 Respond ONLY with valid JSON, no markdown fences, no preamble:
-{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"..."}}`;
+{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n,"tam":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"...","tam":"..."}}`;
       
       let uploadedAsset = null;
       if (pdfFile) {
