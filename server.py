@@ -1167,106 +1167,7 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         query = parse_qs(parsed_url.query)
         
-        if parsed_url.path == '/api/debug_ingest':
-            import requests
-            import pypdf
-            url = 'https://api.azava.com/api/files/blob/b317d781-bf4c-4dd2-8622-f0cd77524c57'
-            
-            ingest_res = ingest_pitch_deck(url)
-            success = ingest_res.get('success')
-            text = ingest_res.get('text', '')
-            pdf_path = ingest_res.get('pdf_path', '')
-            
-            extracted_data = {}
-            extract_err = None
-            if success:
-                try:
-                    extracted_data = extract_deck_data_via_claude(text)
-                except Exception as ex:
-                    extract_err = str(ex)
-                    
-            research_ans = ""
-            research_err = None
-            if success and not extract_err:
-                try:
-                    api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
-                    research_prompt = f"""You are a senior investment analyst for a venture capital firm, BNVT Capital.
-Provide a highly concise, crisp, and professional bulleted summary of this pitch deck.
-
-Pitch Deck Text Content:
-{text[:4000]}
-
-Instructions:
-- Provide a summary covering: What it does, TAM, Founders, Funding.
-"""
-                    research_ans = call_claude_api(api_key, research_prompt)
-                except Exception as ex:
-                    research_err = str(ex)
-                    
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "ingest_success": success,
-                "text_len": len(text),
-                "text_preview": text[:200],
-                "pdf_path": pdf_path,
-                "extracted_data": extracted_data,
-                "extract_err": extract_err,
-                "research_ans": research_ans,
-                "research_err": research_err
-            }).encode('utf-8'))
-            return
-
-        if parsed_url.path == '/api/debug_pdf':
-            import requests
-            import pypdf
-            url = 'https://api.azava.com/api/files/blob/b317d781-bf4c-4dd2-8622-f0cd77524c57'
-            headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-            res = requests.get(url, headers=headers, timeout=30)
-            
-            first_bytes = str(res.content[:20])
-            content_len = len(res.content)
-            
-            # Try to parse
-            pdf_path = 'uploads/debug_test.pdf'
-            os.makedirs('uploads', exist_ok=True)
-            with open(pdf_path, 'wb') as f:
-                f.write(res.content)
-                
-            num_pages = 0
-            page_1_text = ""
-            error = None
-            try:
-                reader = pypdf.PdfReader(pdf_path)
-                num_pages = len(reader.pages)
-                if num_pages > 0:
-                    page_1_text = reader.pages[0].extract_text() or ""
-            except Exception as ex:
-                error = str(ex)
-                
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "status_code": res.status_code,
-                "content_length": content_len,
-                "first_bytes": first_bytes,
-                "num_pages": num_pages,
-                "page_1_text_len": len(page_1_text),
-                "page_1_text_preview": page_1_text[:200],
-                "error": error
-            }).encode('utf-8'))
-            return
-            
-        elif parsed_url.path == '/api/version':
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"version": "v14-debug-ingest"}).encode('utf-8'))
-            return
-            
-        elif parsed_url.path == '/api/storage':
+        if parsed_url.path == '/api/storage':
             key = query.get('key', [None])[0]
             if not key:
                 self.send_response(400)
@@ -1580,7 +1481,7 @@ Instructions:
                         urls = re.findall(r'https?://[^\s]+', question)
                         if urls:
                             first_url = urls[0].split('?')[0].lower()
-                            if "docsend.com/view" in first_url or first_url.endswith(".pdf"):
+                            if "docsend.com/view" in first_url or first_url.endswith(".pdf") or "/files/blob/" in first_url:
                                 is_deck_query = True
                                 
                         if question.startswith("DECK_INGEST:") or is_deck_query:
