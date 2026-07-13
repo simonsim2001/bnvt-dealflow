@@ -1167,14 +1167,7 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         query = parse_qs(parsed_url.query)
         
-        if parsed_url.path == '/api/version':
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"version": "v15-threadsafe"}).encode('utf-8'))
-            return
-            
-        elif parsed_url.path == '/api/storage':
+        if parsed_url.path == '/api/storage':
             key = query.get('key', [None])[0]
             if not key:
                 self.send_response(400)
