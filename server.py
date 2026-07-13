@@ -11,6 +11,9 @@ import uuid
 import re
 import traceback
 from urllib.parse import urlparse, parse_qs, unquote
+import threading
+
+db_lock = threading.Lock()
 
 def get_adapter_type():
     try:
@@ -314,132 +317,129 @@ Do not include any markdown styling, conversational filler, or code blocks in yo
     except Exception as e:
         return False, f"Failed to parse JSON response: {str(e)}\nRaw response: {response_text}"
         
-    entity_type = parsed.get('type')
-    if entity_type not in ('company', 'investor'):
-        return False, f"Message classified as '{entity_type}', ignoring."
-        
-    # Read database
-    db = read_db()
-            
-    if entity_type == 'company':
-        company_data = parsed.get('data', {})
-        name = company_data.get('name')
-        if not name:
-            return False, "Parsed company name is missing"
-            
-        url = company_data.get('url', '')
-        def clean_url(u):
-            if not u: return ""
-            u = u.lower().strip()
-            if u.startswith("https://"): u = u[8:]
-            if u.startswith("http://"): u = u[7:]
-            if u.startswith("www."): u = u[4:]
-            if u.endswith("/"): u = u[:-1]
-            return u
-            
-        clean_new_url = clean_url(url)
-        clean_new_name = name.lower().strip()
-        
-        existing_comp = None
-        for c in db.get('companies', []):
-            if clean_new_url and clean_url(c.get('url')) == clean_new_url:
-                existing_comp = c
-                break
-            if c.get('name', '').lower().strip() == clean_new_name:
-                existing_comp = c
-                break
+    with db_lock:
+        # Read database
+        db = read_db()
                 
-        if existing_comp:
-            notes = existing_comp.setdefault('notes', [])
-            notes.append({
-                "ts": int(time.time() * 1000),
-                "text": f"[WhatsApp Sync] {company_data.get('notes', 'Updated via WhatsApp')}",
-                "via": "whatsapp"
-            })
-            response_msg = f"Updated existing company: {existing_comp.get('name')}"
-        else:
-            new_id = f"wa_{uuid.uuid4().hex[:8]}"
-            new_comp = {
-                "id": new_id,
-                "name": name,
-                "url": url,
-                "oneLiner": company_data.get('oneLiner', ''),
-                "sector": company_data.get('sector', ''),
-                "stage": company_data.get('stage', 'Seed'),
-                "geo": company_data.get('geo', ''),
-                "priority": company_data.get('priority', 'Medium'),
-                "source": "WhatsApp",
-                "status": "Active opportunity",
-                "dtm": False,
-                "overview": {},
-                "scores": None,
-                "rationale": {},
-                "notes": [
-                    {
-                        "ts": int(time.time() * 1000),
-                        "text": company_data.get('notes', ''),
-                        "via": "whatsapp"
-                    }
-                ] if company_data.get('notes') else [],
-                "createdAt": int(time.time() * 1000),
-                "founders": [],
-                "assets": [],
-                "granolaNotes": []
-            }
-            db.setdefault('companies', []).insert(0, new_comp)
-            response_msg = f"Added new company: {name}"
-            
-    else: # investor
-        investor_data = parsed.get('data', {})
-        name = investor_data.get('name')
-        if not name:
-            return False, "Parsed investor name is missing"
-            
-        linkedin = investor_data.get('linkedin', '')
-        email = investor_data.get('email', '')
-        fund = investor_data.get('fund', '')
-        
-        existing_inv = None
-        for i in db.get('investors', []):
-            if linkedin and i.get('linkedin') == linkedin:
-                existing_inv = i
-                break
-            if email and i.get('email') == email:
-                existing_inv = i
-                break
-            if i.get('name', '').lower().strip() == name.lower().strip() and i.get('fund', '').lower().strip() == fund.lower().strip():
-                existing_inv = i
-                break
+        if entity_type == 'company':
+            company_data = parsed.get('data', {})
+            name = company_data.get('name')
+            if not name:
+                return False, "Parsed company name is missing"
                 
-        if existing_inv:
-            new_notes = investor_data.get('notes', '')
-            if new_notes:
-                old_notes = existing_inv.get('notes', '')
-                existing_inv['notes'] = f"{old_notes}\n[WhatsApp Sync] {new_notes}".strip()
-            response_msg = f"Updated existing investor: {existing_inv.get('name')} ({existing_inv.get('fund')})"
-        else:
-            new_id = f"wa_{uuid.uuid4().hex[:8]}"
-            new_inv = {
-                "id": new_id,
-                "name": name,
-                "fund": fund,
-                "email": email,
-                "linkedin": linkedin,
-                "stage": investor_data.get('stage', 'Seed'),
-                "priority": investor_data.get('priority', 'Medium'),
-                "focus": investor_data.get('focus', []),
-                "sweetSpot": investor_data.get('sweetSpot', ''),
-                "geo": investor_data.get('geo', ''),
-                "city": investor_data.get('city', ''),
-                "notes": investor_data.get('notes', '')
-            }
-            db.setdefault('investors', []).insert(0, new_inv)
-            response_msg = f"Added new investor: {name} ({fund})"
+            url = company_data.get('url', '')
+            def clean_url(u):
+                if not u: return ""
+                u = u.lower().strip()
+                if u.startswith("https://"): u = u[8:]
+                if u.startswith("http://"): u = u[7:]
+                if u.startswith("www."): u = u[4:]
+                if u.endswith("/"): u = u[:-1]
+                return u
+                
+            clean_new_url = clean_url(url)
+            clean_new_name = name.lower().strip()
             
-    # Save back database
-    write_db(db)
-        
-    return True, response_msg
+            existing_comp = None
+            for c in db.get('companies', []):
+                if clean_new_url and clean_url(c.get('url')) == clean_new_url:
+                    existing_comp = c
+                    break
+                if c.get('name', '').lower().strip() == clean_new_name:
+                    existing_comp = c
+                    break
+                    
+            if existing_comp:
+                notes = existing_comp.setdefault('notes', [])
+                notes.append({
+                    "ts": int(time.time() * 1000),
+                    "text": f"[WhatsApp Sync] {company_data.get('notes', 'Updated via WhatsApp')}",
+                    "via": "whatsapp"
+                })
+                response_msg = f"Updated existing company: {existing_comp.get('name')}"
+            else:
+                new_id = f"wa_{uuid.uuid4().hex[:8]}"
+                new_comp = {
+                    "id": new_id,
+                    "name": name,
+                    "url": url,
+                    "oneLiner": company_data.get('oneLiner', ''),
+                    "sector": company_data.get('sector', ''),
+                    "stage": company_data.get('stage', 'Seed'),
+                    "geo": company_data.get('geo', ''),
+                    "priority": company_data.get('priority', 'Medium'),
+                    "source": "WhatsApp",
+                    "status": "Active opportunity",
+                    "dtm": False,
+                    "overview": {},
+                    "scores": None,
+                    "rationale": {},
+                    "notes": [
+                        {
+                            "ts": int(time.time() * 1000),
+                            "text": company_data.get('notes', ''),
+                            "via": "whatsapp"
+                        }
+                    ] if company_data.get('notes') else [],
+                    "createdAt": int(time.time() * 1000),
+                    "founders": [],
+                    "assets": [],
+                    "granolaNotes": []
+                }
+                db.setdefault('companies', []).insert(0, new_comp)
+                response_msg = f"Added new company: {name}"
+                
+        else: # investor
+            investor_data = parsed.get('data', {})
+            name = investor_data.get('name')
+            if not name:
+                return False, "Parsed investor name is missing"
+                
+            linkedin = investor_data.get('linkedin', '')
+            email = investor_data.get('email', '')
+            fund = investor_data.get('fund', '')
+            
+            existing_inv = None
+            for i in db.get('investors', []):
+                if linkedin and i.get('linkedin') == linkedin:
+                    existing_inv = i
+                    break
+                if email and i.get('email') == email:
+                    existing_inv = i
+                    break
+                if i.get('name', '').lower().strip() == name.lower().strip() and i.get('fund', '').lower().strip() == fund.lower().strip():
+                    existing_inv = i
+                    break
+                    
+            if existing_inv:
+                new_notes = investor_data.get('notes', '')
+                if new_notes:
+                    old_notes = existing_inv.get('notes', '')
+                    existing_inv['notes'] = f"{old_notes}\n[WhatsApp Sync] {new_notes}".strip()
+                response_msg = f"Updated existing investor: {existing_inv.get('name')} ({existing_inv.get('fund')})"
+            else:
+                new_id = f"wa_{uuid.uuid4().hex[:8]}"
+                new_inv = {
+                    "id": new_id,
+                    "name": name,
+                    "fund": fund,
+                    "email": email,
+                    "linkedin": linkedin,
+                    "stage": investor_data.get('stage', 'Seed'),
+                    "priority": investor_data.get('priority', 'Medium'),
+                    "focus": investor_data.get('focus', []),
+                    "sweetSpot": investor_data.get('sweetSpot', ''),
+                    "geo": investor_data.get('geo', ''),
+                    "city": investor_data.get('city', ''),
+                    "notes": investor_data.get('notes', '')
+                }
+                db.setdefault('investors', []).insert(0, new_inv)
+                response_msg = f"Added new investor: {name} ({fund})"
+                
+        # Save back database
+        write_db(db)
+            
+        return True, response_msg
 
 
 def extract_docx_text(path):
@@ -1167,7 +1167,14 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         query = parse_qs(parsed_url.query)
         
-        if parsed_url.path == '/api/storage':
+        if parsed_url.path == '/api/version':
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"version": "v15-threadsafe"}).encode('utf-8'))
+            return
+            
+        elif parsed_url.path == '/api/storage':
             key = query.get('key', [None])[0]
             if not key:
                 self.send_response(400)
@@ -1528,9 +1535,11 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                                 else:
                                     extracted_data['deckUrl'] = deck_url
                                     
-                                # Upsert deal to database
-                                deal = upsert_deal_record(db, extracted_data, extra_notes_header="[WhatsApp PDF/DocSend Ingest]")
-                                write_db(db)
+                                # Upsert deal to database in a thread-safe way
+                                with db_lock:
+                                    db_latest = read_db()
+                                    deal = upsert_deal_record(db_latest, extracted_data, extra_notes_header="[WhatsApp PDF/DocSend Ingest]")
+                                    write_db(db_latest)
                                 
                                 # Perform concise VC research on the deck's content
                                 api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
@@ -1555,19 +1564,21 @@ Instructions:
                                     answer_text = call_claude_api(api_key, research_prompt, use_search=False)
                                     answer = f"📥 *Import Completed!* Added *{deal.get('name')}* to your pipeline.\n\n" + answer_text
                                     
-                                    # Write research summary back to deal notes
-                                    for comp in db.get('companies', []):
-                                        if comp.get('id') == deal.get('id'):
-                                            if 'notes' not in comp or not isinstance(comp['notes'], list):
-                                                comp['notes'] = []
-                                            comp['notes'].insert(0, {
-                                                "id": str(uuid.uuid4()),
-                                                "text": f"[Automated Pitch Deck Research] {answer_text}",
-                                                "date": int(time.time() * 1000),
-                                                "author": "Azava AI"
-                                            })
-                                            break
-                                    write_db(db)
+                                    # Write research summary back to deal notes in a thread-safe way
+                                    with db_lock:
+                                        db_latest = read_db()
+                                        for comp in db_latest.get('companies', []):
+                                            if comp.get('id') == deal.get('id'):
+                                                if 'notes' not in comp or not isinstance(comp['notes'], list):
+                                                    comp['notes'] = []
+                                                comp['notes'].insert(0, {
+                                                    "id": str(uuid.uuid4()),
+                                                    "text": f"[Automated Pitch Deck Research] {answer_text}",
+                                                    "date": int(time.time() * 1000),
+                                                    "author": "Azava AI"
+                                                })
+                                                break
+                                        write_db(db_latest)
                             except Exception as e:
                                 answer = f"⚠️ Failed to parse pitch deck: {str(e)}"
                         
@@ -1630,25 +1641,27 @@ Instructions:
                                     is_external = bool(company_name) or "Perform comprehensive" in question
                                     answer = call_claude_api(api_key, research_prompt, use_search=is_external)
                                     
-                                    # Update database notes with the automated research overview
+                                    # Update database notes with the automated research overview in a thread-safe way
                                     if company_name and ("Perform comprehensive" in question or not question) and "⚠️" not in answer:
-                                        matched = resolve_entity_match(db, company_name, "")
-                                        if matched:
-                                            for comp in db.get('companies', []):
-                                                if comp.get('id') == matched.get('id'):
-                                                    if 'notes' not in comp or not isinstance(comp['notes'], list):
-                                                        comp['notes'] = []
-                                                    # Remove previous automated research
-                                                    comp['notes'] = [n for n in comp['notes'] if "[Automated Research]" not in n.get('text', '')]
-                                                    # Insert new concise research note
-                                                    comp['notes'].insert(0, {
-                                                        "id": str(uuid.uuid4()),
-                                                        "text": f"[Automated Research] {answer}",
-                                                        "date": int(time.time() * 1000),
-                                                        "author": "Azava AI"
-                                                    })
-                                                    break
-                                            write_db(db)
+                                        with db_lock:
+                                            db_latest = read_db()
+                                            matched = resolve_entity_match(db_latest, company_name, "")
+                                            if matched:
+                                                for comp in db_latest.get('companies', []):
+                                                    if comp.get('id') == matched.get('id'):
+                                                        if 'notes' not in comp or not isinstance(comp['notes'], list):
+                                                            comp['notes'] = []
+                                                        # Remove previous automated research
+                                                        comp['notes'] = [n for n in comp['notes'] if "[Automated Research]" not in n.get('text', '')]
+                                                        # Insert new concise research note
+                                                        comp['notes'].insert(0, {
+                                                            "id": str(uuid.uuid4()),
+                                                            "text": f"[Automated Research] {answer}",
+                                                            "date": int(time.time() * 1000),
+                                                            "author": "Azava AI"
+                                                        })
+                                                        break
+                                                write_db(db_latest)
                                 except Exception as e:
                                     answer = f"⚠️ Error performing research: {str(e)}"
                                 
@@ -1673,8 +1686,10 @@ Instructions:
                     if not mapped.get('source'):
                         mapped['source'] = 'WhatsApp'
                         
-                    new_deal = upsert_deal_record(db, mapped, extra_notes_header="[Azava Intake]")
-                    write_db(db)
+                    with db_lock:
+                        db_latest = read_db()
+                        new_deal = upsert_deal_record(db_latest, mapped, extra_notes_header="[Azava Intake]")
+                        write_db(db_latest)
                     
                     res = {
                         "id": str(new_deal["id"]),
@@ -1693,9 +1708,10 @@ Instructions:
                     type_id = params.get('typeId') or params.get('recordType')
                     record_id = params.get('id') or params.get('externalId')
                     fields = params.get('fields', {})
-                    db = read_db()
-                    res = handle_update_record(db, type_id, record_id, fields)
-                    write_db(db)
+                    with db_lock:
+                        db_latest = read_db()
+                        res = handle_update_record(db_latest, type_id, record_id, fields)
+                        write_db(db_latest)
                     
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -1706,17 +1722,17 @@ Instructions:
                 elif method == 'deleteRecord':
                     type_id = params.get('typeId') or params.get('recordType')
                     record_id = params.get('id') or params.get('externalId')
-                    db = read_db()
-                    
-                    companies = db.get('companies', [])
-                    initial_len = len(companies)
-                    db['companies'] = [c for c in companies if str(c.get('id')) != str(record_id)]
-                    
-                    if len(db['companies']) < initial_len:
-                        write_db(db)
-                        res = {"ok": True, "result": {"success": True}}
-                    else:
-                        res = {"ok": False, "error": {"code": "NOT_FOUND", "message": "Record not found", "retryable": False}}
+                    with db_lock:
+                        db_latest = read_db()
+                        companies = db_latest.get('companies', [])
+                        initial_len = len(companies)
+                        db_latest['companies'] = [c for c in companies if str(c.get('id')) != str(record_id)]
+                        
+                        if len(db_latest['companies']) < initial_len:
+                            write_db(db_latest)
+                            res = {"ok": True, "result": {"success": True}}
+                        else:
+                            res = {"ok": False, "error": {"code": "NOT_FOUND", "message": "Record not found", "retryable": False}}
                         
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -1828,9 +1844,10 @@ Respond ONLY with valid JSON.
                 if sender_name and not extracted_data.get('contactName'):
                     extracted_data['contactName'] = sender_name
                 
-                db = read_db()
-                deal = upsert_deal_record(db, extracted_data, extra_notes_header="[Voice Note Intake]")
-                write_db(db)
+                with db_lock:
+                    db_latest = read_db()
+                    deal = upsert_deal_record(db_latest, extracted_data, extra_notes_header="[Voice Note Intake]")
+                    write_db(db_latest)
                 
                 summary = {
                     "company": deal.get('name'),
@@ -1901,9 +1918,10 @@ Respond ONLY with valid JSON.
                 else:
                     extracted_data['deckUrl'] = url
                 
-                db = read_db()
-                deal = upsert_deal_record(db, extracted_data, extra_notes_header="[Pitch Deck Intake]")
-                write_db(db)
+                with db_lock:
+                    db_latest = read_db()
+                    deal = upsert_deal_record(db_latest, extracted_data, extra_notes_header="[Pitch Deck Intake]")
+                    write_db(db_latest)
                 
                 summary = {
                     "company": deal.get('name'),
@@ -2411,51 +2429,53 @@ Instructions:
                     "domainExpertise": str(rationale.get("domainExpertise", ""))
                 }
                 
-                # Check if we should update or insert
-                profile = None
-                if profile_id:
-                    for p in db['founderProfiles']:
-                        if p.get('id') == profile_id:
-                            profile = p
-                            break
-                            
-                if not profile:
-                    # Check by name and company as fallback to prevent duplicates
-                    for p in db['founderProfiles']:
-                        if p.get('name', '').lower() == name.lower() and p.get('company', '').lower() == company_name.lower():
-                            profile = p
-                            break
-                
-                if profile:
-                    # Update
-                    profile['name'] = name
-                    profile['company'] = company_name
-                    profile['title'] = title
-                    profile['background'] = background
-                    profile['scores'] = assessment_scores
-                    profile['rationale'] = assessment_rationale
-                    profile['rawProfile'] = raw_profile
-                    profile['tags'] = tags
-                else:
-                    # Insert new
-                    import uuid
-                    new_id = f"fp_{uuid.uuid4().hex[:8]}"
-                    profile = {
-                        "id": new_id,
-                        "name": name,
-                        "company": company_name,
-                        "title": title,
-                        "background": background,
-                        "scores": assessment_scores,
-                        "rationale": assessment_rationale,
-                        "rawProfile": raw_profile,
-                        "tags": tags,
-                        "createdAt": int(time.time() * 1000)
-                    }
-                    db['founderProfiles'].insert(0, profile)
-                
-                # Save database
-                write_db(db)
+                # Check if we should update or insert in a thread-safe way
+                with db_lock:
+                    db_latest = read_db()
+                    profile = None
+                    if profile_id:
+                        for p in db_latest.get('founderProfiles', []):
+                            if p.get('id') == profile_id:
+                                profile = p
+                                break
+                                
+                    if not profile:
+                        # Check by name and company as fallback to prevent duplicates
+                        for p in db_latest.get('founderProfiles', []):
+                            if p.get('name', '').lower() == name.lower() and p.get('company', '').lower() == company_name.lower():
+                                profile = p
+                                break
+                    
+                    if profile:
+                        # Update
+                        profile['name'] = name
+                        profile['company'] = company_name
+                        profile['title'] = title
+                        profile['background'] = background
+                        profile['scores'] = assessment_scores
+                        profile['rationale'] = assessment_rationale
+                        profile['rawProfile'] = raw_profile
+                        profile['tags'] = tags
+                    else:
+                        # Insert new
+                        import uuid
+                        new_id = f"fp_{uuid.uuid4().hex[:8]}"
+                        profile = {
+                            "id": new_id,
+                            "name": name,
+                            "company": company_name,
+                            "title": title,
+                            "background": background,
+                            "scores": assessment_scores,
+                            "rationale": assessment_rationale,
+                            "rawProfile": raw_profile,
+                            "tags": tags,
+                            "createdAt": int(time.time() * 1000)
+                        }
+                        db_latest.setdefault('founderProfiles', []).insert(0, profile)
+                    
+                    # Save database
+                    write_db(db_latest)
                 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
