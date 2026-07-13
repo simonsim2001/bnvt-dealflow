@@ -1167,11 +1167,52 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         query = parse_qs(parsed_url.query)
         
-        if parsed_url.path == '/api/version':
+        if parsed_url.path == '/api/debug_pdf':
+            import requests
+            import pypdf
+            url = 'https://api.azava.com/api/files/blob/b317d781-bf4c-4dd2-8622-f0cd77524c57'
+            headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+            res = requests.get(url, headers=headers, timeout=30)
+            
+            first_bytes = str(res.content[:20])
+            content_len = len(res.content)
+            
+            # Try to parse
+            pdf_path = 'uploads/debug_test.pdf'
+            os.makedirs('uploads', exist_ok=True)
+            with open(pdf_path, 'wb') as f:
+                f.write(res.content)
+                
+            num_pages = 0
+            page_1_text = ""
+            error = None
+            try:
+                reader = pypdf.PdfReader(pdf_path)
+                num_pages = len(reader.pages)
+                if num_pages > 0:
+                    page_1_text = reader.pages[0].extract_text() or ""
+            except Exception as ex:
+                error = str(ex)
+                
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"version": "v12-pdf-fix"}).encode('utf-8'))
+            self.wfile.write(json.dumps({
+                "status_code": res.status_code,
+                "content_length": content_len,
+                "first_bytes": first_bytes,
+                "num_pages": num_pages,
+                "page_1_text_len": len(page_1_text),
+                "page_1_text_preview": page_1_text[:200],
+                "error": error
+            }).encode('utf-8'))
+            return
+            
+        elif parsed_url.path == '/api/version':
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"version": "v13-debug-pdf"}).encode('utf-8'))
             return
             
         elif parsed_url.path == '/api/storage':
