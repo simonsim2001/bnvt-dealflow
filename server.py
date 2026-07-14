@@ -281,8 +281,10 @@ def call_claude_api(api_key, prompt, use_search=False):
         raise Exception("Anthropic API failed to resolve after maximum search loops.")
 
     elif provider in ("openrouter", "deepseek", "groq", "openai"):
-        prov_key = get_stored_value(f"{provider}_api_key") or os.environ.get(f"{provider.upper()}_API_KEY")
-        if not prov_key:
+        prov_key = get_stored_value(f"{provider}_api_key")
+        if not prov_key or prov_key == "configured_via_provider" or not prov_key.strip():
+            prov_key = os.environ.get(f"{provider.upper()}_API_KEY")
+        if not prov_key or prov_key == "configured_via_provider" or not prov_key.strip():
             prov_key = api_key
             
         model = config.get("search_model") if use_search else config.get("model")
@@ -2192,8 +2194,10 @@ Respond ONLY with valid JSON.
                     import json as pyjson
                     incoming_payload = pyjson.loads(post_data.decode('utf-8'))
                     
-                    prov_key = get_stored_value(f"{provider}_api_key") or os.environ.get(f"{provider.upper()}_API_KEY")
-                    if not prov_key:
+                    prov_key = get_stored_value(f"{provider}_api_key")
+                    if not prov_key or prov_key == "configured_via_provider" or not prov_key.strip():
+                        prov_key = os.environ.get(f"{provider.upper()}_API_KEY")
+                    if not prov_key or prov_key == "configured_via_provider" or not prov_key.strip():
                         # Fallback to incoming auth headers if no local key exists
                         auth_header = self.headers.get('Authorization', '')
                         if auth_header.startswith('Bearer '):
