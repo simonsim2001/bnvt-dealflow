@@ -118,7 +118,7 @@ def get_stored_value(key):
     return None
 
 def get_llm_config():
-    config = {"provider": "groq", "model": "llama-3.3-70b-versatile", "search_model": "llama-3.3-70b-versatile"}
+    config = {"provider": "anthropic", "model": "claude-sonnet-4-6", "search_model": "claude-sonnet-4-6"}
     
     # Check if config file exists
     config_path = os.path.join('db_storage', 'llm_config.json')
@@ -132,7 +132,11 @@ def get_llm_config():
             pass
             
     # Auto-detect provider based on available keys/env vars if config doesn't exist
-    if get_stored_value("groq_api_key") or os.environ.get("GROQ_API_KEY"):
+    if get_stored_value("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY"):
+        config["provider"] = "anthropic"
+        config["model"] = "claude-sonnet-4-6"
+        config["search_model"] = "claude-sonnet-4-6"
+    elif get_stored_value("groq_api_key") or os.environ.get("GROQ_API_KEY"):
         config["provider"] = "groq"
         config["model"] = "llama-3.3-70b-versatile"
         config["search_model"] = "llama-3.3-70b-versatile"
@@ -148,10 +152,6 @@ def get_llm_config():
         config["provider"] = "openai"
         config["model"] = "gpt-4o-mini"
         config["search_model"] = "gpt-4o-mini"
-    elif get_stored_value("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY"):
-        config["provider"] = "anthropic"
-        config["model"] = "claude-sonnet-4-6"
-        config["search_model"] = "claude-sonnet-4-6"
         
     return config
 
