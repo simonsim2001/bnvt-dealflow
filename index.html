@@ -240,6 +240,34 @@
     <script type="text/babel" src="bnvt-dealflow.jsx?v=49.0"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script type="text/babel">
+        function mergeLists(clientList, serverList, keyAttr = "id") {
+            const clientArr = Array.isArray(clientList) ? clientList : [];
+            const serverArr = Array.isArray(serverList) ? serverList : [];
+            const map = new Map();
+            for (const item of clientArr) {
+                if (item && item[keyAttr]) map.set(String(item[keyAttr]), item);
+            }
+            for (const item of serverArr) {
+                if (item && item[keyAttr]) {
+                    const idStr = String(item[keyAttr]);
+                    if (map.has(idStr)) {
+                        const clientItem = map.get(idStr);
+                        const mergedNotes = [...(clientItem.notes || [])];
+                        const existingNotesIds = new Set(mergedNotes.map(n => n.id || n.text));
+                        for (const n of (item.notes || [])) {
+                            if (!existingNotesIds.has(n.id || n.text)) {
+                                mergedNotes.push(n);
+                            }
+                        }
+                        map.set(idStr, { ...clientItem, ...item, notes: mergedNotes });
+                    } else {
+                        map.set(idStr, item);
+                    }
+                }
+            }
+            return Array.from(map.values());
+        }
+
         const preSyncAndRender = async () => {
             try {
                 const keys = [
@@ -251,7 +279,31 @@
                     if (res.ok) {
                         const data = await res.json();
                         if (data.value !== undefined && data.value !== null) {
-                            originalSetItem.call(localStorage, key, data.value);
+                            if (key === "bnvt-dealflow-v1") {
+                                const serverDb = JSON.parse(data.value);
+                                const clientDbStr = localStorage.getItem("bnvt-dealflow-v1");
+                                if (clientDbStr) {
+                                    const clientDb = JSON.parse(clientDbStr);
+                                    const mergedDb = {
+                                        companies: mergeLists(clientDb.companies, serverDb.companies, "id"),
+                                        investors: mergeLists(clientDb.investors, serverDb.investors, "id"),
+                                        deepDives: mergeLists(clientDb.deepDives, serverDb.deepDives, "id"),
+                                        founderProfiles: mergeLists(clientDb.founderProfiles, serverDb.founderProfiles, "id")
+                                    };
+                                    const mergedStr = JSON.stringify(mergedDb);
+                                    originalSetItem.call(localStorage, key, mergedStr);
+                                    // Send merged database back to server
+                                    await fetch('/api/storage', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ key, value: mergedStr })
+                                    }).catch(() => {});
+                                } else {
+                                    originalSetItem.call(localStorage, key, data.value);
+                                }
+                            } else {
+                                originalSetItem.call(localStorage, key, data.value);
+                            }
                         }
                     }
                 }
