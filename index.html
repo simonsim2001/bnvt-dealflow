@@ -36,46 +36,122 @@
             overflow-wrap: anywhere;
         }
 
-        /* Mobile Responsive Overrides */
+        /* Mobile Responsive Overrides (iPhone 15 Pro, max-width: 768px) */
         @media (max-width: 768px) {
-            /* 1. Force grid layouts into single-column stacking */
-            div[style*="display: grid"], div[style*="display:grid"] {
-                grid-template-columns: 1fr !important;
-                gap: 12px !important;
+            /* 1. Reset padding and container widths */
+            .app-container {
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-x: hidden !important;
             }
-
-            /* 2. Adjust main content page padding */
-            div[style*="padding: 24px 28px"], div[style*="padding:24px 28px"] {
-                padding: 12px 12px !important;
+            .app-body {
+                padding: 12px 10px !important;
             }
-
-            /* 3. Make header rows wrap nicely */
-            div[style*="justify-content: space-between"], div[style*="justify-content:space-between"] {
+            .app-header {
+                padding: 12px 12px 0 12px !important;
                 flex-direction: column !important;
                 align-items: stretch !important;
-                gap: 10px !important;
+                gap: 8px !important;
+            }
+            .app-title {
+                font-size: 20px !important;
+                margin-bottom: 8px !important;
             }
 
-            /* 4. Fix top navigation/tab bar so it scrolls horizontally instead of squishing, and hide scrollbars */
-            div[style*="display: flex"][style*="gap: 0"], div[style*="display:flex"][style*="gap:0"] {
+            /* 2. Top-level swipeable, clean horizontal scrolling navigation tab bar */
+            .tab-bar-container {
+                display: flex !important;
                 flex-direction: row !important;
                 flex-wrap: nowrap !important;
                 overflow-x: auto !important;
                 -webkit-overflow-scrolling: touch;
-                border-bottom: 1px solid #ccc !important;
-                padding-bottom: 2px !important;
+                gap: 0 !important;
+                width: 100% !important;
+                border-bottom: 1.5px solid #000 !important;
+                padding-bottom: 0 !important;
             }
-            div[style*="display: flex"][style*="gap: 0"]::-webkit-scrollbar, div[style*="display:flex"][style*="gap:0"]::-webkit-scrollbar {
+            .tab-bar-container::-webkit-scrollbar {
                 display: none !important;
             }
-            div[style*="display: flex"][style*="gap: 0"] button, div[style*="display:flex"][style*="gap:0"] button {
+            .tab-button {
                 flex: 0 0 auto !important;
                 width: auto !important;
-                padding: 10px 12px !important;
+                font-size: 11.5px !important;
+                padding: 8px 12px !important;
+                white-space: nowrap !important;
+                border-bottom-width: 2px !important;
             }
 
-            /* 5. Make modals, side sheets, and details panels full width on small screens */
-            div[style*="width: 320px"], div[style*="width: 350px"], div[style*="width: 400px"], div[style*="width: 30%"], div[style*="width: 40%"] {
+            /* 3. Grid layouts stack into clean single columns */
+            .cards-grid,
+            div[style*="display: grid"],
+            div[style*="display:grid"] {
+                grid-template-columns: 1fr !important;
+                gap: 12px !important;
+            }
+
+            /* 4. Table Containers: Swipe horizontally, auto wrap cell containers, keep headings well aligned */
+            div:has(> table), 
+            div[style*="overflow-x: auto"] {
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch;
+                max-width: 100% !important;
+                border: 1px solid #E5E5E0 !important;
+                margin-bottom: 14px !important;
+                background: #fff !important;
+            }
+            table {
+                width: 100% !important;
+                table-layout: auto !important;
+                border-collapse: collapse !important;
+            }
+            th, td {
+                font-size: 11px !important;
+                line-height: 1.35 !important;
+                padding: 6px 8px !important;
+                white-space: nowrap !important; /* Prevents words getting chopped awkwardly */
+                word-break: keep-all !important;
+                overflow-wrap: normal !important;
+                text-align: left !important;
+            }
+            th {
+                font-weight: 600 !important;
+                background-color: #F4F4F0 !important;
+                border-bottom: 1.5px solid #000 !important;
+            }
+
+            /* 5. Buttons: clean sizes, never cut words, make them small and perfectly fitted */
+            button, 
+            .bnvt-btn,
+            div[style*="display: flex"] > button {
+                font-size: 11px !important;
+                padding: 6px 10px !important;
+                white-space: nowrap !important;
+                text-overflow: ellipsis !important;
+                overflow: hidden !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+                height: auto !important;
+                line-height: 1 !important;
+            }
+
+            /* 6. Form inputs and select controls styling */
+            input, select, textarea, .bnvt-input, .bnvt-textarea {
+                max-width: 100% !important;
+                font-size: 14px !important;
+                padding: 6px 8px !important;
+                box-sizing: border-box !important;
+            }
+
+            /* 7. Side Drawer & Modals become mobile bottom sheets */
+            div[style*="width: 320px"], 
+            div[style*="width: 350px"], 
+            div[style*="width: 400px"], 
+            div[style*="width: 30%"], 
+            div[style*="width: 40%"] {
                 width: 100% !important;
                 max-width: 100% !important;
                 position: fixed !important;
@@ -83,15 +159,18 @@
                 right: 0 !important;
                 bottom: 0 !important;
                 top: auto !important;
-                height: 80% !important;
+                height: 85% !important;
                 border-radius: 16px 16px 0 0 !important;
+                border-left: none !important;
+                border-top: 2px solid #000 !important;
                 z-index: 1000 !important;
+                box-shadow: 0 -4px 20px rgba(0,0,0,0.15) !important;
+                overflow-y: auto !important;
             }
 
-            /* 6. Ensure inputs have at least 16px font-size to prevent automatic iOS Safari zoom-on-focus */
-            input, select, textarea {
-                max-width: 100% !important;
-                font-size: 16px !important;
+            /* 8. Spacers and wrappers adjustments */
+            div[style*="gap: 24px"], div[style*="gap: 20px"] {
+                gap: 12px !important;
             }
         }
     </style>
