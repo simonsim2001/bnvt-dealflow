@@ -117,29 +117,211 @@ def get_stored_value(key):
         return os.environ.get("GRANOLA_API_KEY")
     return None
 
-def call_claude_api(api_key, prompt, use_search=False):
-    url = "https://api.anthropic.com/v1/messages"
-    headers = {
-        "Content-Type": "application/json",
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-    }
+def get_llm_config():
+    config = {"provider": "groq", "model": "llama-3.3-70b-versatile", "search_model": "llama-3.3-70b-versatile"}
     
-    messages = [
-        {"role": "user", "content": prompt}
-    ]
-    
-    payload = {
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 4000,
-        "messages": messages
-    }
-    if use_search:
-        headers["anthropic-beta"] = "web-search-2025-03-05"
-        payload["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
+    # Check if config file exists
+    config_path = os.path.join('db_storage', 'llm_config.json')
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                config.update(data)
+                return config
+        except Exception:
+            pass
+            
+    # Auto-detect provider based on available keys/env vars if config doesn't exist
+    if get_stored_value("groq_api_key") or os.environ.get("GROQ_API_KEY"):
+        config["provider"] = "groq"
+        config["model"] = "llama-3.3-70b-versatile"
+        config["search_model"] = "llama-3.3-70b-versatile"
+    elif get_stored_value("openrouter_api_key") or os.environ.get("OPENROUTER_API_KEY"):
+        config["provider"] = "openrouter"
+        config["model"] = "google/gemini-2.5-flash"
+        config["search_model"] = "google/gemini-2.5-flash"
+    elif get_stored_value("deepseek_api_key") or os.environ.get("DEEPSEEK_API_KEY"):
+        config["provider"] = "deepseek"
+        config["model"] = "deepseek-chat"
+        config["search_model"] = "deepseek-chat"
+    elif get_stored_value("openai_api_key") or os.environ.get("OPENAI_API_KEY"):
+        config["provider"] = "openai"
+        config["model"] = "gpt-4o-mini"
+        config["search_model"] = "gpt-4o-mini"
+    elif get_stored_value("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY"):
+        config["provider"] = "anthropic"
+        config["model"] = "claude-sonnet-4-6"
+        config["search_model"] = "claude-sonnet-4-6"
+        
+    return config
 
-    max_loops = 5
-    for loop_idx in range(max_loops):
+def call_claude_api(api_key, prompt, use_search=False):
+    config = get_llm_config()
+    provider = config.get("provider", "anthropic")
+    
+    if provider == "anthropic":
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        }
+        
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+        
+        payload = {
+            "model": config.get("model", "claude-sonnet-4-6"),
+            "max_tokens": 4000,
+            "messages": messages
+        }
+        if use_search:
+            headers["anthropic-beta"] = "web-search-2025-03-05"
+            payload["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
+
+        max_loops = 5
+        for loop_idx in range(max_loops):
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers=headers,
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req) as response:
+                    res_data = response.read()
+                    res_json = json.loads(res_data.decode('utf-8'))
+                    
+                    stop_reason = res_json.get('stop_reason')
+                    content = res_json.get('content', [])
+                    
+                    print(f"[DEBUG CLAUDE] Loop {loop_idx}: stop_reason={stop_reason}")
+                    print(f"[DEBUG CLAUDE] Loop {loop_idx} content={content}")
+                    
+                    has_tool_use = any(block.get('type') in ('server_tool_use', 'tool_use') for block in content)
+                    
+                    if stop_reason == 'end_turn' and not has_tool_use:
+                        text_blocks = [b.get('text', '') for b in content if b.get('type') == 'text']
+                        if text_blocks:
+                            text_val = "".join(text_blocks).strip()
+                            print(f"[DEBUG CLAUDE] Loop {loop_idx} returning combined: {text_val}")
+                            return text_val
+                        raise Exception(f"Claude resolved request, but no text output was returned: {res_json}")
+                    
+                    elif stop_reason == 'pause_turn' or (stop_reason == 'end_turn' and has_tool_use):
+                        # Append assistant message content and loop again
+                        print(f"[DEBUG CLAUDE] Loop {loop_idx} pausing/tool-using and appending to messages.")
+                        assistant_content = []
+                        user_content = []
+                        for block in content:
+                            b_type = block.get('type')
+                            if b_type == 'text':
+                                assistant_content.append(block)
+                            elif b_type == 'server_tool_use':
+                                assistant_content.append({
+                                    "type": "tool_use",
+                                    "id": block["id"],
+                                    "name": block.get("name", "web_search"),
+                                    "input": block["input"]
+                                })
+                            elif b_type == 'tool_use':
+                                assistant_content.append(block)
+                            elif b_type == 'web_search_tool_result':
+                                user_content.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": block["tool_use_id"],
+                                    "content": json.dumps(block.get("content", ""))
+                                })
+                            elif b_type == 'tool_result':
+                                user_content.append(block)
+                        
+                        if assistant_content:
+                            messages.append({
+                                "role": "assistant",
+                                "content": assistant_content
+                            })
+                        if user_content:
+                            messages.append({
+                                "role": "user",
+                                "content": user_content
+                            })
+                        else:
+                            messages.append({
+                                "role": "assistant",
+                                "content": content
+                            })
+                        payload["messages"] = messages
+                        continue
+                    
+                    else:
+                        text_blocks = [b.get('text', '') for b in content if b.get('type') == 'text']
+                        if text_blocks:
+                            text_val = "\n".join(text_blocks).strip()
+                            print(f"[DEBUG CLAUDE] Loop {loop_idx} returning else fallback: {text_val}")
+                            return text_val
+                        raise Exception(f"Unexpected response format from Claude (stop_reason: {stop_reason}): {res_json}")
+                        
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode('utf-8', errors='ignore')
+                print(f"Error calling Anthropic API: {e} - Details: {err_body}")
+                try:
+                    err_json = json.loads(err_body)
+                    err_msg = err_json.get('error', {}).get('message')
+                    if err_msg:
+                        raise Exception(f"Claude API error: {err_msg}")
+                except Exception as json_err:
+                    if "Claude API error" in str(json_err):
+                        raise json_err
+                raise Exception(f"Claude API returned HTTP {e.code}: {err_body}")
+            except Exception as e:
+                print(f"Error calling Anthropic API: {e}")
+                raise e
+
+        raise Exception("Anthropic API failed to resolve after maximum search loops.")
+
+    elif provider in ("openrouter", "deepseek", "groq", "openai"):
+        prov_key = get_stored_value(f"{provider}_api_key") or os.environ.get(f"{provider.upper()}_API_KEY")
+        if not prov_key:
+            prov_key = api_key
+            
+        model = config.get("search_model") if use_search else config.get("model")
+        
+        if provider == "openrouter":
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {prov_key}",
+                "HTTP-Referer": "https://bnvt-dealflow.onrender.com",
+                "X-Title": "BNVT Dealflow"
+            }
+        elif provider == "deepseek":
+            url = "https://api.deepseek.com/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {prov_key}"
+            }
+        elif provider == "groq":
+            url = "https://api.groq.com/openapi/v1/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {prov_key}"
+            }
+        elif provider == "openai":
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {prov_key}"
+            }
+            
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 4000
+        }
+        
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode('utf-8'),
@@ -150,93 +332,20 @@ def call_claude_api(api_key, prompt, use_search=False):
             with urllib.request.urlopen(req) as response:
                 res_data = response.read()
                 res_json = json.loads(res_data.decode('utf-8'))
-                
-                stop_reason = res_json.get('stop_reason')
-                content = res_json.get('content', [])
-                
-                print(f"[DEBUG CLAUDE] Loop {loop_idx}: stop_reason={stop_reason}")
-                print(f"[DEBUG CLAUDE] Loop {loop_idx} content={content}")
-                
-                has_tool_use = any(block.get('type') in ('server_tool_use', 'tool_use') for block in content)
-                
-                if stop_reason == 'end_turn' and not has_tool_use:
-                    text_blocks = [b.get('text', '') for b in content if b.get('type') == 'text']
-                    if text_blocks:
-                        text_val = "".join(text_blocks).strip()
-                        print(f"[DEBUG CLAUDE] Loop {loop_idx} returning combined: {text_val}")
-                        return text_val
-                    raise Exception(f"Claude resolved request, but no text output was returned: {res_json}")
-                
-                elif stop_reason == 'pause_turn' or (stop_reason == 'end_turn' and has_tool_use):
-                    # Append assistant message content and loop again
-                    print(f"[DEBUG CLAUDE] Loop {loop_idx} pausing/tool-using and appending to messages.")
-                    assistant_content = []
-                    user_content = []
-                    for block in content:
-                        b_type = block.get('type')
-                        if b_type == 'text':
-                            assistant_content.append(block)
-                        elif b_type == 'server_tool_use':
-                            assistant_content.append({
-                                "type": "tool_use",
-                                "id": block["id"],
-                                "name": block.get("name", "web_search"),
-                                "input": block["input"]
-                            })
-                        elif b_type == 'tool_use':
-                            assistant_content.append(block)
-                        elif b_type == 'web_search_tool_result':
-                            user_content.append({
-                                "type": "tool_result",
-                                "tool_use_id": block["tool_use_id"],
-                                "content": json.dumps(block.get("content", ""))
-                            })
-                        elif b_type == 'tool_result':
-                            user_content.append(block)
-                    
-                    if assistant_content:
-                        messages.append({
-                            "role": "assistant",
-                            "content": assistant_content
-                        })
-                    if user_content:
-                        messages.append({
-                            "role": "user",
-                            "content": user_content
-                        })
-                    else:
-                        messages.append({
-                            "role": "assistant",
-                            "content": content
-                        })
-                    payload["messages"] = messages
-                    continue
-                
-                else:
-                    text_blocks = [b.get('text', '') for b in content if b.get('type') == 'text']
-                    if text_blocks:
-                        text_val = "\n".join(text_blocks).strip()
-                        print(f"[DEBUG CLAUDE] Loop {loop_idx} returning else fallback: {text_val}")
-                        return text_val
-                    raise Exception(f"Unexpected response format from Claude (stop_reason: {stop_reason}): {res_json}")
-                    
+                choices = res_json.get('choices', [])
+                if choices:
+                    content = choices[0].get('message', {}).get('content', '').strip()
+                    return content
+                raise Exception(f"Unexpected response format from {provider}: {res_json}")
         except urllib.error.HTTPError as e:
             err_body = e.read().decode('utf-8', errors='ignore')
-            print(f"Error calling Anthropic API: {e} - Details: {err_body}")
-            try:
-                err_json = json.loads(err_body)
-                err_msg = err_json.get('error', {}).get('message')
-                if err_msg:
-                    raise Exception(f"Claude API error: {err_msg}")
-            except Exception as json_err:
-                if "Claude API error" in str(json_err):
-                    raise json_err
-            raise Exception(f"Claude API returned HTTP {e.code}: {err_body}")
+            print(f"Error calling {provider} API: {e} - Details: {err_body}")
+            raise Exception(f"{provider} API error: {err_body}")
         except Exception as e:
-            print(f"Error calling Anthropic API: {e}")
+            print(f"Error calling {provider} API: {e}")
             raise e
-
-    raise Exception("Anthropic API failed to resolve after maximum search loops.")
+    else:
+        raise Exception(f"Unsupported LLM provider: {provider}")
 
 
 
@@ -586,6 +695,69 @@ def check_auth(handler):
         return True
         
     return False
+
+def merge_list(client_list, server_list, key_field):
+    # Maps by key_field (id)
+    client_map = {item.get(key_field): item for item in client_list if item.get(key_field)}
+    server_map = {item.get(key_field): item for item in server_list if item.get(key_field)}
+    
+    merged_list = []
+    
+    # Iterate client items to preserve UI-defined order/edits
+    for item in client_list:
+        item_id = item.get(key_field)
+        if not item_id:
+            merged_list.append(item)
+            continue
+            
+        if item_id in server_map:
+            server_item = server_map[item_id]
+            merged_item = dict(server_item) # Start with server properties
+            merged_item.update(item)        # Overwrite with client modifications
+            
+            # Combine notes list (union + deduplicate + sort by timestamp)
+            if "notes" in item or "notes" in server_item:
+                client_notes = item.get("notes", [])
+                server_notes = server_item.get("notes", [])
+                if isinstance(client_notes, list) and isinstance(server_notes, list):
+                    notes_map = {}
+                    for note in server_notes:
+                        note_id = note.get("id") or note.get("ts") or note.get("date")
+                        if note_id:
+                            notes_map[note_id] = note
+                    for note in client_notes:
+                        note_id = note.get("id") or note.get("ts") or note.get("date")
+                        if note_id:
+                            notes_map[note_id] = note
+                    
+                    combined_notes = list(notes_map.values())
+                    def get_note_time(n):
+                        return n.get("date") or n.get("ts") or n.get("createdAt") or 0
+                    try:
+                        combined_notes.sort(key=get_note_time, reverse=True)
+                    except Exception:
+                        pass
+                    merged_item["notes"] = combined_notes
+            
+            merged_list.append(merged_item)
+        else:
+            merged_list.append(item)
+            
+    # Add server-only items (e.g. newly ingested via WhatsApp while client tab was open)
+    for item_id, item in server_map.items():
+        if item_id not in client_map:
+            # Prepend so new incoming deals are visible at top immediately
+            merged_list.insert(0, item)
+            
+    return merged_list
+
+def merge_databases(client_db, server_db):
+    return {
+        "companies": merge_list(client_db.get("companies", []), server_db.get("companies", []), "id"),
+        "investors": merge_list(client_db.get("investors", []), server_db.get("investors", []), "id"),
+        "deepDives": merge_list(client_db.get("deepDives", []), server_db.get("deepDives", []), "id"),
+        "founderProfiles": merge_list(client_db.get("founderProfiles", []), server_db.get("founderProfiles", []), "id")
+    }
 
 def read_db():
     db = {"companies": [], "investors": [], "deepDives": [], "founderProfiles": []}
@@ -1987,86 +2159,211 @@ Respond ONLY with valid JSON.
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length) if content_length > 0 else b''
             
-            # Retrieve API key: client header has priority, environment variable is fallback
-            api_key = self.headers.get('X-Anthropic-API-Key')
-            if not api_key:
-                api_key = os.environ.get("ANTHROPIC_API_KEY")
-                
-            if not api_key:
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({
-                    "error": {
-                        "message": "No Anthropic API Key provided. Please enter it in the 'CLAUDE API KEY' field in the top header of the page, or set the ANTHROPIC_API_KEY environment variable in your terminal before launching."
-                    }
-                }).encode('utf-8'))
-                return
-
-            # Read anthropic-beta header from client request
-            beta_header = self.headers.get('anthropic-beta')
-            if not beta_header:
-                # If not provided, check if web_search is in post_data tools
+            # Load LLM config
+            llm_config = get_llm_config()
+            provider = llm_config.get("provider", "anthropic")
+            
+            if provider != "anthropic":
                 try:
                     import json as pyjson
-                    body_json = pyjson.loads(post_data.decode('utf-8'))
-                    has_search = False
-                    for tool in body_json.get('tools', []):
-                        if tool.get('type') == 'web_search_20250305':
-                            has_search = True
-                            break
-                    if has_search:
-                        beta_header = "web-search-2025-03-05"
-                except Exception:
-                    pass
+                    incoming_payload = pyjson.loads(post_data.decode('utf-8'))
+                    
+                    prov_key = get_stored_value(f"{provider}_api_key") or os.environ.get(f"{provider.upper()}_API_KEY")
+                    if not prov_key:
+                        # Fallback to incoming auth headers if no local key exists
+                        auth_header = self.headers.get('Authorization', '')
+                        if auth_header.startswith('Bearer '):
+                            prov_key = auth_header[7:].strip()
+                            
+                    if not prov_key:
+                        raise Exception(f"API key for provider '{provider}' is not configured.")
+                        
+                    model = llm_config.get("search_model") if incoming_payload.get("tools") else llm_config.get("model")
+                    
+                    openai_messages = []
+                    for msg in incoming_payload.get("messages", []):
+                        role = msg.get("role")
+                        content = msg.get("content")
+                        text_content = ""
+                        if isinstance(content, str):
+                            text_content = content
+                        elif isinstance(content, list):
+                            for block in content:
+                                if isinstance(block, dict):
+                                    if block.get("type") == "text":
+                                        text_content += block.get("text", "")
+                                elif isinstance(block, str):
+                                    text_content += block
+                        openai_messages.append({"role": role, "content": text_content})
+                        
+                    # Build request to alternative provider
+                    if provider == "openrouter":
+                        url = "https://openrouter.ai/api/v1/chat/completions"
+                        headers = {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {prov_key}",
+                            "HTTP-Referer": "https://bnvt-dealflow.onrender.com",
+                            "X-Title": "BNVT Dealflow"
+                        }
+                    elif provider == "deepseek":
+                        url = "https://api.deepseek.com/chat/completions"
+                        headers = {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {prov_key}"
+                        }
+                    elif provider == "groq":
+                        url = "https://api.groq.com/openapi/v1/chat/completions"
+                        headers = {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {prov_key}"
+                        }
+                    elif provider == "openai":
+                        url = "https://api.openai.com/v1/chat/completions"
+                        headers = {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {prov_key}"
+                        }
+                        
+                    outgoing_payload = {
+                        "model": model,
+                        "messages": openai_messages,
+                        "max_tokens": incoming_payload.get("max_tokens", 4000)
+                    }
+                    
+                    outgoing_req = urllib.request.Request(
+                        url,
+                        data=pyjson.dumps(outgoing_payload).encode('utf-8'),
+                        headers=headers,
+                        method="POST"
+                    )
+                    
+                    with urllib.request.urlopen(outgoing_req) as response:
+                        res_data = response.read()
+                        res_json = pyjson.loads(res_data.decode('utf-8'))
+                        choices = res_json.get('choices', [])
+                        if choices:
+                            assistant_text = choices[0].get('message', {}).get('content', '')
+                            # Translate back to Anthropic response format
+                            anthropic_response = {
+                                "id": f"msg_mock_{uuid.uuid4().hex[:12]}",
+                                "type": "message",
+                                "role": "assistant",
+                                "model": model,
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": assistant_text
+                                    }
+                                ],
+                                "stop_reason": "end_turn",
+                                "stop_sequence": None,
+                                "usage": {
+                                    "input_tokens": 0,
+                                    "output_tokens": 0
+                                }
+                            }
+                            res_bytes = pyjson.dumps(anthropic_response).encode('utf-8')
+                            self.send_response(200)
+                            self.send_header("Content-Type", "application/json")
+                            self.send_header("Content-Length", str(len(res_bytes)))
+                            self.end_headers()
+                            self.wfile.write(res_bytes)
+                            return
+                        else:
+                            raise Exception(f"No completions returned from {provider}")
+                            
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(pyjson.dumps({
+                        "error": {
+                            "message": f"Adapter translation failed: {str(e)}"
+                        }
+                    }).encode('utf-8'))
+                    return
 
-            # Build Anthropic API request
-            headers = {
-                "Content-Type": "application/json",
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "anthropic-dangerously-allow-browser": "true"
-            }
-            if beta_header:
-                headers["anthropic-beta"] = beta_header
-            
-            req = urllib.request.Request(
-                "https://api.anthropic.com/v1/messages",
-                data=post_data,
-                headers=headers,
-                method="POST"
-            )
-            
-            try:
-                with urllib.request.urlopen(req) as response:
-                    res_data = response.read()
-                    self.send_response(response.status)
-                    # Forward non-hop-by-hop headers
-                    for key, val in response.headers.items():
+            else:
+                # Retrieve API key: client header has priority, environment variable is fallback
+                api_key = self.headers.get('X-Anthropic-API-Key')
+                if not api_key:
+                    api_key = os.environ.get("ANTHROPIC_API_KEY")
+                    
+                if not api_key:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "error": {
+                            "message": "No Anthropic API Key provided. Please enter it in the 'CLAUDE API KEY' field in the top header of the page, or set the ANTHROPIC_API_KEY environment variable in your terminal before launching."
+                        }
+                    }).encode('utf-8'))
+                    return
+
+                # Read anthropic-beta header from client request
+                beta_header = self.headers.get('anthropic-beta')
+                if not beta_header:
+                    # If not provided, check if web_search is in post_data tools
+                    try:
+                        import json as pyjson
+                        body_json = pyjson.loads(post_data.decode('utf-8'))
+                        has_search = False
+                        for tool in body_json.get('tools', []):
+                            if tool.get('type') == 'web_search_20250305':
+                                has_search = True
+                                break
+                        if has_search:
+                            beta_header = "web-search-2025-03-05"
+                    except Exception:
+                        pass
+
+                # Build Anthropic API request
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "anthropic-dangerously-allow-browser": "true"
+                }
+                if beta_header:
+                    headers["anthropic-beta"] = beta_header
+                
+                req = urllib.request.Request(
+                    "https://api.anthropic.com/v1/messages",
+                    data=post_data,
+                    headers=headers,
+                    method="POST"
+                )
+                
+                try:
+                    with urllib.request.urlopen(req) as response:
+                        res_data = response.read()
+                        self.send_response(response.status)
+                        # Forward non-hop-by-hop headers
+                        for key, val in response.headers.items():
+                            if key.lower() not in ('content-encoding', 'transfer-encoding', 'content-length', 'connection'):
+                                self.send_header(key, val)
+                        self.send_header('Content-Length', str(len(res_data)))
+                        self.end_headers()
+                        self.wfile.write(res_data)
+                except urllib.error.HTTPError as e:
+                    err_data = e.read()
+                    self.send_response(e.code)
+                    for key, val in e.headers.items():
                         if key.lower() not in ('content-encoding', 'transfer-encoding', 'content-length', 'connection'):
                             self.send_header(key, val)
-                    self.send_header('Content-Length', str(len(res_data)))
+                    self.send_header('Content-Length', str(len(err_data)))
                     self.end_headers()
-                    self.wfile.write(res_data)
-            except urllib.error.HTTPError as e:
-                err_data = e.read()
-                self.send_response(e.code)
-                for key, val in e.headers.items():
-                    if key.lower() not in ('content-encoding', 'transfer-encoding', 'content-length', 'connection'):
-                        self.send_header(key, val)
-                self.send_header('Content-Length', str(len(err_data)))
-                self.end_headers()
-                self.wfile.write(err_data)
-            except Exception as e:
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({
-                    "error": {
-                        "message": f"Proxy request failed: {str(e)}"
-                    }
-                }).encode('utf-8'))
-            return
+                    self.wfile.write(err_data)
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "error": {
+                            "message": f"Proxy request failed: {str(e)}"
+                        }
+                    }).encode('utf-8'))
+                return
 
         elif self.path == '/api/granola':
             content_length = int(self.headers.get('Content-Length', 0))
@@ -2251,18 +2548,74 @@ Respond ONLY with valid JSON.
                 if not key:
                     raise Exception("Missing key")
                 
-                if os.environ.get("DATABASE_URL"):
-                    set_sql_value(key, value)
+                if key == 'bnvt-dealflow-v1':
+                    with db_lock:
+                        # 1. Read latest database state from server
+                        db_latest = read_db()
+                        
+                        # 2. Parse client-submitted state
+                        try:
+                            client_db = json.loads(value)
+                        except Exception:
+                            client_db = {"companies": [], "investors": [], "deepDives": [], "founderProfiles": []}
+                            
+                        # 3. Perform smart list-level merge to prevent clobbering
+                        merged_db = merge_databases(client_db, db_latest)
+                        merged_str = json.dumps(merged_db, ensure_ascii=False)
+                        
+                        # 4. Save merged state to SQL / local JSON file
+                        if os.environ.get("DATABASE_URL"):
+                            set_sql_value(key, merged_str)
+                            
+                        os.makedirs('db_storage', exist_ok=True)
+                        path = os.path.join('db_storage', f"{key}.json")
+                        outer_data = {
+                            "key": key,
+                            "value": merged_str
+                        }
+                        with open(path, 'w', encoding='utf-8') as f:
+                            json.dump(outer_data, f, indent=2, ensure_ascii=False)
+                            
+                        # 5. Return success and the merged state back to client
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "success": True,
+                            "value": merged_str,
+                            "merged_value": merged_str
+                        }).encode('utf-8'))
+                        
+                elif key == 'llm_config':
+                    try:
+                        config_data = json.loads(value)
+                    except Exception:
+                        config_data = {"provider": "groq", "model": "llama-3.3-70b-versatile", "search_model": "llama-3.3-70b-versatile"}
+                        
+                    os.makedirs('db_storage', exist_ok=True)
+                    path = os.path.join('db_storage', 'llm_config.json')
+                    with open(path, 'w', encoding='utf-8') as f:
+                        json.dump(config_data, f, indent=2, ensure_ascii=False)
+                        
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
                     
-                os.makedirs('db_storage', exist_ok=True)
-                path = os.path.join('db_storage', f"{key}.json")
-                with open(path, 'w', encoding='utf-8') as f:
-                    json.dump({"key": key, "value": value}, f, indent=2, ensure_ascii=False)
-                
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+                else:
+                    # Write key directly to file (e.g. granola_api_key, groq_api_key, etc.)
+                    if os.environ.get("DATABASE_URL"):
+                        set_sql_value(key, value)
+                        
+                    os.makedirs('db_storage', exist_ok=True)
+                    path = os.path.join('db_storage', f"{key}.json")
+                    with open(path, 'w', encoding='utf-8') as f:
+                        json.dump({"key": key, "value": value}, f, indent=2, ensure_ascii=False)
+                    
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
             except Exception as e:
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
