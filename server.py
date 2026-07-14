@@ -1377,6 +1377,24 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
             
+            # Fallback to environment variables for API keys
+            env_map = {
+                "anthropic_api_key": "ANTHROPIC_API_KEY",
+                "groq_api_key": "GROQ_API_KEY",
+                "openrouter_api_key": "OPENROUTER_API_KEY",
+                "deepseek_api_key": "DEEPSEEK_API_KEY",
+                "openai_api_key": "OPENAI_API_KEY",
+                "granola_api_key": "GRANOLA_API_KEY"
+            }
+            if key in env_map:
+                env_val = os.environ.get(env_map[key])
+                if env_val:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"key": key, "value": env_val}).encode('utf-8'))
+                    return
+            
             # Key not found
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
