@@ -306,7 +306,7 @@ def call_claude_api(api_key, prompt, use_search=False):
                 "User-Agent": user_agent
             }
         elif provider == "groq":
-            url = "https://api.groq.com/openapi/v1/chat/completions"
+            url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {prov_key}",
@@ -2240,7 +2240,7 @@ Respond ONLY with valid JSON.
                             "User-Agent": user_agent
                         }
                     elif provider == "groq":
-                        url = "https://api.groq.com/openapi/v1/chat/completions"
+                        url = "https://api.groq.com/openai/v1/chat/completions"
                         headers = {
                             "Content-Type": "application/json",
                             "Authorization": f"Bearer {prov_key}",
