@@ -1528,14 +1528,15 @@ function useVoice(onText) {
 
 // ---- Small UI atoms ------------------------------------------------------------
 
-const Label = ({ children }) => (
-  <div style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: FADE, marginBottom: 6 }}>
+const Label = ({ children, style }) => (
+  <div className="bnvt-label" style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: FADE, marginBottom: 6, ...style }}>
     {children}
   </div>
 );
 
 const Btn = ({ children, onClick, primary, danger, small, disabled, style }) => (
   <button
+    className="bnvt-btn"
     onClick={onClick}
     disabled={disabled}
     style={{
@@ -1556,6 +1557,7 @@ const Btn = ({ children, onClick, primary, danger, small, disabled, style }) => 
 const Input = (props) => (
   <input
     {...props}
+    className="bnvt-input"
     style={{
       width: "100%", fontFamily: fontStack.ui, fontSize: 13, padding: "9px 10px",
       border: `1px solid ${LINE}`, borderRadius: 2, background: "#fff", color: INK,
@@ -1567,6 +1569,7 @@ const Input = (props) => (
 const TextArea = (props) => (
   <textarea
     {...props}
+    className="bnvt-textarea"
     style={{
       width: "100%", fontFamily: fontStack.ui, fontSize: 13, padding: "9px 10px",
       border: `1px solid ${LINE}`, borderRadius: 2, background: "#fff", color: INK,
@@ -3135,18 +3138,16 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: PAPER, color: INK, fontFamily: fontStack.ui }}>
+    <div className="app-container" style={{ minHeight: "100vh", background: PAPER, color: INK, fontFamily: fontStack.ui }}>
       {/* Header */}
-      <div style={{ borderBottom: `1px solid ${INK}`, padding: "18px 28px 0 28px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      <div className="app-header" style={{ borderBottom: `1px solid ${INK}`, padding: "18px 28px 0 28px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.18em", color: BLUE }}>BNVT CAPITAL</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 24, flexWrap: "wrap" }}>
-            <div style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 30, lineHeight: 1.1, marginBottom: 14 }}>
+            <div className="app-title" style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 30, lineHeight: 1.1, marginBottom: 14 }}>
               Dealflow Atelier
             </div>
             
-
-
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
               <Btn 
                 small 
@@ -3167,10 +3168,11 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 0 }}>
+        <div className="tab-bar-container" style={{ display: "flex", gap: 0 }}>
           {tabs.map(([k, label]) => (
             <button
               key={k}
+              className={`tab-button ${tab === k ? "active" : ""}`}
               onClick={() => { setTab(k); setSelected(null); }}
               style={{
                 fontFamily: fontStack.ui, fontSize: 13, fontWeight: 500, cursor: "pointer",
@@ -3185,7 +3187,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         </div>
       </div>
 
-      <div style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
+      <div className="app-body" style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
         {tab === "pipeline" && (
           <Pipeline
             companies={companies}
