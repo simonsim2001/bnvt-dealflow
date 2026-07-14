@@ -704,15 +704,19 @@ def check_auth(handler):
         
     return False
 
-def merge_list(client_list, server_list, key_field):
+def merge_list(client_list, server_list, deleted_ids, key_field):
+    deleted_set = set(str(d) for d in deleted_ids)
+    client_filtered = [item for item in client_list if item.get(key_field) and str(item.get(key_field)) not in deleted_set]
+    server_filtered = [item for item in server_list if item.get(key_field) and str(item.get(key_field)) not in deleted_set]
+
     # Maps by key_field (id)
-    client_map = {item.get(key_field): item for item in client_list if item.get(key_field)}
-    server_map = {item.get(key_field): item for item in server_list if item.get(key_field)}
+    client_map = {item.get(key_field): item for item in client_filtered if item.get(key_field)}
+    server_map = {item.get(key_field): item for item in server_filtered if item.get(key_field)}
     
     merged_list = []
     
     # Iterate client items to preserve UI-defined order/edits
-    for item in client_list:
+    for item in client_filtered:
         item_id = item.get(key_field)
         if not item_id:
             merged_list.append(item)
@@ -760,11 +764,16 @@ def merge_list(client_list, server_list, key_field):
     return merged_list
 
 def merge_databases(client_db, server_db):
+    client_deleted = client_db.get("deletedIds", []) if isinstance(client_db, dict) else []
+    server_deleted = server_db.get("deletedIds", []) if isinstance(server_db, dict) else []
+    combined_deleted = list(set(str(d) for d in client_deleted + server_deleted))
+    
     return {
-        "companies": merge_list(client_db.get("companies", []), server_db.get("companies", []), "id"),
-        "investors": merge_list(client_db.get("investors", []), server_db.get("investors", []), "id"),
-        "deepDives": merge_list(client_db.get("deepDives", []), server_db.get("deepDives", []), "id"),
-        "founderProfiles": merge_list(client_db.get("founderProfiles", []), server_db.get("founderProfiles", []), "id")
+        "companies": merge_list(client_db.get("companies", []), server_db.get("companies", []), combined_deleted, "id"),
+        "investors": merge_list(client_db.get("investors", []), server_db.get("investors", []), combined_deleted, "id"),
+        "deepDives": merge_list(client_db.get("deepDives", []), server_db.get("deepDives", []), combined_deleted, "id"),
+        "founderProfiles": merge_list(client_db.get("founderProfiles", []), server_db.get("founderProfiles", []), combined_deleted, "id"),
+        "deletedIds": combined_deleted
     }
 
 def read_db():

@@ -240,9 +240,10 @@
     <script type="text/babel" src="bnvt-dealflow.jsx?v=49.0"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script type="text/babel">
-        function mergeLists(clientList, serverList, keyAttr = "id") {
-            const clientArr = Array.isArray(clientList) ? clientList : [];
-            const serverArr = Array.isArray(serverList) ? serverList : [];
+        function mergeLists(clientList, serverList, deletedIds = [], keyAttr = "id") {
+            const deletedSet = new Set((deletedIds || []).map(String));
+            const clientArr = (Array.isArray(clientList) ? clientList : []).filter(item => item && item[keyAttr] && !deletedSet.has(String(item[keyAttr])));
+            const serverArr = (Array.isArray(serverList) ? serverList : []).filter(item => item && item[keyAttr] && !deletedSet.has(String(item[keyAttr])));
             const map = new Map();
             for (const item of clientArr) {
                 if (item && item[keyAttr]) map.set(String(item[keyAttr]), item);
@@ -284,11 +285,15 @@
                                 const clientDbStr = localStorage.getItem("bnvt-dealflow-v1");
                                 if (clientDbStr) {
                                     const clientDb = JSON.parse(clientDbStr);
+                                    const clientDeleted = clientDb.deletedIds || [];
+                                    const serverDeleted = serverDb.deletedIds || [];
+                                    const mergedDeleted = Array.from(new Set([...clientDeleted, ...serverDeleted]));
                                     const mergedDb = {
-                                        companies: mergeLists(clientDb.companies, serverDb.companies, "id"),
-                                        investors: mergeLists(clientDb.investors, serverDb.investors, "id"),
-                                        deepDives: mergeLists(clientDb.deepDives, serverDb.deepDives, "id"),
-                                        founderProfiles: mergeLists(clientDb.founderProfiles, serverDb.founderProfiles, "id")
+                                        companies: mergeLists(clientDb.companies, serverDb.companies, mergedDeleted, "id"),
+                                        investors: mergeLists(clientDb.investors, serverDb.investors, mergedDeleted, "id"),
+                                        deepDives: mergeLists(clientDb.deepDives, serverDb.deepDives, mergedDeleted, "id"),
+                                        founderProfiles: mergeLists(clientDb.founderProfiles, serverDb.founderProfiles, mergedDeleted, "id"),
+                                        deletedIds: mergedDeleted
                                     };
                                     const mergedStr = JSON.stringify(mergedDb);
                                     originalSetItem.call(localStorage, key, mergedStr);

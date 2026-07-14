@@ -2217,6 +2217,7 @@ window.App = function App() {
   const [investors, setInvestors] = useState([]);
   const [deepDives, setDeepDives] = useState([]);
   const [founderProfiles, setFounderProfiles] = useState([]);
+  const [deletedIds, setDeletedIds] = useState([]);
   const [distributePicked, setDistributePicked] = useState([]);
   const [distributeCompanyIds, setDistributeCompanyIds] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -2283,11 +2284,13 @@ window.App = function App() {
           setInvestors(deduplicateInvestors(d.investors?.length ? d.investors : SEED_INVESTORS));
           setDeepDives(d.deepDives || []);
           setFounderProfiles(d.founderProfiles?.length ? d.founderProfiles : SEED_FOUNDER_PROFILES);
+          setDeletedIds(d.deletedIds || []);
         } else {
           setCompanies(deduplicateCompanies(SEED_COMPANIES.map(c => ({ geo: "", priority: "Medium", founders: [], assets: [], preemption: false, preemptionModel: null, ...c }))));
           setInvestors(deduplicateInvestors(SEED_INVESTORS));
           setDeepDives([]);
           setFounderProfiles(SEED_FOUNDER_PROFILES);
+          setDeletedIds([]);
         }
       } catch (e) {
         console.error("Failed to load persistence", e);
@@ -2295,6 +2298,7 @@ window.App = function App() {
         setInvestors(deduplicateInvestors(SEED_INVESTORS));
         setDeepDives([]);
         setFounderProfiles(SEED_FOUNDER_PROFILES);
+        setDeletedIds([]);
       }
       setLoaded(true);
     })();
@@ -2304,10 +2308,10 @@ window.App = function App() {
   useEffect(() => {
     if (!loaded) return;
     const t = setTimeout(() => {
-      window.storage.set("bnvt-dealflow-v1", JSON.stringify({ companies, investors, deepDives, founderProfiles })).catch(() => {});
+      window.storage.set("bnvt-dealflow-v1", JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds })).catch(() => {});
     }, 600);
     return () => clearTimeout(t);
-  }, [companies, investors, deepDives, founderProfiles, loaded]);
+  }, [companies, investors, deepDives, founderProfiles, deletedIds, loaded]);
 
   // Poll server for database updates (e.g. from WhatsApp API)
   useEffect(() => {
@@ -2317,12 +2321,13 @@ window.App = function App() {
         const r = await window.storage.get("bnvt-dealflow-v1");
         if (r?.value) {
           const d = JSON.parse(r.value);
-          const currentStr = JSON.stringify({ companies, investors, deepDives, founderProfiles });
+          const currentStr = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds });
           const newStr = JSON.stringify({
             companies: d.companies || [],
             investors: d.investors || [],
             deepDives: d.deepDives || [],
-            founderProfiles: d.founderProfiles || []
+            founderProfiles: d.founderProfiles || [],
+            deletedIds: d.deletedIds || []
           });
           if (currentStr !== newStr) {
             console.log("Database updated on server. Syncing local state...");
@@ -2338,6 +2343,9 @@ window.App = function App() {
             if (JSON.stringify(founderProfiles) !== JSON.stringify(d.founderProfiles)) {
               setFounderProfiles(d.founderProfiles || []);
             }
+            if (JSON.stringify(deletedIds) !== JSON.stringify(d.deletedIds)) {
+              setDeletedIds(d.deletedIds || []);
+            }
           }
         }
       } catch (e) {
@@ -2345,7 +2353,7 @@ window.App = function App() {
       }
     }, 10000);
     return () => clearInterval(interval);
-  }, [companies, investors, deepDives, founderProfiles, loaded]);
+  }, [companies, investors, deepDives, founderProfiles, deletedIds, loaded]);
 
   // AI Diligence Queue Runner
   useEffect(() => {
@@ -3197,7 +3205,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             selected={selected}
             setSelected={setSelected}
             updateCompany={updateCompany}
-            removeCompany={(id) => { setCompanies((cs) => cs.filter((c) => c.id !== id)); setSelected(null); }}
+            removeCompany={(id) => { setCompanies((cs) => cs.filter((c) => c.id !== id)); setDeletedIds((prev) => [...prev, id]); setSelected(null); }}
             goDistribute={() => setTab("distribute")}
             queueActive={queueActive}
             setQueueActive={setQueueActive}
@@ -16054,7 +16062,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
         initial={editing === "new" ? null : editing} 
         onSave={save} 
         onCancel={() => setEditing(null)} 
-        onDelete={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setEditing(null); }} 
+        onDelete={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); setEditing(null); }} 
         setTab={setTab}
         setDistributePicked={setDistributePicked}
         setDistributeCompanyIds={setDistributeCompanyIds}
@@ -17716,6 +17724,7 @@ simon@bnvtcapital.com`;
     const filtered = deepDives.filter(d => d.id !== id);
     const updated = filtered.map((d, i) => ({ ...d, rank: i + 1 }));
     setDeepDives(updated);
+    setDeletedIds((prev) => [...prev, id]);
     if (selectedDeepDiveId === id) setSelectedDeepDiveId(null);
   };
 
@@ -21175,6 +21184,7 @@ function FounderAssessmentDashboard({ founderProfiles, setFounderProfiles, apiKe
   const handleDelete = (profileId) => {
     if (window.confirm("Are you sure you want to delete this founder profile permanently?")) {
       setFounderProfiles(prev => prev.filter(p => p.id !== profileId));
+      setDeletedIds((prev) => [...prev, profileId]);
     }
   };
 
