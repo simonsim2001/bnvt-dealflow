@@ -113,7 +113,16 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key, value })
-            }).catch(err => console.warn("Failed to sync localStorage item to server:", err));
+            })
+            .then(res => {
+                if (res.ok) return res.json();
+            })
+            .then(data => {
+                if (data && data.merged_value) {
+                    originalSetItem.call(localStorage, key, data.merged_value);
+                }
+            })
+            .catch(err => console.warn("Failed to sync localStorage item to server:", err));
         };
 
         if (!window.storage) {
@@ -154,7 +163,10 @@
     <script type="text/babel">
         const preSyncAndRender = async () => {
             try {
-                const keys = ["anthropic_api_key", "granola_api_key", "bnvt-dealflow-v1"];
+                const keys = [
+                    "anthropic_api_key", "granola_api_key", "bnvt-dealflow-v1",
+                    "llm_config", "groq_api_key", "openrouter_api_key", "deepseek_api_key", "openai_api_key"
+                ];
                 for (const key of keys) {
                     const res = await fetch(`/api/storage?key=${encodeURIComponent(key)}`);
                     if (res.ok) {
