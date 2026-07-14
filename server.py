@@ -287,31 +287,37 @@ def call_claude_api(api_key, prompt, use_search=False):
             
         model = config.get("search_model") if use_search else config.get("model")
         
+        user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        
         if provider == "openrouter":
             url = "https://openrouter.ai/api/v1/chat/completions"
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {prov_key}",
                 "HTTP-Referer": "https://bnvt-dealflow.onrender.com",
-                "X-Title": "BNVT Dealflow"
+                "X-Title": "BNVT Dealflow",
+                "User-Agent": user_agent
             }
         elif provider == "deepseek":
             url = "https://api.deepseek.com/chat/completions"
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {prov_key}"
+                "Authorization": f"Bearer {prov_key}",
+                "User-Agent": user_agent
             }
         elif provider == "groq":
             url = "https://api.groq.com/openapi/v1/chat/completions"
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {prov_key}"
+                "Authorization": f"Bearer {prov_key}",
+                "User-Agent": user_agent
             }
         elif provider == "openai":
             url = "https://api.openai.com/v1/chat/completions"
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {prov_key}"
+                "Authorization": f"Bearer {prov_key}",
+                "User-Agent": user_agent
             }
             
         payload = {
@@ -2196,6 +2202,8 @@ Respond ONLY with valid JSON.
                                     text_content += block
                         openai_messages.append({"role": role, "content": text_content})
                         
+                    user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    
                     # Build request to alternative provider
                     if provider == "openrouter":
                         url = "https://openrouter.ai/api/v1/chat/completions"
@@ -2203,25 +2211,29 @@ Respond ONLY with valid JSON.
                             "Content-Type": "application/json",
                             "Authorization": f"Bearer {prov_key}",
                             "HTTP-Referer": "https://bnvt-dealflow.onrender.com",
-                            "X-Title": "BNVT Dealflow"
+                            "X-Title": "BNVT Dealflow",
+                            "User-Agent": user_agent
                         }
                     elif provider == "deepseek":
                         url = "https://api.deepseek.com/chat/completions"
                         headers = {
                             "Content-Type": "application/json",
-                            "Authorization": f"Bearer {prov_key}"
+                            "Authorization": f"Bearer {prov_key}",
+                            "User-Agent": user_agent
                         }
                     elif provider == "groq":
                         url = "https://api.groq.com/openapi/v1/chat/completions"
                         headers = {
                             "Content-Type": "application/json",
-                            "Authorization": f"Bearer {prov_key}"
+                            "Authorization": f"Bearer {prov_key}",
+                            "User-Agent": user_agent
                         }
                     elif provider == "openai":
                         url = "https://api.openai.com/v1/chat/completions"
                         headers = {
                             "Content-Type": "application/json",
-                            "Authorization": f"Bearer {prov_key}"
+                            "Authorization": f"Bearer {prov_key}",
+                            "User-Agent": user_agent
                         }
                         
                     outgoing_payload = {
