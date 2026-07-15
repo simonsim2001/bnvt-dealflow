@@ -98,24 +98,43 @@ def set_sql_value(key, value):
         conn.close()
 
 def get_stored_value(key):
+    val = None
     if os.environ.get("DATABASE_URL"):
         sql_val = get_sql_value(key)
         if sql_val is not None:
-            return sql_val
+            val = sql_val
             
-    path = os.path.join('db_storage', f"{key}.json")
-    if os.path.exists(path):
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get('value')
-        except Exception:
-            pass
-    if key == 'anthropic_api_key':
-        return os.environ.get("ANTHROPIC_API_KEY")
-    elif key == 'granola_api_key':
-        return os.environ.get("GRANOLA_API_KEY")
-    return None
+    if val is None:
+        path = os.path.join('db_storage', f"{key}.json")
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    val = data.get('value')
+            except Exception:
+                pass
+                
+    # Normalize/strip and resolve "configured_via_provider" placeholder
+    if isinstance(val, str):
+        val = val.strip()
+        if val == "configured_via_provider":
+            val = None
+            
+    if val is None or val == "":
+        env_map = {
+            "anthropic_api_key": "ANTHROPIC_API_KEY",
+            "granola_api_key": "GRANOLA_API_KEY",
+            "groq_api_key": "GROQ_API_KEY",
+            "openrouter_api_key": "OPENROUTER_API_KEY",
+            "deepseek_api_key": "DEEPSEEK_API_KEY",
+            "openai_api_key": "OPENAI_API_KEY"
+        }
+        if key in env_map:
+            val = os.environ.get(env_map[key])
+            
+    if isinstance(val, str):
+        return val.strip()
+    return val
 
 def get_llm_config():
     config = {"provider": "anthropic", "model": "claude-sonnet-4-6", "search_model": "claude-sonnet-4-6"}
@@ -132,23 +151,23 @@ def get_llm_config():
             pass
             
     # Auto-detect provider based on available keys/env vars if config doesn't exist
-    if get_stored_value("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY"):
+    if get_stored_value("anthropic_api_key"):
         config["provider"] = "anthropic"
         config["model"] = "claude-sonnet-4-6"
         config["search_model"] = "claude-sonnet-4-6"
-    elif get_stored_value("groq_api_key") or os.environ.get("GROQ_API_KEY"):
+    elif get_stored_value("groq_api_key"):
         config["provider"] = "groq"
         config["model"] = "llama-3.3-70b-versatile"
         config["search_model"] = "llama-3.3-70b-versatile"
-    elif get_stored_value("openrouter_api_key") or os.environ.get("OPENROUTER_API_KEY"):
+    elif get_stored_value("openrouter_api_key"):
         config["provider"] = "openrouter"
         config["model"] = "google/gemini-2.5-flash"
         config["search_model"] = "google/gemini-2.5-flash"
-    elif get_stored_value("deepseek_api_key") or os.environ.get("DEEPSEEK_API_KEY"):
+    elif get_stored_value("deepseek_api_key"):
         config["provider"] = "deepseek"
         config["model"] = "deepseek-chat"
         config["search_model"] = "deepseek-chat"
-    elif get_stored_value("openai_api_key") or os.environ.get("OPENAI_API_KEY"):
+    elif get_stored_value("openai_api_key"):
         config["provider"] = "openai"
         config["model"] = "gpt-4o-mini"
         config["search_model"] = "gpt-4o-mini"
@@ -156,6 +175,11 @@ def get_llm_config():
     return config
 
 def call_claude_api(api_key, prompt, use_search=False):
+    if not api_key or api_key == "configured_via_provider":
+        api_key = get_stored_value("anthropic_api_key")
+    if isinstance(api_key, str):
+        api_key = api_key.strip()
+        
     config = get_llm_config()
     provider = config.get("provider", "anthropic")
     
@@ -282,10 +306,12 @@ def call_claude_api(api_key, prompt, use_search=False):
 
     elif provider in ("openrouter", "deepseek", "groq", "openai"):
         prov_key = get_stored_value(f"{provider}_api_key")
-        if not prov_key or prov_key == "configured_via_provider" or not prov_key.strip():
+        if not prov_key or prov_key == "configured_via_provider":
             prov_key = os.environ.get(f"{provider.upper()}_API_KEY")
-        if not prov_key or prov_key == "configured_via_provider" or not prov_key.strip():
+        if not prov_key or prov_key == "configured_via_provider":
             prov_key = api_key
+        if isinstance(prov_key, str):
+            prov_key = prov_key.strip()
             
         model = config.get("search_model") if use_search else config.get("model")
         
@@ -828,7 +854,10 @@ def get_openai_key():
                 return (data.get('value') or data.get('key') or "").strip()
         except Exception:
             pass
-    return os.environ.get("OPENAI_API_KEY")
+    val = os.environ.get("OPENAI_API_KEY")
+    if isinstance(val, str):
+        return val.strip()
+    return val
 
 def transcribe_audio_openai(audio_bytes, filename, openai_key):
     url = "https://api.openai.com/v1/audio/transcriptions"
@@ -1368,6 +1397,8 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             if os.environ.get("DATABASE_URL"):
                 sql_val = get_sql_value(key)
                 if sql_val is not None:
+                    if isinstance(sql_val, str):
+                        sql_val = sql_val.strip()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
@@ -1380,6 +1411,9 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                 try:
                     with open(path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
+                    # Strip if string value exists in data dict
+                    if data and isinstance(data.get('value'), str):
+                        data['value'] = data['value'].strip()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
@@ -1400,6 +1434,8 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             if key in env_map:
                 env_val = os.environ.get(env_map[key])
                 if env_val:
+                    if isinstance(env_val, str):
+                        env_val = env_val.strip()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
@@ -1742,7 +1778,9 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
                                     write_db(db_latest)
                                 
                                 # Perform concise VC research on the deck's content
-                                api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
+                                api_key = get_stored_value('anthropic_api_key')
+                                if isinstance(api_key, str):
+                                    api_key = api_key.strip()
                                 if not api_key:
                                     answer = f"📥 *Import Completed!* Added *{deal.get('name')}* to your pipeline.\n\n⚠️ Anthropic API key is not configured on the server to run deck research."
                                 else:
@@ -1802,7 +1840,9 @@ Instructions:
                                     specific_context += f"Notes: {matched.get('notes')}\n"
                                     
                             # Call Claude with web search
-                            api_key = get_stored_value('anthropic_api_key') or os.environ.get("ANTHROPIC_API_KEY")
+                            api_key = get_stored_value('anthropic_api_key')
+                            if isinstance(api_key, str):
+                                api_key = api_key.strip()
                                 
                             if not api_key:
                                 answer = "⚠️ Anthropic API key is not configured on the server. Please set it to enable deal research."
@@ -2204,13 +2244,15 @@ Respond ONLY with valid JSON.
                     incoming_payload = pyjson.loads(post_data.decode('utf-8'))
                     
                     prov_key = get_stored_value(f"{provider}_api_key")
-                    if not prov_key or prov_key == "configured_via_provider" or not prov_key.strip():
+                    if not prov_key or prov_key == "configured_via_provider":
                         prov_key = os.environ.get(f"{provider.upper()}_API_KEY")
-                    if not prov_key or prov_key == "configured_via_provider" or not prov_key.strip():
+                    if not prov_key or prov_key == "configured_via_provider":
                         # Fallback to incoming auth headers if no local key exists
                         auth_header = self.headers.get('Authorization', '')
                         if auth_header.startswith('Bearer '):
                             prov_key = auth_header[7:].strip()
+                    if isinstance(prov_key, str):
+                        prov_key = prov_key.strip()
                             
                     if not prov_key:
                         raise Exception(f"API key for provider '{provider}' is not configured.")
@@ -2329,8 +2371,10 @@ Respond ONLY with valid JSON.
             else:
                 # Retrieve API key: client header has priority, environment variable is fallback
                 api_key = self.headers.get('X-Anthropic-API-Key')
-                if not api_key:
+                if not api_key or api_key == "configured_via_provider":
                     api_key = os.environ.get("ANTHROPIC_API_KEY")
+                if isinstance(api_key, str):
+                    api_key = api_key.strip()
                     
                 if not api_key:
                     self.send_response(400)
@@ -2730,10 +2774,12 @@ Respond ONLY with valid JSON.
                 
                 # Retrieve API key
                 api_key = self.headers.get('X-Anthropic-API-Key')
-                if not api_key:
+                if not api_key or api_key == "configured_via_provider":
                     api_key = get_stored_value('anthropic_api_key')
-                if not api_key:
+                if not api_key or api_key == "configured_via_provider":
                     api_key = os.environ.get("ANTHROPIC_API_KEY")
+                if isinstance(api_key, str):
+                    api_key = api_key.strip()
                 if not api_key:
                     raise Exception("Anthropic API key not configured on server or client")
                 
