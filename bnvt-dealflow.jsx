@@ -18833,6 +18833,175 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
     }
   };
 
+  const exportPreemptionSandboxExcel = () => {
+    const escapeXml = (unsafe) => {
+      if (unsafe === null || unsafe === undefined) return "";
+      return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+    };
+
+    const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel"
+          xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:html="http://www.w3.org/TR/REC-html40">
+  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+    <Author>BNVT Capital</Author>
+    <Created>${new Date().toISOString()}</Created>
+  </DocumentProperties>
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Alignment ss:Vertical="Bottom"/>
+      <Borders/>
+      <Font ss:FontName="Calibri" x:CharSet="1" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+      <Interior/>
+      <NumberFormat/>
+      <Protection/>
+    </Style>
+    <Style ss:ID="Header">
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
+      <Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="Title">
+      <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#1F2DCB" ss:Bold="1"/>
+    </Style>
+    <Style ss:ID="GridCell">
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="GridCellBold">
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+      </Borders>
+    </Style>
+  </Styles>
+  <Worksheet ss:Name="Preemption Sandbox">
+    <Table>
+      <Column ss:Width="120"/>
+      <Column ss:Width="70"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="70"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="110"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="120"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="90"/>
+      <Column ss:Width="130"/>
+      <Row ss:Height="25">
+        <Cell ss:StyleID="Title"><Data ss:Type="String">BNVT Capital - Pre-emption Sandbox Model</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Exported on: ${new Date().toLocaleDateString()}</Data></Cell>
+      </Row>
+      <Row></Row>
+      <Row ss:StyleID="Header">
+        <Cell><Data ss:Type="String">Company Name</Data></Cell>
+        <Cell><Data ss:Type="String">Stage</Data></Cell>
+        <Cell><Data ss:Type="String">Sector</Data></Cell>
+        <Cell><Data ss:Type="String">Geo</Data></Cell>
+        <Cell><Data ss:Type="String">BNVT Ticket ($M)</Data></Cell>
+        <Cell><Data ss:Type="String">Post-money Valuation ($M)</Data></Cell>
+        <Cell><Data ss:Type="String">Entry Ownership %</Data></Cell>
+        <Cell><Data ss:Type="String">Exit Dilution %</Data></Cell>
+        <Cell><Data ss:Type="String">Exit Ownership %</Data></Cell>
+        <Cell><Data ss:Type="String">Current ARR ($M)</Data></Cell>
+        <Cell><Data ss:Type="String">CAGR (%)</Data></Cell>
+        <Cell><Data ss:Type="String">Hold Period (Yr)</Data></Cell>
+        <Cell><Data ss:Type="String">Exit ARR ($M)</Data></Cell>
+        <Cell><Data ss:Type="String">Exit Multiple (x)</Data></Cell>
+        <Cell><Data ss:Type="String">Base Exit MoIC</Data></Cell>
+        <Cell><Data ss:Type="String">Bear Exit MoIC</Data></Cell>
+        <Cell><Data ss:Type="String">Bull Exit MoIC</Data></Cell>
+        <Cell><Data ss:Type="String">Expected Return Multiple (MoIC)</Data></Cell>
+        <Cell><Data ss:Type="String">Expected Fund Returned %</Data></Cell>
+      </Row>
+      ${preemptionCompanies.map(c => {
+        const pModel = getPreemptionModel(c);
+        let entryOwnership = pModel.valuation > 0 ? (pModel.ticket / pModel.valuation) * 100 : 0;
+        let exitOwnership = entryOwnership * (1 - pModel.dilution / 100);
+        let arrExit = pModel.currentArr * Math.pow(1 + pModel.cagr / 100, pModel.holdPeriod);
+        let baseExitVal = arrExit * pModel.exitMultiple;
+        let bearPos = pModel.bearVal * (exitOwnership / 100);
+        let basePos = baseExitVal * (exitOwnership / 100);
+        let bullPos = pModel.bullVal * (exitOwnership / 100);
+        let bearMult = pModel.ticket > 0 ? bearPos / pModel.ticket : 0;
+        let baseMult = pModel.ticket > 0 ? basePos / pModel.ticket : 0;
+        let bullMult = pModel.ticket > 0 ? bullPos / pModel.ticket : 0;
+        let pBear = pModel.bearProb / 100;
+        let pBase = pModel.baseProb / 100;
+        let pBull = pModel.bullProb / 100;
+        let expectedMultiple = (bearMult * pBear) + (baseMult * pBase) + (bullMult * pBull);
+        let expectedValue = (bearPos * pBear) + (basePos * pBase) + (bullPos * pBull);
+        let expectedFundReturned = (expectedValue / 130) * 100;
+
+        return `
+      <Row>
+        <Cell ss:StyleID="GridCellBold"><Data ss:Type="String">${escapeXml(c.name)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.stage || "Seed")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.sector || "Unspecified")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.geo || "Unspecified")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.ticket}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.valuation}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${entryOwnership.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.dilution}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${exitOwnership.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.currentArr}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.cagr}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.holdPeriod}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${arrExit.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.exitMultiple}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${baseMult.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${bearMult.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${bullMult.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="GridCellBold"><Data ss:Type="Number">${expectedMultiple.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="GridCellBold"><Data ss:Type="Number">${expectedFundReturned.toFixed(2)}</Data></Cell>
+      </Row>`;
+      }).join("")}
+    </Table>
+  </Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Preemption_Sandbox_${new Date().toISOString().slice(0,10)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
       {/* Title & Stats */}
@@ -18845,7 +19014,23 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
             Simulate investment returns, ownership dilutions, and expected fund return multiples across various exit scenarios.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 16, fontFamily: fontStack.mono, fontSize: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, fontFamily: fontStack.mono, fontSize: 12 }}>
+          <Btn 
+            small 
+            onClick={exportPreemptionSandboxExcel} 
+            style={{ 
+              borderColor: BLUE, 
+              color: BLUE, 
+              fontFamily: fontStack.mono, 
+              fontSize: 11, 
+              padding: "4px 10px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4
+            }}
+          >
+            📥 Export Sandbox (Excel)
+          </Btn>
           <div>
             <span style={{ color: FADE }}>TOTAL IN SCOPE:</span>{" "}
             <span style={{ fontWeight: 600, color: BLUE }}>{companies.filter(c => !!c.preemption).length}</span>
