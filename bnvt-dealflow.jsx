@@ -3337,6 +3337,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             apiKey={apiKey}
             deepDives={deepDives}
             setDeepDives={setDeepDives}
+            setDeletedIds={setDeletedIds}
           />
         )}
         {tab === "assets" && (
@@ -17597,9 +17598,10 @@ function OutreachDraftCard({ company, draft, updateCompany }) {
 }
 
 // ---- Deep Dives tab -----------------------------------------------------------------
-function DeepDives({ companies, updateCompany, apiKey, deepDives, setDeepDives }) {
+function DeepDives({ companies, updateCompany, apiKey, deepDives, setDeepDives, setDeletedIds }) {
   const [selectedDeepDiveId, setSelectedDeepDiveId] = useState(null);
   const [isEditingDive, setIsEditingDive] = useState(false);
+  const [diveNoteDraft, setDiveNoteDraft] = useState("");
   const [newTopicName, setNewTopicName] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [generatingStudy, setGeneratingStudy] = useState(false);
@@ -17726,6 +17728,40 @@ simon@bnvtcapital.com`;
     setDeepDives(updated);
     setDeletedIds((prev) => [...prev, id]);
     if (selectedDeepDiveId === id) setSelectedDeepDiveId(null);
+  };
+
+  const addDiveNote = () => {
+    if (!diveNoteDraft.trim()) return;
+    const newNote = {
+      id: uid(),
+      text: diveNoteDraft.trim(),
+      ts: Date.now(),
+      author: "BNVT Capital"
+    };
+    
+    setDeepDives(prev => prev.map(d => {
+      if (d.id === selectedDeepDiveId) {
+        return {
+          ...d,
+          notes: [newNote, ...(d.notes || [])]
+        };
+      }
+      return d;
+    }));
+    setDiveNoteDraft("");
+  };
+
+  const deleteDiveNote = (noteId) => {
+    if (!confirm("Are you sure you want to delete this note?")) return;
+    setDeepDives(prev => prev.map(d => {
+      if (d.id === selectedDeepDiveId) {
+        return {
+          ...d,
+          notes: (d.notes || []).filter(n => n.id !== noteId)
+        };
+      }
+      return d;
+    }));
   };
 
   const handleMove = (idx, direction) => {
@@ -18416,6 +18452,43 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
                   )}
                 </div>
               )}
+            </div>
+            
+            {/* Notes Section */}
+            <div style={{ background: PAPER, border: `1px solid ${LINE}`, padding: 22, marginTop: 16, fontFamily: fontStack.ui }}>
+              <Label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${LINE}`, paddingBottom: 6, marginBottom: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: "bold", color: BLUE, fontFamily: fontStack.mono }}>PROPRIETARY DEEP DIVE NOTES</span>
+              </Label>
+              
+              {/* List notes */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+                {(!selectedDive.notes || selectedDive.notes.length === 0) ? (
+                  <div style={{ fontSize: 12.5, color: FADE, fontStyle: "italic" }}>No notes added yet. Add a note below to track diligence progress, expert feedback, or thesis adjustments.</div>
+                ) : (
+                  selectedDive.notes.map((n, i) => (
+                    <div key={n.id || i} style={{ borderLeft: `2px solid ${BLUE}`, paddingLeft: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: CARD, padding: "8px 12px", border: `1px solid ${LINE}` }}>
+                      <div>
+                        <div style={{ fontSize: 13, color: INK }}>{n.text}</div>
+                        <div style={{ fontFamily: fontStack.mono, fontSize: 10, color: FADE, marginTop: 4 }}>
+                          {new Date(n.ts).toLocaleDateString()} {new Date(n.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &middot; {n.author || "BNVT Capital"}
+                        </div>
+                      </div>
+                      <Btn small danger onClick={() => deleteDiveNote(n.id)} style={{ padding: "2px 6px", fontSize: 10, marginLeft: 12, border: "none" }}>🗑</Btn>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              {/* Input fields */}
+              <TextArea 
+                rows={2} 
+                placeholder="Add diligence notes, reference calls, thesis changes..." 
+                value={diveNoteDraft} 
+                onChange={(e) => setDiveNoteDraft(e.target.value)} 
+              />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <Btn small primary onClick={addDiveNote}>Add Note</Btn>
+              </div>
             </div>
           </div>
         </div>
