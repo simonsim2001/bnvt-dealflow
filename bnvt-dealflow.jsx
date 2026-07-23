@@ -17791,11 +17791,11 @@ Structure the analysis into the following areas:
   - legacyPlayers: Describe the environment of legacy/incumbent players and software.
   - incumbents: Analyze the competition from recent startups.
   - backingFunds: Systematically research and detail top-tier VC funds actively backing this industry/vertical and list recent deals/transactions from the last 12-24 months. For recent deals, include startup name, stage (Seed, Series A, Series B, etc.), key investors, and deal size or valuation (if disclosed/estimated). Provide this transaction history details in a clear, systematic format.
-- experts: Discover or generate a target directory list of EXACTLY 50 target call experts in this vertical. Each expert must be a realistic industry professional with Name, Job Title, and Company Name. Distribute them across major legacy companies, incumbents, and relevant startups.
+- experts: Discover or generate a target directory list of EXACTLY 50 target call experts in this vertical. Each expert must be a realistic industry professional with Name, Job Title, Company Name, and a tailored LinkedIn Search Query string (e.g. '"Sarah Connor" JLL Head of Operations'). Distribute them across major legacy companies, incumbents, and relevant startups.
 
 CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
 1. The "experts" JSON array MUST contain EXACTLY 50 items.
-2. Every item in the "experts" array must be a fully populated object with realistic "name", "title", and "company".
+2. Every item in the "experts" array must be a fully populated object with realistic "name", "title", "company", and "searchQuery".
 3. Do NOT use ellipsis ("..."), "etc.", or place placeholder comments inside the array.
 4. Keep individual descriptions and objects concise to fit the output token budget, but ensure there are exactly 50 distinct items.
 
@@ -17816,7 +17816,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   },
   "experts": [
     // Must contain exactly 50 elements
-    { "name": "Sarah Connor", "title": "Head of Operations", "company": "JLL" },
+    { "name": "Sarah Connor", "title": "Head of Operations", "company": "JLL", "searchQuery": "\"Sarah Connor\" \"JLL\" \"Head of Operations\"" },
     ... 49 more items
   ]
 }`;
@@ -17842,7 +17842,8 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         id: i + 1,
         name: exp.name || "",
         title: exp.title || "",
-        company: exp.company || ""
+        company: exp.company || "",
+        searchQuery: exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "")
       }));
       setEditExperts(mappedExperts);
 
@@ -17876,8 +17877,9 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     }
   };
 
-  const getLinkedInSearchUrl = (name, company) => {
-    return `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(name + ' ' + company)}`;
+  const getLinkedInSearchUrl = (name, company, searchQuery) => {
+    const q = searchQuery || (name && company ? `"${name}" "${company}"` : name || company || "");
+    return `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(q)}`;
   };
 
   const downloadDeepDivePDF = () => {
@@ -17891,7 +17893,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <td style="border-bottom: 1px solid #ddd; padding: 4px;">${exp.title}</td>
         <td style="border-bottom: 1px solid #ddd; padding: 4px;">${exp.company}</td>
         <td style="border-bottom: 1px solid #ddd; padding: 4px; font-family: monospace; font-size: 10px;">
-          linkedin.com/search?keywords=${encodeURIComponent(exp.name + ' ' + exp.company)}
+          linkedin.com/search?keywords=${encodeURIComponent(exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || ""))}
         </td>
       </tr>
     `).join("");
@@ -18031,7 +18033,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <td style="padding: 4px;">${exp.title}</td>
         <td style="padding: 4px;">${exp.company}</td>
         <td style="padding: 4px; font-family: monospace; font-size: 9pt;">
-          https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(exp.name + ' ' + exp.company)}
+          https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || ""))}
         </td>
       </tr>
     `).join("");
@@ -18114,7 +18116,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   };
 
   const addExpertRow = () => {
-    setEditExperts([...editExperts, { id: editExperts.length + 1, name: "", title: "", company: "" }]);
+    setEditExperts([...editExperts, { id: editExperts.length + 1, name: "", title: "", company: "", searchQuery: "" }]);
   };
 
   const removeExpertRow = (idx) => {
@@ -18233,6 +18235,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
                           <th style={{ padding: 6 }}>Name</th>
                           <th style={{ padding: 6 }}>Title</th>
                           <th style={{ padding: 6 }}>Company</th>
+                          <th style={{ padding: 6 }}>Search Query</th>
                           <th style={{ padding: 6, width: 60, textAlign: "center" }}>Remove</th>
                         </tr>
                       </thead>
@@ -18257,6 +18260,13 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
                               <input type="text" value={exp.company} onChange={(e) => {
                                 const copy = [...editExperts];
                                 copy[idx].company = e.target.value;
+                                setEditExperts(copy);
+                              }} style={{ width: "100%", padding: 4 }} />
+                            </td>
+                            <td style={{ padding: 4 }}>
+                              <input type="text" value={exp.searchQuery || ""} onChange={(e) => {
+                                const copy = [...editExperts];
+                                copy[idx].searchQuery = e.target.value;
                                 setEditExperts(copy);
                               }} style={{ width: "100%", padding: 4 }} />
                             </td>
@@ -18358,21 +18368,24 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
                               <th style={{ padding: "8px 10px" }}>Name</th>
                               <th style={{ padding: "8px 10px" }}>Job Title</th>
                               <th style={{ padding: "8px 10px" }}>Company</th>
-                              <th style={{ padding: "8px 10px", width: 140, textAlign: "center" }}>LinkedIn Call</th>
+                              <th style={{ padding: "8px 10px" }}>LinkedIn Search Query</th>
+                              <th style={{ padding: "8px 10px", width: 100, textAlign: "center" }}>Outreach</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {(selectedDive.experts || []).map((exp, idx) => (
-                              <tr key={idx} style={{ borderBottom: `1px solid ${LINE}` }}>
-                                <td style={{ padding: "8px 10px", fontWeight: "bold" }}>{exp.name}</td>
-                                <td style={{ padding: "8px 10px" }}>{exp.title}</td>
-                                <td style={{ padding: "8px 10px", fontWeight: 600 }}>{exp.company}</td>
-                                <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                                  <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center" }}>
-                                    <a href={getLinkedInSearchUrl(exp.name, exp.company)} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: BLUE, fontWeight: "bold", fontSize: 11.5 }}>
-                                      🔍 Search
+                            {(selectedDive.experts || []).map((exp, idx) => {
+                              const queryText = exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "Search LinkedIn");
+                              return (
+                                <tr key={idx} style={{ borderBottom: `1px solid ${LINE}` }}>
+                                  <td style={{ padding: "8px 10px", fontWeight: "bold" }}>{exp.name}</td>
+                                  <td style={{ padding: "8px 10px" }}>{exp.title}</td>
+                                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{exp.company}</td>
+                                  <td style={{ padding: "8px 10px" }}>
+                                    <a href={getLinkedInSearchUrl(exp.name, exp.company, exp.searchQuery)} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: BLUE, fontWeight: "bold", fontSize: 11.5, wordBreak: "break-all" }}>
+                                      🔍 {queryText}
                                     </a>
-                                    <span style={{ color: LINE }}>|</span>
+                                  </td>
+                                  <td style={{ padding: "8px 10px", textAlign: "center" }}>
                                     <button 
                                       onClick={() => {
                                         setOutreachExpert(exp);
@@ -18392,10 +18405,10 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
                                     >
                                       ✉️ Blurb
                                     </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
