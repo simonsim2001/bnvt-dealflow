@@ -2234,6 +2234,11 @@ window.App = function App() {
   const [queueLog, setQueueLog] = useState("");
   const [researchingIds, setResearchingIds] = useState({});
   const [researchingTamIds, setResearchingTamIds] = useState({});
+  
+  // Selection and Bulk Actions States
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState([]);
+  const [selectedQueueIds, setSelectedQueueIds] = useState(null);
+  const [selectedTamQueueIds, setSelectedTamQueueIds] = useState(null);
 
   // AI TAM Queue States
   const [tamQueueActive, setTamQueueActive] = useState(false);
@@ -2262,6 +2267,11 @@ window.App = function App() {
     l.href = "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap";
     document.head.appendChild(l);
   }, []);
+
+  // Clear selected companies when active tab changes
+  useEffect(() => {
+    setSelectedCompanyIds([]);
+  }, [tab]);
 
   // load persisted state
   useEffect(() => {
@@ -2359,16 +2369,23 @@ window.App = function App() {
   useEffect(() => {
     if (!queueActive) return;
 
-    // Find the next company that doesn't have scores
-    const nextComp = companies.find(c => c.scores === null);
+    // Find the next company that doesn't have scores (respecting selection if active)
+    const nextComp = companies.find(c => {
+      const matchSelection = selectedQueueIds === null || selectedQueueIds.includes(c.id);
+      return matchSelection && c.scores === null;
+    });
     if (!nextComp) {
       setQueueActive(false);
+      setSelectedQueueIds(null);
       setQueueLog("Queue complete! All companies researched.");
       return;
     }
 
     // Get count of remaining unscored companies
-    const unscoredCount = companies.filter(c => c.scores === null).length;
+    const unscoredCount = companies.filter(c => {
+      const matchSelection = selectedQueueIds === null || selectedQueueIds.includes(c.id);
+      return matchSelection && c.scores === null;
+    }).length;
     if (queueTotal === 0) {
       setQueueTotal(unscoredCount);
       setQueueIndex(1);
@@ -2434,13 +2451,15 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
 
     const timer = setTimeout(runDiligence, 1200);
     return () => clearTimeout(timer);
-  }, [queueActive, companies, queueTotal, queueIndex]);
+  }, [queueActive, companies, queueTotal, queueIndex, selectedQueueIds]);
 
   // AI TAM Queue Runner
   useEffect(() => {
     if (!tamQueueActive) return;
 
     const needsTam = (c) => {
+      const matchSelection = selectedTamQueueIds === null || selectedTamQueueIds.includes(c.id);
+      if (!matchSelection) return false;
       if (c.excludeFromTamQueue) return false;
       return !c.marketStudy || 
              !c.marketStudy.businessModel || 
@@ -2451,6 +2470,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
     const nextComp = companies.find(needsTam);
     if (!nextComp) {
       setTamQueueActive(false);
+      setSelectedTamQueueIds(null);
       setTamQueueLog("Queue complete! All companies' TAM computed.");
       return;
     }
@@ -2585,7 +2605,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
 
     const timer = setTimeout(runTamQueue, 1200);
     return () => clearTimeout(timer);
-  }, [tamQueueActive, companies, tamQueueTotal, tamQueueIndex]);
+  }, [tamQueueActive, companies, tamQueueTotal, tamQueueIndex, selectedTamQueueIds]);
 
   // Investor Bulk Import Queue Runner
   useEffect(() => {
@@ -3226,6 +3246,10 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             setTamQueueTotal={setTamQueueTotal}
             tamQueueLog={tamQueueLog}
             setTamQueueLog={setTamQueueLog}
+            selectedCompanyIds={selectedCompanyIds}
+            setSelectedCompanyIds={setSelectedCompanyIds}
+            setSelectedQueueIds={setSelectedQueueIds}
+            setSelectedTamQueueIds={setSelectedTamQueueIds}
           />
         )}
         {tab === "dtm" && (
@@ -3393,7 +3417,11 @@ function Pipeline({
   tamQueueTotal,
   setTamQueueTotal,
   tamQueueLog,
-  setTamQueueLog
+  setTamQueueLog,
+  selectedCompanyIds = [],
+  setSelectedCompanyIds,
+  setSelectedQueueIds,
+  setSelectedTamQueueIds
 }) {
   const [statusFilter, setStatusFilter] = useState("Active opportunity");
   const [q, setQ] = useState("");
@@ -3401,6 +3429,273 @@ function Pipeline({
   const [sortBy, setSortBy] = useState("newest");
   const [shouldStartQueue, setShouldStartQueue] = useState(false);
   const [shouldStartTamQueue, setShouldStartTamQueue] = useState(false);
+  const [viewMode, setViewMode] = useState("grid"); // "grid" | "table"
+  const [hoveredRowId, setHoveredRowId] = useState(null);
+
+  const toggleSelectCompany = (id) => {
+    setSelectedCompanyIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+  
+  const toggleSelectAll = () => {
+    const allFilteredIds = list.map(c => c.id);
+    const allSelected = allFilteredIds.every(id => selectedCompanyIds.includes(id));
+    if (allSelected) {
+      setSelectedCompanyIds(prev => prev.filter(id => !allFilteredIds.includes(id)));
+    } else {
+      setSelectedCompanyIds(prev => Array.from(new Set([...prev, ...allFilteredIds])));
+    }
+  };
+
+  const runDiligenceOnSelection = () => {
+    if (selectedCompanyIds.length === 0) return;
+    setCompanies(cs => cs.map(c => {
+      if (selectedCompanyIds.includes(c.id)) {
+        return {
+          ...c,
+          scores: null,
+          rationale: {},
+          oneLiner: (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? "" : c.oneLiner
+        };
+      }
+      return c;
+    }));
+    setSelectedQueueIds([...selectedCompanyIds]);
+    setQueueTotal(selectedCompanyIds.length);
+    setQueueIndex(1);
+    setQueueLog("Starting diligence queue on selected companies...");
+    setQueueActive(true);
+  };
+
+  const runTamOnSelection = () => {
+    if (selectedCompanyIds.length === 0) return;
+    setCompanies(cs => cs.map(c => {
+      if (selectedCompanyIds.includes(c.id)) {
+        return {
+          ...c,
+          marketStudy: null
+        };
+      }
+      return c;
+    }));
+    setSelectedTamQueueIds([...selectedCompanyIds]);
+    setTamQueueTotal(selectedCompanyIds.length);
+    setTamQueueIndex(1);
+    setTamQueueLog("Starting TAM sizer queue on selected companies...");
+    setTamQueueActive(true);
+  };
+
+  const exportStageExcel = (title, exportList) => {
+    const escapeXml = (unsafe) => {
+      if (unsafe === null || unsafe === undefined) return "";
+      return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+    };
+
+    const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel"
+          xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:html="http://www.w3.org/TR/REC-html40">
+  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+    <Author>BNVT Capital</Author>
+    <Created>${new Date().toISOString()}</Created>
+  </DocumentProperties>
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Alignment ss:Vertical="Bottom"/>
+      <Borders/>
+      <Font ss:FontName="Calibri" x:CharSet="1" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+      <Interior/>
+      <NumberFormat/>
+      <Protection/>
+    </Style>
+    <Style ss:ID="Header">
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
+      <Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="Title">
+      <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#1F2DCB" ss:Bold="1"/>
+    </Style>
+    <Style ss:ID="GridCell">
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="GridCellBold">
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+      </Borders>
+    </Style>
+  </Styles>
+  <Worksheet ss:Name="Exported List">
+    <Table ss:ExpandedColumnCount="35">
+      <Row ss:Height="25">
+        <Cell ss:StyleID="Title"><Data ss:Type="String">${escapeXml(title)}</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">Exported on: ${new Date().toLocaleDateString()}</Data></Cell>
+      </Row>
+      <Row></Row>
+      <Row ss:StyleID="Header">
+        <Cell><Data ss:Type="String">Company Name</Data></Cell>
+        <Cell><Data ss:Type="String">URL</Data></Cell>
+        <Cell><Data ss:Type="String">One-Liner</Data></Cell>
+        <Cell><Data ss:Type="String">Sector</Data></Cell>
+        <Cell><Data ss:Type="String">Stage</Data></Cell>
+        <Cell><Data ss:Type="String">Source</Data></Cell>
+        <Cell><Data ss:Type="String">Status</Data></Cell>
+        <Cell><Data ss:Type="String">Geo</Data></Cell>
+        <Cell><Data ss:Type="String">Priority</Data></Cell>
+        <Cell><Data ss:Type="String">Composite Score</Data></Cell>
+        <Cell><Data ss:Type="String">Score Details</Data></Cell>
+        <Cell><Data ss:Type="String">Date Added</Data></Cell>
+        <Cell><Data ss:Type="String">Founder Persona Tags</Data></Cell>
+        <Cell><Data ss:Type="String">Pre-emption Opportunity</Data></Cell>
+        <Cell><Data ss:Type="String">Theoretical Ticket ($M)</Data></Cell>
+        <Cell><Data ss:Type="String">Theoretical Valuation ($M)</Data></Cell>
+        <Cell><Data ss:Type="String">Expected Exit MoIC</Data></Cell>
+        <Cell><Data ss:Type="String">Expected Fund Returned %</Data></Cell>
+        <Cell><Data ss:Type="String">Product Overview</Data></Cell>
+        <Cell><Data ss:Type="String">Market Overview</Data></Cell>
+        <Cell><Data ss:Type="String">Team Overview</Data></Cell>
+        <Cell><Data ss:Type="String">Traction Overview</Data></Cell>
+        <Cell><Data ss:Type="String">Proprietary Tech Rationale</Data></Cell>
+        <Cell><Data ss:Type="String">Data Moat Rationale</Data></Cell>
+        <Cell><Data ss:Type="String">Distribution/Switching Rationale</Data></Cell>
+        <Cell><Data ss:Type="String">Model Agnostic Rationale</Data></Cell>
+        <Cell><Data ss:Type="String">IP Time-to-Replicate Rationale</Data></Cell>
+        <Cell><Data ss:Type="String">TAM Rationale</Data></Cell>
+        <Cell><Data ss:Type="String">TAM Value ($)</Data></Cell>
+        <Cell><Data ss:Type="String">SAM Value ($)</Data></Cell>
+        <Cell><Data ss:Type="String">SOM Value ($)</Data></Cell>
+        <Cell><Data ss:Type="String">Estimated ACV ($)</Data></Cell>
+        <Cell><Data ss:Type="String">Target Units (#)</Data></Cell>
+        <Cell><Data ss:Type="String">Market Sizing Methodology</Data></Cell>
+        <Cell><Data ss:Type="String">Latest Note</Data></Cell>
+      </Row>
+      ${exportList.map(c => {
+        const cScore = compositeScore(c.scores);
+        const scoreDetailsStr = c.scores 
+          ? `Team: ${c.scores.team || 0}, Product: ${c.scores.product || 0}, TAM: ${c.scores.tam || 0}, Traction: ${c.scores.traction || 0}, Moat: ${c.scores.moat || 0}, Unit Econ: ${c.scores.unitEcon || 0}, Alignment: ${c.scores.alignment || 0}`
+          : "Unscored";
+        
+        const isPre = !!c.preemption;
+        const pModel = getPreemptionModel(c);
+        let entryOwnership = pModel.valuation > 0 ? (pModel.ticket / pModel.valuation) * 100 : 0;
+        let exitOwnership = entryOwnership * (1 - pModel.dilution / 100);
+        let arrExit = pModel.currentArr * Math.pow(1 + pModel.cagr / 100, pModel.holdPeriod);
+        let baseExitVal = arrExit * pModel.exitMultiple;
+        let bearPos = pModel.bearVal * (exitOwnership / 100);
+        let basePos = baseExitVal * (exitOwnership / 100);
+        let bullPos = pModel.bullVal * (exitOwnership / 100);
+        let bearMult = pModel.ticket > 0 ? bearPos / pModel.ticket : 0;
+        let baseMult = pModel.ticket > 0 ? basePos / pModel.ticket : 0;
+        let bullMult = pModel.ticket > 0 ? bullPos / pModel.ticket : 0;
+        let pBear = pModel.bearProb / 100;
+        let pBase = pModel.baseProb / 100;
+        let pBull = pModel.bullProb / 100;
+        let expectedMultiple = (bearMult * pBear) + (baseMult * pBase) + (bullMult * pBull);
+        let expectedValue = (bearPos * pBear) + (basePos * pBase) + (bullPos * pBull);
+        let expectedFundReturned = expectedValue / 130 * 100;
+
+        const tagsStr = getCompanyTags(c, founderProfiles).join(", ");
+        
+        const prodOverview = c.overview?.product || "";
+        const mktOverview = c.overview?.market || "";
+        const teamOverview = c.overview?.team || "";
+        const tracOverview = c.overview?.traction || "";
+        
+        const propTechRat = c.rationale?.proprietaryTech || "";
+        const dataMoatRat = c.rationale?.dataMoat || "";
+        const distRat = c.rationale?.distributionSwitching || "";
+        const modelAgRat = c.rationale?.modelAgnostic || "";
+        const ipRepRat = c.rationale?.ipTimeToReplicate || "";
+        const tamRat = c.rationale?.tam || "";
+        
+        const mSizing = c.marketStudy?.businessModel || {};
+        const tamVal = mSizing.tamVal || "";
+        const samVal = mSizing.samVal || "";
+        const somVal = mSizing.somVal || "";
+        const estAcv = mSizing.estimatedAcv || "";
+        const tamUnits = mSizing.tamUnits || "";
+        const mMethodology = c.marketStudy?.marketSizeExplanation || "";
+        
+        const latestNote = c.notes && c.notes.length > 0 ? c.notes[0].text : "";
+
+        return `
+      <Row>
+        <Cell ss:StyleID="GridCellBold"><Data ss:Type="String">${escapeXml(c.name || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.url || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.oneLiner || c.overview?.oneLiner || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.sector || c.overview?.sector || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.stage || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.source || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.status || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.geo || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.priority || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${cScore !== null ? cScore.toFixed(1) : ""}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(scoreDetailsStr)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${c.createdAt ? new Date(c.createdAt).toLocaleDateString() : ""}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(tagsStr)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${isPre ? "Yes" : "No"}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.ticket}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${pModel.valuation}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${isPre ? expectedMultiple.toFixed(2) : ""}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${isPre ? expectedFundReturned.toFixed(1) : ""}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(prodOverview)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(mktOverview)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(teamOverview)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(tracOverview)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(propTechRat)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(dataMoatRat)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(distRat)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(modelAgRat)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(ipRepRat)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(tamRat)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${tamVal}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${samVal}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${somVal}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${estAcv}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="Number">${tamUnits}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(mMethodology)}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(latestNote)}</Data></Cell>
+      </Row>`;
+      }).join("")}
+    </Table>
+  </Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([xml], { type: "application/vnd.ms-excel" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   // To Kill / Rejection console states
   const [selectedToKillId, setSelectedToKillId] = useState("");
@@ -3985,11 +4280,120 @@ Construct the final email now. Maintain the exact formatting of the examples abo
           <option value="score_desc">Sort: Score (High → Low)</option>
           <option value="score_asc">Sort: Score (Low → High)</option>
         </select>
+
+        <div style={{ display: "flex", gap: 2, background: "#E5E7EB", border: `1px solid ${LINE}`, borderRadius: 2, padding: 2 }}>
+          <Btn 
+            small 
+            onClick={() => setViewMode("grid")}
+            style={{ 
+              background: viewMode === "grid" ? BLUE : "transparent", 
+              color: viewMode === "grid" ? "#fff" : FADE,
+              borderColor: "transparent",
+              padding: "4px 8px",
+              fontWeight: viewMode === "grid" ? 600 : 400
+            }}
+          >
+            Grid
+          </Btn>
+          <Btn 
+            small 
+            onClick={() => setViewMode("table")}
+            style={{ 
+              background: viewMode === "table" ? BLUE : "transparent", 
+              color: viewMode === "table" ? "#fff" : FADE,
+              borderColor: "transparent",
+              padding: "4px 8px",
+              fontWeight: viewMode === "table" ? 600 : 400
+            }}
+          >
+            Table
+          </Btn>
+        </div>
         
-        <div style={{ marginLeft: "auto", fontFamily: fontStack.mono, fontSize: 11, color: FADE }}>
+        <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: FADE }}>
           {list.length} {list.length === 1 ? "opportunity" : "opportunities"}
         </div>
       </div>
+
+      {/* Selection & Bulk Actions Panel */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        background: selectedCompanyIds.length > 0 ? "rgba(31, 45, 203, 0.03)" : CARD,
+        border: `1px solid ${selectedCompanyIds.length > 0 ? BLUE : LINE}`,
+        padding: "10px 16px",
+        marginBottom: 16,
+        borderRadius: 4,
+        flexWrap: "wrap",
+        gap: 12
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, userSelect: "none" }}>
+            <input 
+              type="checkbox"
+              checked={list.length > 0 && list.every(c => selectedCompanyIds.includes(c.id))}
+              onChange={toggleSelectAll}
+              style={{ cursor: "pointer", width: 15, height: 15 }}
+            />
+            <span style={{ fontWeight: 500 }}>Select All in Current View</span>
+          </label>
+          <span style={{ fontSize: 12, color: FADE, fontFamily: fontStack.mono }}>
+            ({selectedCompanyIds.length} selected overall)
+          </span>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {selectedCompanyIds.length > 0 && (
+            <>
+              <Btn 
+                small 
+                onClick={runDiligenceOnSelection}
+                disabled={!hasApiKey || queueActive}
+                style={{ borderColor: BLUE, color: BLUE, fontWeight: 600 }}
+              >
+                ⚡ Run AI Diligence
+              </Btn>
+              <Btn 
+                small 
+                onClick={runTamOnSelection}
+                disabled={!hasApiKey || tamQueueActive}
+                style={{ borderColor: "#C026D3", color: "#C026D3", fontWeight: 600 }}
+              >
+                🔮 Run Market Sizing
+              </Btn>
+              <Btn 
+                small 
+                onClick={() => {
+                  const selectedList = companies.filter(c => selectedCompanyIds.includes(c.id));
+                  exportStageExcel(`Selected Companies Export`, selectedList);
+                }}
+                style={{ borderColor: "#10B981", color: "#10B981", fontWeight: 600 }}
+              >
+                📥 Export Selected
+              </Btn>
+              <Btn 
+                small 
+                onClick={() => setSelectedCompanyIds([])}
+                style={{ borderColor: RUST, color: RUST }}
+              >
+                🚫 Clear Selection
+              </Btn>
+              <span style={{ color: LINE, margin: "0 4px" }}>|</span>
+            </>
+          )}
+          
+          <Btn 
+            small 
+            onClick={() => exportStageExcel(`Pipeline Stage: ${statusFilter}`, list)}
+            disabled={list.length === 0}
+            style={{ borderColor: INK, color: INK, display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            📥 Export Entire Stage (Excel)
+          </Btn>
+        </div>
+      </div>
+
       {/* Deal Team Meeting Email Builder Console */}
       {statusFilter === "Deal Team Meeting" && (
         <div style={{
@@ -4587,15 +4991,36 @@ Construct the final email now. Maintain the exact formatting of the examples abo
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 14 }}>
+      {viewMode === "grid" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 14 }}>
         {list.map((c) => {
           const comp = compositeScore(c.scores);
           return (
             <div
               key={c.id}
               onClick={() => setSelected(c.id)}
-              style={{ background: CARD, border: `1px solid ${LINE}`, padding: 16, cursor: "pointer", display: "flex", gap: 14 }}
+              style={{ 
+                background: CARD, 
+                border: selectedCompanyIds.includes(c.id) ? `2.5px solid ${BLUE}` : `1px solid ${LINE}`, 
+                padding: 16, 
+                cursor: "pointer", 
+                display: "flex", 
+                gap: 14,
+                boxShadow: selectedCompanyIds.includes(c.id) ? "0 4px 12px rgba(31, 45, 203, 0.08)" : "none",
+                position: "relative"
+              }}
             >
+              <div 
+                style={{ display: "flex", alignItems: "center", paddingRight: 4 }} 
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={selectedCompanyIds.includes(c.id)} 
+                  onChange={() => toggleSelectCompany(c.id)} 
+                  style={{ cursor: "pointer", width: 17, height: 17 }}
+                />
+              </div>
               <div style={{ textAlign: "center", width: 56, display: "flex", flexDirection: "column", alignItems: "center" }}>
                 {researchingIds[c.id] ? (
                   <div style={{ height: 56, width: 56, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: BLUE, fontWeight: 600 }}>
@@ -4932,6 +5357,132 @@ Construct the final email now. Maintain the exact formatting of the examples abo
           );
         })}
       </div>
+      ) : (
+        <div style={{ overflowX: "auto", border: `1px solid ${LINE}`, background: CARD, borderRadius: 4, fontFamily: fontStack.ui }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: PAPER, borderBottom: `2px solid ${LINE}`, color: INK }}>
+                <th style={{ padding: "12px 10px", width: 40, textAlign: "center" }}>
+                  <input 
+                    type="checkbox"
+                    checked={list.length > 0 && list.every(c => selectedCompanyIds.includes(c.id))}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: "pointer", width: 15, height: 15 }}
+                  />
+                </th>
+                <th style={{ padding: "12px 10px", width: 75, textTransform: "uppercase", fontSize: 11, fontWeight: "bold", fontFamily: fontStack.mono }}>Score</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Name</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Sector</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Stage</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Geo</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Priority</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Market TAM</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Thesis / One-Liner</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Latest Note</th>
+                <th style={{ padding: "12px 10px", width: 130, fontWeight: "bold", textAlign: "center" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((c) => {
+                const comp = compositeScore(c.scores);
+                const tamVal = getTamValue(c);
+                const latestNote = c.notes && c.notes.length > 0 ? c.notes[0].text : "";
+                
+                return (
+                  <tr 
+                    key={c.id} 
+                    onClick={() => setSelected(c.id)}
+                    onMouseEnter={() => setHoveredRowId(c.id)}
+                    onMouseLeave={() => setHoveredRowId(null)}
+                    style={{ 
+                      borderBottom: `1px solid ${LINE}`, 
+                      cursor: "pointer",
+                      background: selectedCompanyIds.includes(c.id) 
+                        ? "rgba(31, 45, 203, 0.05)" 
+                        : (hoveredRowId === c.id ? "rgba(0, 0, 0, 0.02)" : "transparent")
+                    }}
+                  >
+                    <td style={{ padding: "10px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedCompanyIds.includes(c.id)} 
+                        onChange={() => toggleSelectCompany(c.id)} 
+                        style={{ cursor: "pointer", width: 15, height: 15 }}
+                      />
+                    </td>
+                    <td style={{ padding: "10px", fontWeight: "bold", color: scoreColor(comp), fontFamily: fontStack.mono }}>
+                      {comp != null ? comp.toFixed(1) : "—"}
+                    </td>
+                    <td style={{ padding: "10px", fontWeight: 600 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span>{c.name}</span>
+                        {c.preemption && (
+                          <span style={{ 
+                            background: "rgba(16, 185, 129, 0.1)", 
+                            color: "#10B981", 
+                            fontSize: 9, 
+                            padding: "1px 4px", 
+                            borderRadius: 2,
+                            fontWeight: 700
+                          }}>
+                            Pre-emption
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px" }}>{c.sector || c.overview?.sector || "—"}</td>
+                    <td style={{ padding: "10px" }}>{c.stage || "—"}</td>
+                    <td style={{ padding: "10px" }}>{c.geo || "—"}</td>
+                    <td style={{ padding: "10px" }}>{c.priority || "—"}</td>
+                    <td style={{ padding: "10px", fontFamily: fontStack.mono }}>
+                      {tamVal > 0 ? formatCompactUSD(tamVal) : "—"}
+                    </td>
+                    <td style={{ padding: "10px", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.oneLiner || c.overview?.oneLiner}>
+                      {c.oneLiner || c.overview?.oneLiner || "—"}
+                    </td>
+                    <td style={{ padding: "10px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={latestNote}>
+                      {latestNote || "—"}
+                    </td>
+                    <td style={{ padding: "10px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                        {researchingIds[c.id] ? (
+                          <span style={{ fontSize: 9.5, color: BLUE, fontWeight: 600, fontFamily: fontStack.mono }}>Scoring...</span>
+                        ) : (
+                          c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? (
+                            <Btn small onClick={() => runDiligenceForId(c.id)} disabled={!localStorage.getItem("anthropic_api_key")} style={{ padding: "2px 6px", fontSize: 9 }}>⚡ Score</Btn>
+                          ) : (
+                            <Btn small onClick={() => runDiligenceForId(c.id)} disabled={!localStorage.getItem("anthropic_api_key")} style={{ padding: "2px 6px", fontSize: 9, borderColor: BLUE, color: BLUE }}>🧠 Rescore</Btn>
+                          )
+                        )}
+                        
+                        {researchingTamIds[c.id] ? (
+                          <span style={{ fontSize: 9.5, color: "#C026D3", fontWeight: 600, fontFamily: fontStack.mono }}>Sizing...</span>
+                        ) : (
+                          <Btn 
+                            small 
+                            onClick={() => runTamForId(c.id)} 
+                            disabled={!localStorage.getItem("anthropic_api_key")} 
+                            style={{ 
+                              padding: "2px 6px", 
+                              fontSize: 9, 
+                              background: getTamValue(c) > 0 ? "transparent" : "#10B981", 
+                              color: getTamValue(c) > 0 ? "#10B981" : "#fff", 
+                              borderColor: getTamValue(c) > 0 ? "#10B981" : "transparent",
+                              fontWeight: 600
+                            }}
+                          >
+                            📊 Size
+                          </Btn>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
       {companies.length > 0 && (
         <div style={{ marginTop: 22 }}>
           <Btn onClick={goDistribute}>Send opportunities to your network →</Btn>
@@ -17918,21 +18469,76 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     return `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(q)}`;
   };
 
+  const generateExpertsListOnly = async () => {
+    if (!selectedDive) return;
+    setGeneratingStudy(true);
+    setStudyErr("");
+    try {
+      const prompt = `You are a Senior Venture Capital Investment Analyst at BNVT Capital.
+For the following industry sector / deep dive topic:
+Topic: ${selectedDive.topic}
+
+Discover or generate a target directory list of EXACTLY 50 target call experts in this vertical. Each expert must be a realistic industry professional with Name, Job Title, Company Name, and a tailored LinkedIn Search Query string (e.g. '"Sarah Connor" JLL Head of Operations'). Distribute them across major legacy companies, incumbents, and relevant startups.
+
+CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
+1. The JSON array MUST contain EXACTLY 50 items.
+2. Every item must be a fully populated object with realistic "name", "title", "company", and "searchQuery".
+3. Respond ONLY with valid JSON in this exact structure, with no markdown fences, no preamble, and no explanation:
+{
+  "experts": [
+    { "name": "Sarah Connor", "title": "Head of Operations", "company": "JLL", "searchQuery": "\\"Sarah Connor\\" \\"JLL\\" \\"Head of Operations\\"" }
+  ]
+}`;
+
+      const outText = await callClaude(prompt, true);
+      const out = parseJSON(outText);
+
+      const mappedExperts = (out.experts || []).map((exp, i) => ({
+        id: i + 1,
+        name: exp.name || "",
+        title: exp.title || "",
+        company: exp.company || "",
+        searchQuery: exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "")
+      }));
+
+      setEditExperts(mappedExperts);
+      setDeepDives(prev => prev.map(d => {
+        if (d.id === selectedDeepDiveId) {
+          return {
+            ...d,
+            experts: mappedExperts
+          };
+        }
+        return d;
+      }));
+    } catch (e) {
+      setStudyErr("Failed to generate experts: " + e.message);
+    } finally {
+      setGeneratingStudy(false);
+    }
+  };
+
   const downloadDeepDivePDF = () => {
     if (!selectedDive) return;
     const p = selectedDive.profile || {};
     const printWindow = window.open("", "_blank");
 
-    let expertRows = (selectedDive.experts || []).map(exp => `
+    let expertRows = (selectedDive.experts || []).map(exp => {
+      const q = exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "");
+      const link = `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(q)}`;
+      return `
       <tr>
         <td style="border-bottom: 1px solid #ddd; padding: 4px;"><b>${exp.name}</b></td>
         <td style="border-bottom: 1px solid #ddd; padding: 4px;">${exp.title}</td>
         <td style="border-bottom: 1px solid #ddd; padding: 4px;">${exp.company}</td>
         <td style="border-bottom: 1px solid #ddd; padding: 4px; font-family: monospace; font-size: 10px;">
-          linkedin.com/search?keywords=${encodeURIComponent(exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || ""))}
+          <a href="${link}" target="_blank" style="color: #1F2DCB; text-decoration: none; font-weight: bold;">
+            🔍 ${q}
+          </a>
         </td>
       </tr>
-    `).join("");
+      `;
+    }).join("");
 
     const html = `
       <html>
@@ -18063,16 +18669,22 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     if (!selectedDive) return;
     const p = selectedDive.profile || {};
 
-    let expertRows = (selectedDive.experts || []).map(exp => `
+    let expertRows = (selectedDive.experts || []).map(exp => {
+      const q = exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "");
+      const link = `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(q)}`;
+      return `
       <tr style="border-bottom: 1px solid #ccc;">
         <td style="padding: 4px;"><b>${exp.name}</b></td>
         <td style="padding: 4px;">${exp.title}</td>
         <td style="padding: 4px;">${exp.company}</td>
         <td style="padding: 4px; font-family: monospace; font-size: 9pt;">
-          https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || ""))}
+          <a href="${link}" style="color: #1F2DCB; text-decoration: underline;">
+            🔍 ${q}
+          </a>
         </td>
       </tr>
-    `).join("");
+      `;
+    }).join("");
 
     const html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
@@ -18391,65 +19003,78 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
                         9. Opportunity Rank Rationale
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.rankRationale || "No rationale specified."}</p>
-
-                      {/* Experts directory display */}
-                      <div style={{ borderTop: "2px solid #000", paddingTop: 14, marginTop: 30, fontFamily: fontStack.ui }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-                          <span style={{ fontSize: 15, fontWeight: "bold", color: BLUE, fontFamily: fontStack.mono }}>TARGET CALL EXPERT DIRECTORY (50 CONTACT SEARCH INDEX)</span>
-                          <span style={{ fontSize: 11, color: FADE }}>Click search queries to launch LinkedIn queries</span>
-                        </div>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-                          <thead>
-                            <tr style={{ background: PAPER, borderBottom: `2px solid ${INK}`, textAlign: "left" }}>
-                              <th style={{ padding: "8px 10px" }}>Name</th>
-                              <th style={{ padding: "8px 10px" }}>Job Title</th>
-                              <th style={{ padding: "8px 10px" }}>Company</th>
-                              <th style={{ padding: "8px 10px" }}>LinkedIn Search Query</th>
-                              <th style={{ padding: "8px 10px", width: 100, textAlign: "center" }}>Outreach</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(selectedDive.experts || []).map((exp, idx) => {
-                              const queryText = exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "Search LinkedIn");
-                              return (
-                                <tr key={idx} style={{ borderBottom: `1px solid ${LINE}` }}>
-                                  <td style={{ padding: "8px 10px", fontWeight: "bold" }}>{exp.name}</td>
-                                  <td style={{ padding: "8px 10px" }}>{exp.title}</td>
-                                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{exp.company}</td>
-                                  <td style={{ padding: "8px 10px" }}>
-                                    <a href={getLinkedInSearchUrl(exp.name, exp.company, exp.searchQuery)} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: BLUE, fontWeight: "bold", fontSize: 11.5, wordBreak: "break-all" }}>
-                                      🔍 {queryText}
-                                    </a>
-                                  </td>
-                                  <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                                    <button 
-                                      onClick={() => {
-                                        setOutreachExpert(exp);
-                                        setOutreachTemplate("email");
-                                        setOutreachCopied(false);
-                                      }}
-                                      style={{
-                                        border: "none",
-                                        background: "none",
-                                        color: AMBER,
-                                        fontWeight: "bold",
-                                        fontSize: 11.5,
-                                        cursor: "pointer",
-                                        padding: 0,
-                                        fontFamily: fontStack.ui
-                                      }}
-                                    >
-                                      ✉️ Blurb
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
                     </>
                   )}
+
+                  {/* Experts directory display */}
+                  <div style={{ borderTop: "2px solid #000", paddingTop: 14, marginTop: 30, fontFamily: fontStack.ui }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                      <span style={{ fontSize: 15, fontWeight: "bold", color: BLUE, fontFamily: fontStack.mono }}>TARGET CALL EXPERT DIRECTORY (50 CONTACT SEARCH INDEX)</span>
+                      <span style={{ fontSize: 11, color: FADE }}>Click search queries to launch LinkedIn queries</span>
+                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ background: PAPER, borderBottom: `2px solid ${INK}`, textAlign: "left" }}>
+                          <th style={{ padding: "8px 10px" }}>Name</th>
+                          <th style={{ padding: "8px 10px" }}>Job Title</th>
+                          <th style={{ padding: "8px 10px" }}>Company</th>
+                          <th style={{ padding: "8px 10px" }}>LinkedIn Search Query</th>
+                          <th style={{ padding: "8px 10px", width: 100, textAlign: "center" }}>Outreach</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(selectedDive.experts || []).length === 0 ? (
+                          <tr>
+                            <td colSpan={5} style={{ padding: "24px 10px", textAlign: "center" }}>
+                              <div style={{ color: FADE, fontSize: 13, marginBottom: 12 }}>
+                                No experts generated for this deep dive topic yet.
+                              </div>
+                              <Btn small onClick={generateExpertsListOnly} disabled={generatingStudy || !localStorage.getItem("anthropic_api_key")}>
+                                {generatingStudy ? "⏳ Generating Experts..." : "⚡ Generate 50 LinkedIn Expert Search Queries"}
+                              </Btn>
+                            </td>
+                          </tr>
+                        ) : (
+                          (selectedDive.experts || []).map((exp, idx) => {
+                            const queryText = exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "Search LinkedIn");
+                            return (
+                              <tr key={idx} style={{ borderBottom: `1px solid ${LINE}` }}>
+                                <td style={{ padding: "8px 10px", fontWeight: "bold" }}>{exp.name}</td>
+                                <td style={{ padding: "8px 10px" }}>{exp.title}</td>
+                                <td style={{ padding: "8px 10px", fontWeight: 600 }}>{exp.company}</td>
+                                <td style={{ padding: "8px 10px" }}>
+                                  <a href={getLinkedInSearchUrl(exp.name, exp.company, exp.searchQuery)} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: BLUE, fontWeight: "bold", fontSize: 11.5, wordBreak: "break-all" }}>
+                                    🔍 {queryText}
+                                  </a>
+                                </td>
+                                <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                                  <button 
+                                    onClick={() => {
+                                      setOutreachExpert(exp);
+                                      setOutreachTemplate("email");
+                                      setOutreachCopied(false);
+                                    }}
+                                    style={{
+                                      border: "none",
+                                      background: "none",
+                                      color: AMBER,
+                                      fontWeight: "bold",
+                                      fontSize: 11.5,
+                                      cursor: "pointer",
+                                      padding: 0,
+                                      fontFamily: fontStack.ui
+                                    }}
+                                  >
+                                    ✉️ Blurb
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
