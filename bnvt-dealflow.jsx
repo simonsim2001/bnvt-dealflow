@@ -18160,6 +18160,9 @@ function DeepDives({ companies, updateCompany, apiKey, deepDives, setDeepDives, 
   const [outreachExpert, setOutreachExpert] = useState(null);
   const [outreachTemplate, setOutreachTemplate] = useState("email");
   const [outreachCopied, setOutreachCopied] = useState(false);
+  const [runningDiveIds, setRunningDiveIds] = useState({});
+  const [editTamVal, setEditTamVal] = useState("");
+  const [editCagrVal, setEditCagrVal] = useState("");
 
   // Edit States
   const [editTopic, setEditTopic] = useState("");
@@ -18222,6 +18225,73 @@ BNVT Capital
 simon@bnvtcapital.com`;
   };
 
+  const parseMarketSizing = (text) => {
+    let tam = 0;
+    let cagr = 0;
+    if (!text) return { tam, cagr };
+
+    // Try to find CAGR (e.g. CAGR of 15.5%, CAGR: 12%, 18% CAGR, growing at 12.5% annually)
+    const cagrRegexes = [
+      /cagr\s*(?:of|is|at|:)?\s*(\d+(?:\.\d+)?)\s*%/i,
+      /(\d+(?:\.\d+)?)\s*%\s*cagr/i,
+      /(?:growing|growth)\s+(?:at|of)?\s*(\d+(?:\.\d+)?)\s*%/i,
+      /growth\s+rate\s*(?:of|is|at|:)?\s*(\d+(?:\.\d+)?)\s*%/i
+    ];
+    for (const regex of cagrRegexes) {
+      const match = text.match(regex);
+      if (match) {
+        cagr = parseFloat(match[1]);
+        break;
+      }
+    }
+
+    // Try to find TAM (e.g. $15.5 Billion, $500 Million, TAM: $12B, TAM of 12.5B, TAM: 50B)
+    const tamRegexes = [
+      /tam\s*(?:is|of|at|:)?\s*\$?(\d+(?:\.\d+)?)\s*(billion|b|million|m)/i,
+      /\$?(\d+(?:\.\d+)?)\s*(billion|b|million|m)\s+tam/i,
+      /\$?(\d+(?:\.\d+)?)\s*(billion|b)\b/i,
+      /\$?(\d+(?:\.\d+)?)\s*(million|m)\b/i
+    ];
+    for (const regex of tamRegexes) {
+      const match = text.match(regex);
+      if (match) {
+        let val = parseFloat(match[1]);
+        const unit = match[2].toLowerCase();
+        if (unit === "million" || unit === "m") {
+          val = val / 1000.0; // convert Millions to Billions
+        }
+        tam = val;
+        break;
+      }
+    }
+    return { tam, cagr };
+  };
+
+  const rankDeepDives = (divesList) => {
+    return divesList
+      .map(d => {
+        const tam = parseFloat(d.tam) || 0;
+        const cagr = parseFloat(d.cagr) || 0;
+        const futureValue = tam * Math.pow(1 + (cagr / 100), 5);
+        return {
+          ...d,
+          futureValue
+        };
+      })
+      .sort((a, b) => {
+        if (a.futureValue === 0 && b.futureValue > 0) return 1;
+        if (b.futureValue === 0 && a.futureValue > 0) return -1;
+        if (a.futureValue === 0 && b.futureValue === 0) {
+          return (b.createdAt || 0) - (a.createdAt || 0);
+        }
+        return b.futureValue - a.futureValue;
+      })
+      .map((d, index) => ({
+        ...d,
+        rank: index + 1
+      }));
+  };
+
   useEffect(() => {
     if (selectedDive) {
       setEditTopic(selectedDive.topic || "");
@@ -18240,6 +18310,8 @@ simon@bnvtcapital.com`;
       setEditFunding(p.backingFunds || "");
 
       setEditExperts(selectedDive.experts || []);
+      setEditTamVal(selectedDive.tam != null ? selectedDive.tam : "");
+      setEditCagrVal(selectedDive.cagr != null ? selectedDive.cagr : "");
     }
   }, [selectedDeepDiveId, selectedDive]);
 
@@ -18264,7 +18336,9 @@ simon@bnvtcapital.com`;
         incumbents: "",
         backingFunds: ""
       },
-      experts: []
+      experts: [],
+      tam: 0,
+      cagr: 0
     };
     setDeepDives([...deepDives, newDive]);
     setNewTopicName("");
@@ -18329,45 +18403,55 @@ simon@bnvtcapital.com`;
 
   const saveDiveEdits = () => {
     if (!selectedDeepDiveId) return;
-    setDeepDives(prev => prev.map(d => {
-      if (d.id === selectedDeepDiveId) {
-        return {
-          ...d,
-          topic: editTopic,
-          opportunitySummary: editSummary,
-          rankRationale: editRationale,
-          profile: {
-            longTermMoat: editMoat,
-            tamSamSom: editTam,
-            laborReplacement: editLabor,
-            techStackCompression: editStack,
-            wedge: editWedge,
-            teamProfile: editTeam,
-            legacyPlayers: editLegacy,
-            incumbents: editIncumbents,
-            backingFunds: editFunding
-          },
-          experts: editExperts
-        };
-      }
-      return d;
-    }));
+    setDeepDives(prev => {
+      const updated = prev.map(d => {
+        if (d.id === selectedDeepDiveId) {
+          return {
+            ...d,
+            topic: editTopic,
+            opportunitySummary: editSummary,
+            rankRationale: editRationale,
+            profile: {
+              longTermMoat: editMoat,
+              tamSamSom: editTam,
+              laborReplacement: editLabor,
+              techStackCompression: editStack,
+              wedge: editWedge,
+              teamProfile: editTeam,
+              legacyPlayers: editLegacy,
+              incumbents: editIncumbents,
+              backingFunds: editFunding
+            },
+            experts: editExperts,
+            tam: parseFloat(editTamVal) || 0,
+            cagr: parseFloat(editCagrVal) || 0
+          };
+        }
+        return d;
+      });
+      return rankDeepDives(updated);
+    });
     setIsEditingDive(false);
   };
 
-  const runDeepDiveAI = async () => {
-    setGeneratingStudy(true);
-    setStudyErr("");
+  const runDeepDiveAIForId = async (id) => {
+    const dive = deepDives.find(d => d.id === id);
+    if (!dive) return;
+    
+    setRunningDiveIds(prev => ({ ...prev, [id]: true }));
     try {
+      const topicName = (selectedDeepDiveId === id && isEditingDive) ? editTopic : dive.topic;
       const prompt = `You are a Senior Venture Capital Investment Analyst at BNVT Capital, a premium venture capital fund.
 We need an institutional-grade, deep-dive two-page sector assessment report for the following topic/industry:
-Topic: ${editTopic}
+Topic: ${topicName}
 
 Please conduct web research (using web search) and write a detailed assessment of this market vertical from a VC perspective in the age of AI. Keep the text analytically dense, concise, and highly professional.
 
 Structure the analysis into the following areas:
 - opportunitySummary: 2-3 sentences summarizing the investment thesis.
 - rankRationale: 2-3 sentences explaining why this topic represents a prime investment opportunity for BNVT (focus on ROI, margins, scalability).
+- marketSizeTAMBillions: Realistic estimated Total Addressable Market (TAM) in billions of USD as a number (e.g. 15.5)
+- marketCAGRPercent: Realistic estimated compound annual growth rate (CAGR) as a percentage number (e.g. 18.2 for 18.2%)
 - profile:
   - longTermMoat: Assess the long-term AI defensibility and displacement risk. How can a player build a moat that isn't displaced by foundational model improvements or wrappers?
   - tamSamSom: Synthesize the addressable market size (TAM/SAM/SOM). Propose realistic figures and growth.
@@ -18380,16 +18464,12 @@ Structure the analysis into the following areas:
   - backingFunds: Systematically research and detail top-tier VC funds actively backing this industry/vertical and list recent deals/transactions from the last 12-24 months. For recent deals, include startup name, stage (Seed, Series A, Series B, etc.), key investors, and deal size or valuation (if disclosed/estimated). Provide this transaction history details in a clear, systematic format.
 - experts: Discover or generate a target directory list of EXACTLY 50 target call experts in this vertical. Each expert must be a realistic industry professional with Name, Job Title, Company Name, and a tailored LinkedIn Search Query string (e.g. '"Sarah Connor" JLL Head of Operations'). Distribute them across major legacy companies, incumbents, and relevant startups.
 
-CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
-1. The "experts" JSON array MUST contain EXACTLY 50 items.
-2. Every item in the "experts" array must be a fully populated object with realistic "name", "title", "company", and "searchQuery".
-3. Do NOT use ellipsis ("..."), "etc.", or place placeholder comments inside the array.
-4. Keep individual descriptions and objects concise to fit the output token budget, but ensure there are exactly 50 distinct items.
-
-Respond ONLY with valid JSON in this exact structure, with no markdown fences, no preamble, and no explanation. Do NOT wrap values in markdown code formatting:
+Respond ONLY with valid JSON in this exact structure, with no markdown fences, no preamble, and no explanation:
 {
   "opportunitySummary": "...",
   "rankRationale": "...",
+  "marketSizeTAMBillions": 15.5,
+  "marketCAGRPercent": 18.2,
   "profile": {
     "longTermMoat": "...",
     "tamSamSom": "...",
@@ -18402,9 +18482,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     "backingFunds": "..."
   },
   "experts": [
-    // Must contain exactly 50 elements
-    { "name": "Sarah Connor", "title": "Head of Operations", "company": "JLL", "searchQuery": "\"Sarah Connor\" \"JLL\" \"Head of Operations\"" },
-    ... 49 more items
+    { "name": "Sarah Connor", "title": "Head of Operations", "company": "JLL", "searchQuery": "\\"Sarah Connor\\" \\"JLL\\" \\"Head of Operations\\"" }
   ]
 }`;
 
@@ -18412,19 +18490,6 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       const out = parseJSON(outText);
 
       const p = out.profile || {};
-      setEditSummary(out.opportunitySummary || "");
-      setEditRationale(out.rankRationale || "");
-      setEditMoat(p.longTermMoat || "");
-      setEditTam(p.tamSamSom || "");
-      setEditLabor(p.laborReplacement || "");
-      setEditStack(p.techStackCompression || "");
-      setEditWedge(p.wedge || "");
-      setEditTeam(p.teamProfile || "");
-      setEditLegacy(p.legacyPlayers || "");
-      setEditIncumbents(p.incumbents || "");
-      setEditFunding(p.backingFunds || "");
-
-      // Handle experts
       const mappedExperts = (out.experts || []).map((exp, i) => ({
         id: i + 1,
         name: exp.name || "",
@@ -18432,35 +18497,64 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         company: exp.company || "",
         searchQuery: exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "")
       }));
-      setEditExperts(mappedExperts);
 
-      // Save persistent in list
-      setDeepDives(prev => prev.map(d => {
-        if (d.id === selectedDeepDiveId) {
-          return {
-            ...d,
-            opportunitySummary: out.opportunitySummary || "",
-            rankRationale: out.rankRationale || "",
-            profile: {
-              longTermMoat: p.longTermMoat || "",
-              tamSamSom: p.tamSamSom || "",
-              laborReplacement: p.laborReplacement || "",
-              techStackCompression: p.techStackCompression || "",
-              wedge: p.wedge || "",
-              teamProfile: p.teamProfile || "",
-              legacyPlayers: p.legacyPlayers || "",
-              incumbents: p.incumbents || "",
-              backingFunds: p.backingFunds || ""
-            },
-            experts: mappedExperts
-          };
-        }
-        return d;
-      }));
+      const parsedMarket = parseMarketSizing(p.tamSamSom || "");
+      const finalTam = parseFloat(out.marketSizeTAMBillions) || parsedMarket.tam || 0;
+      const finalCagr = parseFloat(out.marketCAGRPercent) || parsedMarket.cagr || 0;
+
+      setDeepDives(prev => {
+        const updated = prev.map(d => {
+          if (d.id === id) {
+            return {
+              ...d,
+              opportunitySummary: out.opportunitySummary || "",
+              rankRationale: out.rankRationale || "",
+              profile: {
+                longTermMoat: p.longTermMoat || "",
+                tamSamSom: p.tamSamSom || "",
+                laborReplacement: p.laborReplacement || "",
+                techStackCompression: p.techStackCompression || "",
+                wedge: p.wedge || "",
+                teamProfile: p.teamProfile || "",
+                legacyPlayers: p.legacyPlayers || "",
+                incumbents: p.incumbents || "",
+                backingFunds: p.backingFunds || ""
+              },
+              experts: mappedExperts,
+              tam: finalTam,
+              cagr: finalCagr
+            };
+          }
+          return d;
+        });
+        return rankDeepDives(updated);
+      });
+
+      // If currently selected, update the fields
+      if (selectedDeepDiveId === id) {
+        setEditSummary(out.opportunitySummary || "");
+        setEditRationale(out.rankRationale || "");
+        setEditMoat(p.longTermMoat || "");
+        setEditTam(p.tamSamSom || "");
+        setEditLabor(p.laborReplacement || "");
+        setEditStack(p.techStackCompression || "");
+        setEditWedge(p.wedge || "");
+        setEditTeam(p.teamProfile || "");
+        setEditLegacy(p.legacyPlayers || "");
+        setEditIncumbents(p.incumbents || "");
+        setEditFunding(p.backingFunds || "");
+        setEditExperts(mappedExperts);
+        setEditTamVal(finalTam);
+        setEditCagrVal(finalCagr);
+      }
     } catch (e) {
-      setStudyErr("AI study compilation failed: " + e.message);
+      alert(`AI compilation failed for "${dive.topic}": ${e.message}`);
     } finally {
-      setGeneratingStudy(false);
+      setRunningDiveIds(prev => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
     }
   };
 
@@ -18789,8 +18883,13 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                 </>
               ) : (
                 <>
-                  <Btn small onClick={runDeepDiveAI} disabled={generatingStudy || !localStorage.getItem("anthropic_api_key")} style={{ borderColor: BLUE, color: BLUE }}>
-                    {generatingStudy ? "🔄 Compiling..." : "🔄 Rerun AI"}
+                  <Btn 
+                    small 
+                    onClick={() => runDeepDiveAIForId(selectedDeepDiveId)} 
+                    disabled={runningDiveIds[selectedDeepDiveId] || !localStorage.getItem("anthropic_api_key")} 
+                    style={{ borderColor: BLUE, color: BLUE }}
+                  >
+                    {runningDiveIds[selectedDeepDiveId] ? "🔄 Compiling..." : "🔄 Rerun AI"}
                   </Btn>
                   <Btn small onClick={() => setIsEditingDive(true)}>✏ Edit Briefing</Btn>
                   <Btn small onClick={downloadDeepDivePDF} style={{ borderColor: BLUE, color: BLUE }}>PDF</Btn>
@@ -18826,11 +18925,25 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                     <Label>Opportunity Rank Rationale</Label>
                     <TextArea rows={3} value={editRationale} onChange={(e) => setEditRationale(e.target.value)} />
                   </div>
+                  <div style={{ display: "flex", gap: 14 }}>
+                    <div style={{ flex: 1 }}>
+                      <Label>TAM ($ Billions)</Label>
+                      <Input type="number" step="0.1" value={editTamVal} onChange={(e) => setEditTamVal(e.target.value)} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Label>CAGR (%)</Label>
+                      <Input type="number" step="0.1" value={editCagrVal} onChange={(e) => setEditCagrVal(e.target.value)} />
+                    </div>
+                  </div>
                   
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #000", paddingBottom: 4, marginTop: 10 }}>
                     <div style={{ fontFamily: fontStack.mono, fontSize: 12, fontWeight: "bold" }}>AI VC DEFENSE STUDY DETAILS</div>
-                    <Btn small onClick={runDeepDiveAI} disabled={generatingStudy || !localStorage.getItem("anthropic_api_key")}>
-                      {generatingStudy ? "🔄 Compiling AI Research..." : "⚡ Rerun AI Sector Research"}
+                    <Btn 
+                      small 
+                      onClick={() => runDeepDiveAIForId(selectedDeepDiveId)} 
+                      disabled={runningDiveIds[selectedDeepDiveId] || !localStorage.getItem("anthropic_api_key")}
+                    >
+                      {runningDiveIds[selectedDeepDiveId] ? "🔄 Compiling AI Research..." : "⚡ Rerun AI Sector Research"}
                     </Btn>
                   </div>
 
@@ -18950,8 +19063,11 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                   {!selectedDive.profile?.longTermMoat && (
                     <div style={{ textAlign: "center", padding: "40px 0", fontFamily: fontStack.ui }}>
                       <p style={{ color: FADE, fontSize: 13, marginBottom: 14 }}>Sector assessment brief has not been researched yet.</p>
-                      <Btn onClick={runDeepDiveAI} disabled={generatingStudy || !localStorage.getItem("anthropic_api_key")}>
-                        {generatingStudy ? "📋 Fetching Sector Details..." : "⚡ Run AI Market Defensibility Briefing"}
+                      <Btn 
+                        onClick={() => runDeepDiveAIForId(selectedDeepDiveId)} 
+                        disabled={runningDiveIds[selectedDeepDiveId] || !localStorage.getItem("anthropic_api_key")}
+                      >
+                        {runningDiveIds[selectedDeepDiveId] ? "📋 Fetching Sector Details..." : "⚡ Run AI Market Defensibility Briefing"}
                       </Btn>
                     </div>
                   )}
@@ -19128,9 +19244,27 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
               </div>
             </div>
             
-            <Btn onClick={() => setShowAddDialog(true)}>
-              ➕ Create Deep Dive Topic
-            </Btn>
+            <div style={{ display: "flex", gap: 10 }}>
+              {deepDives.some(d => !d.profile?.longTermMoat) && (
+                <Btn 
+                  onClick={() => {
+                    const uncompiled = deepDives.filter(d => !d.profile?.longTermMoat);
+                    uncompiled.forEach(d => {
+                      if (!runningDiveIds[d.id]) {
+                        runDeepDiveAIForId(d.id);
+                      }
+                    });
+                  }}
+                  disabled={!localStorage.getItem("anthropic_api_key")}
+                  style={{ borderColor: BLUE, color: BLUE }}
+                >
+                  ⚡ Run All Uncompiled AI Dives ({deepDives.filter(d => !d.profile?.longTermMoat).length})
+                </Btn>
+              )}
+              <Btn onClick={() => setShowAddDialog(true)}>
+                ➕ Create Deep Dive Topic
+              </Btn>
+            </div>
           </div>
 
           {/* Add Dialog/Popup Input */}
@@ -19204,7 +19338,54 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                   </div>
                   
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 16, fontWeight: "bold", color: INK }}>{dive.topic}</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontSize: 16, fontWeight: "bold", color: INK }}>{dive.topic}</div>
+                      
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {dive.tam > 0 && (
+                          <span style={{ 
+                            fontSize: 10, 
+                            fontFamily: fontStack.mono, 
+                            padding: "2px 6px", 
+                            borderRadius: 3, 
+                            background: "rgba(31, 45, 203, 0.06)", 
+                            color: BLUE,
+                            border: `1px solid rgba(31, 45, 203, 0.12)`,
+                            fontWeight: 600 
+                          }}>
+                            TAM: ${dive.tam.toFixed(1)}B
+                          </span>
+                        )}
+                        {dive.cagr > 0 && (
+                          <span style={{ 
+                            fontSize: 10, 
+                            fontFamily: fontStack.mono, 
+                            padding: "2px 6px", 
+                            borderRadius: 3, 
+                            background: "rgba(16, 185, 129, 0.06)", 
+                            color: "rgb(5, 150, 105)",
+                            border: `1px solid rgba(16, 185, 129, 0.12)`,
+                            fontWeight: 600 
+                          }}>
+                            CAGR: {dive.cagr.toFixed(1)}%
+                          </span>
+                        )}
+                        {dive.tam > 0 && dive.cagr > 0 && (
+                          <span style={{ 
+                            fontSize: 10, 
+                            fontFamily: fontStack.mono, 
+                            padding: "2px 6px", 
+                            borderRadius: 3, 
+                            background: "rgba(192, 38, 211, 0.06)", 
+                            color: "#C026D3",
+                            border: `1px solid rgba(192, 38, 211, 0.12)`,
+                            fontWeight: 600 
+                          }}>
+                            5Yr TAM: ${(dive.tam * Math.pow(1 + (dive.cagr / 100), 5)).toFixed(1)}B
+                          </span>
+                        )}
+                      </div>
+                    </div>
                     
                     <div style={{ fontSize: 13, color: INK, marginTop: 4, fontStyle: dive.opportunitySummary ? "normal" : "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {dive.opportunitySummary || "Click to open and run the AI Deep Dive Sector brief."}
@@ -19220,6 +19401,25 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
 
                 {/* Pipeline controls */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 16 }} onClick={(e) => e.stopPropagation()}>
+                  {runningDiveIds[dive.id] ? (
+                    <span style={{ fontSize: 11, fontFamily: fontStack.mono, color: BLUE, fontWeight: 600 }}>
+                      ⏳ Diligencing...
+                    </span>
+                  ) : (
+                    <Btn 
+                      small 
+                      onClick={() => runDeepDiveAIForId(dive.id)} 
+                      disabled={!localStorage.getItem("anthropic_api_key")}
+                      style={{ 
+                        borderColor: dive.profile?.longTermMoat ? LINE : BLUE, 
+                        color: dive.profile?.longTermMoat ? FADE : BLUE,
+                        fontWeight: 600 
+                      }}
+                    >
+                      {dive.profile?.longTermMoat ? "🔄 Rerun" : "⚡ Run AI"}
+                    </Btn>
+                  )}
+                  
                   <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     <Btn small onClick={() => handleMove(idx, -1)} disabled={idx === 0} style={{ padding: "3px 6px", fontSize: 9 }}>▲</Btn>
                     <Btn small onClick={() => handleMove(idx, 1)} disabled={idx === deepDives.length - 1} style={{ padding: "3px 6px", fontSize: 9 }}>▼</Btn>
