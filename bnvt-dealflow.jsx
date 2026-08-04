@@ -18886,7 +18886,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                   <Btn 
                     small 
                     onClick={() => runDeepDiveAIForId(selectedDeepDiveId)} 
-                    disabled={runningDiveIds[selectedDeepDiveId] || !localStorage.getItem("anthropic_api_key")} 
+                    disabled={runningDiveIds[selectedDeepDiveId]} 
                     style={{ borderColor: BLUE, color: BLUE }}
                   >
                     {runningDiveIds[selectedDeepDiveId] ? "🔄 Compiling..." : "🔄 Rerun AI"}
@@ -18941,7 +18941,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                     <Btn 
                       small 
                       onClick={() => runDeepDiveAIForId(selectedDeepDiveId)} 
-                      disabled={runningDiveIds[selectedDeepDiveId] || !localStorage.getItem("anthropic_api_key")}
+                      disabled={runningDiveIds[selectedDeepDiveId]}
                     >
                       {runningDiveIds[selectedDeepDiveId] ? "🔄 Compiling AI Research..." : "⚡ Rerun AI Sector Research"}
                     </Btn>
@@ -19065,7 +19065,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                       <p style={{ color: FADE, fontSize: 13, marginBottom: 14 }}>Sector assessment brief has not been researched yet.</p>
                       <Btn 
                         onClick={() => runDeepDiveAIForId(selectedDeepDiveId)} 
-                        disabled={runningDiveIds[selectedDeepDiveId] || !localStorage.getItem("anthropic_api_key")}
+                        disabled={runningDiveIds[selectedDeepDiveId]}
                       >
                         {runningDiveIds[selectedDeepDiveId] ? "📋 Fetching Sector Details..." : "⚡ Run AI Market Defensibility Briefing"}
                       </Btn>
@@ -19145,7 +19145,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                               <div style={{ color: FADE, fontSize: 13, marginBottom: 12 }}>
                                 No experts generated for this deep dive topic yet.
                               </div>
-                              <Btn small onClick={generateExpertsListOnly} disabled={generatingStudy || !localStorage.getItem("anthropic_api_key")}>
+                              <Btn small onClick={generateExpertsListOnly} disabled={generatingStudy}>
                                 {generatingStudy ? "⏳ Generating Experts..." : "⚡ Generate 50 LinkedIn Expert Search Queries"}
                               </Btn>
                             </td>
@@ -19255,7 +19255,6 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                       }
                     });
                   }}
-                  disabled={!localStorage.getItem("anthropic_api_key")}
                   style={{ borderColor: BLUE, color: BLUE }}
                 >
                   ⚡ Run All Uncompiled AI Dives ({deepDives.filter(d => !d.profile?.longTermMoat).length})
@@ -19409,7 +19408,6 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                     <Btn 
                       small 
                       onClick={() => runDeepDiveAIForId(dive.id)} 
-                      disabled={!localStorage.getItem("anthropic_api_key")}
                       style={{ 
                         borderColor: dive.profile?.longTermMoat ? LINE : BLUE, 
                         color: dive.profile?.longTermMoat ? FADE : BLUE,

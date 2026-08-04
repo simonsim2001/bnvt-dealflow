@@ -2372,6 +2372,8 @@ Respond ONLY with valid JSON.
                 # Retrieve API key: client header has priority, environment variable is fallback
                 api_key = self.headers.get('X-Anthropic-API-Key')
                 if not api_key or api_key == "configured_via_provider":
+                    api_key = get_stored_value('anthropic_api_key')
+                if not api_key or api_key == "configured_via_provider":
                     api_key = os.environ.get("ANTHROPIC_API_KEY")
                 if isinstance(api_key, str):
                     api_key = api_key.strip()
