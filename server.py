@@ -2416,33 +2416,22 @@ Respond ONLY with valid JSON.
                 if beta_header:
                     headers["anthropic-beta"] = beta_header
                 
-                req = urllib.request.Request(
-                    "https://api.anthropic.com/v1/messages",
-                    data=post_data,
-                    headers=headers,
-                    method="POST"
-                )
-                
                 try:
-                    with urllib.request.urlopen(req) as response:
-                        res_data = response.read()
-                        self.send_response(response.status)
-                        # Forward non-hop-by-hop headers
-                        for key, val in response.headers.items():
-                            if key.lower() not in ('content-encoding', 'transfer-encoding', 'content-length', 'connection'):
-                                self.send_header(key, val)
-                        self.send_header('Content-Length', str(len(res_data)))
-                        self.end_headers()
-                        self.wfile.write(res_data)
-                except urllib.error.HTTPError as e:
-                    err_data = e.read()
-                    self.send_response(e.code)
-                    for key, val in e.headers.items():
+                    import requests
+                    response = requests.post(
+                        "https://api.anthropic.com/v1/messages",
+                        data=post_data,
+                        headers=headers,
+                        timeout=180
+                    )
+                    self.send_response(response.status_code)
+                    # Forward non-hop-by-hop headers
+                    for key, val in response.headers.items():
                         if key.lower() not in ('content-encoding', 'transfer-encoding', 'content-length', 'connection'):
                             self.send_header(key, val)
-                    self.send_header('Content-Length', str(len(err_data)))
+                    self.send_header('Content-Length', str(len(response.content)))
                     self.end_headers()
-                    self.wfile.write(err_data)
+                    self.wfile.write(response.content)
                 except Exception as e:
                     self.send_response(500)
                     self.send_header("Content-Type", "application/json")
