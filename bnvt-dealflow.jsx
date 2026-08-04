@@ -18163,6 +18163,7 @@ function DeepDives({ companies, updateCompany, apiKey, deepDives, setDeepDives, 
   const [runningDiveIds, setRunningDiveIds] = useState({});
   const [editTamVal, setEditTamVal] = useState("");
   const [editCagrVal, setEditCagrVal] = useState("");
+  const [diveQueue, setDiveQueue] = useState([]);
 
   // Edit States
   const [editTopic, setEditTopic] = useState("");
@@ -18291,6 +18292,19 @@ simon@bnvtcapital.com`;
         rank: index + 1
       }));
   };
+
+  useEffect(() => {
+    const activeCount = Object.keys(runningDiveIds).length;
+    if (activeCount < 1 && diveQueue.length > 0) {
+      const nextId = diveQueue[0];
+      if (!runningDiveIds[nextId]) {
+        setDiveQueue(prev => prev.slice(1));
+        runDeepDiveAIForId(nextId);
+      } else {
+        setDiveQueue(prev => prev.slice(1));
+      }
+    }
+  }, [diveQueue, runningDiveIds]);
 
   useEffect(() => {
     if (selectedDive) {
@@ -19244,18 +19258,21 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
               </div>
             </div>
             
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {diveQueue.length > 0 && (
+                <span style={{ fontSize: 12, color: BLUE, fontFamily: fontStack.mono, marginRight: 4 }}>
+                  ⏳ Queue: {diveQueue.length} pending...
+                </span>
+              )}
               {deepDives.some(d => !d.profile?.longTermMoat) && (
                 <Btn 
                   onClick={() => {
                     const uncompiled = deepDives.filter(d => !d.profile?.longTermMoat);
-                    uncompiled.forEach(d => {
-                      if (!runningDiveIds[d.id]) {
-                        runDeepDiveAIForId(d.id);
-                      }
-                    });
+                    const idsToRun = uncompiled.map(d => d.id).filter(id => !runningDiveIds[id] && !diveQueue.includes(id));
+                    setDiveQueue(prev => [...prev, ...idsToRun]);
                   }}
                   style={{ borderColor: BLUE, color: BLUE }}
+                  disabled={diveQueue.length > 0}
                 >
                   ⚡ Run All Uncompiled AI Dives ({deepDives.filter(d => !d.profile?.longTermMoat).length})
                 </Btn>
