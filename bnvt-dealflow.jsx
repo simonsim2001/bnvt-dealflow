@@ -3424,6 +3424,7 @@ function Pipeline({
   setSelectedTamQueueIds
 }) {
   const [statusFilter, setStatusFilter] = useState("Active opportunity");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [q, setQ] = useState("");
   const [geoFilter, setGeoFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
@@ -3558,7 +3559,8 @@ function Pipeline({
       </Row>
       <Row></Row>
       <Row ss:StyleID="Header">
-        <Cell><Data ss:Type="String">Company Name</Data></Cell>
+        <Cell><Data ss:Type="String">Company / Entity Name</Data></Cell>
+        <Cell><Data ss:Type="String">Entity Type</Data></Cell>
         <Cell><Data ss:Type="String">URL</Data></Cell>
         <Cell><Data ss:Type="String">One-Liner</Data></Cell>
         <Cell><Data ss:Type="String">Sector</Data></Cell>
@@ -3646,6 +3648,7 @@ function Pipeline({
         return `
       <Row>
         <Cell ss:StyleID="GridCellBold"><Data ss:Type="String">${escapeXml(c.name || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.entityType || "Company")}</Data></Cell>
         <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.url || "")}</Data></Cell>
         <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.oneLiner || c.overview?.oneLiner || "")}</Data></Cell>
         <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(c.sector || c.overview?.sector || "")}</Data></Cell>
@@ -4070,11 +4073,15 @@ Construct the final email now. Maintain the exact formatting of the examples abo
     }
   }, [shouldStartTamQueue, setTamQueueActive, setTamQueueTotal, setTamQueueLog]);
   
+  const companyCount = useMemo(() => companies.filter(c => (c.entityType || "Company") === "Company").length, [companies]);
+  const individualCount = useMemo(() => companies.filter(c => c.entityType === "Individual").length, [companies]);
+
   const list = companies.filter(
     (c) =>
       (statusFilter === "all" || 
        (statusFilter === "Deal Team Meeting" ? !!c.dtm : statusFilter === "Starred" ? !!c.starred : statusFilter === "Pre-emption" ? !!c.preemption : c.status === statusFilter)) &&
       (geoFilter === "all" || c.geo === geoFilter) &&
+      (typeFilter === "all" || (c.entityType || "Company") === typeFilter) &&
       (q === "" || (c.name + " " + c.sector + " " + c.oneLiner).toLowerCase().includes(q.toLowerCase()))
   ).sort((a, b) => {
     if (sortBy === "score_desc") {
@@ -4258,6 +4265,48 @@ Construct the final email now. Maintain the exact formatting of the examples abo
           </Btn>
         ))}
         
+        <div style={{ display: "flex", gap: 3, background: PAPER, border: `1px solid ${LINE}`, borderRadius: 3, padding: 3 }}>
+          <Btn 
+            small 
+            onClick={() => setTypeFilter("all")} 
+            style={{ 
+              background: typeFilter === "all" ? INK : "transparent", 
+              color: typeFilter === "all" ? "#fff" : FADE,
+              borderColor: "transparent",
+              padding: "4px 9px",
+              fontWeight: typeFilter === "all" ? 600 : 400
+            }}
+          >
+            All Entities ({companies.length})
+          </Btn>
+          <Btn 
+            small 
+            onClick={() => setTypeFilter("Company")} 
+            style={{ 
+              background: typeFilter === "Company" ? BLUE : "transparent", 
+              color: typeFilter === "Company" ? "#fff" : FADE,
+              borderColor: "transparent",
+              padding: "4px 9px",
+              fontWeight: typeFilter === "Company" ? 600 : 400
+            }}
+          >
+            🏢 Companies ({companyCount})
+          </Btn>
+          <Btn 
+            small 
+            onClick={() => setTypeFilter("Individual")} 
+            style={{ 
+              background: typeFilter === "Individual" ? "#8B5CF6" : "transparent", 
+              color: typeFilter === "Individual" ? "#fff" : FADE,
+              borderColor: "transparent",
+              padding: "4px 9px",
+              fontWeight: typeFilter === "Individual" ? 600 : 400
+            }}
+          >
+            👤 Individuals ({individualCount})
+          </Btn>
+        </div>
+
         <select 
           value={geoFilter} 
           onChange={(e) => setGeoFilter(e.target.value)} 
@@ -5001,7 +5050,12 @@ Construct the final email now. Maintain the exact formatting of the examples abo
               onClick={() => setSelected(c.id)}
               style={{ 
                 background: CARD, 
-                border: selectedCompanyIds.includes(c.id) ? `2.5px solid ${BLUE}` : `1px solid ${LINE}`, 
+                border: selectedCompanyIds.includes(c.id) 
+                  ? `2.5px solid ${BLUE}` 
+                  : c.entityType === "Individual" 
+                    ? `1px solid rgba(139, 92, 246, 0.4)` 
+                    : `1px solid ${LINE}`, 
+                borderLeft: c.entityType === "Individual" ? `4px solid #8B5CF6` : `1px solid ${selectedCompanyIds.includes(c.id) ? BLUE : LINE}`,
                 padding: 16, 
                 cursor: "pointer", 
                 display: "flex", 
@@ -5040,6 +5094,55 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <div style={{ fontWeight: 600, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>
                       <span>{c.name}</span>
+                      {c.entityType === "Individual" ? (
+                        <span 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateCompany(c.id, { entityType: "Company" });
+                          }}
+                          title="Click to toggle to Company"
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 9,
+                            fontFamily: fontStack.mono,
+                            padding: "1px 6px",
+                            borderRadius: 3,
+                            background: "rgba(139, 92, 246, 0.12)",
+                            color: "#8B5CF6",
+                            border: "1px solid rgba(139, 92, 246, 0.3)",
+                            fontWeight: 700,
+                            lineHeight: 1,
+                            cursor: "pointer",
+                            transition: "all 0.15s"
+                          }}
+                        >
+                          👤 INDIVIDUAL ⇄
+                        </span>
+                      ) : (
+                        <span 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateCompany(c.id, { entityType: "Individual" });
+                          }}
+                          title="Click to toggle to Individual"
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 9,
+                            fontFamily: fontStack.mono,
+                            padding: "1px 6px",
+                            borderRadius: 3,
+                            background: "rgba(31, 45, 203, 0.08)",
+                            color: BLUE,
+                            border: "1px solid rgba(31, 45, 203, 0.2)",
+                            fontWeight: 600,
+                            lineHeight: 1,
+                            cursor: "pointer",
+                            transition: "all 0.15s"
+                          }}
+                        >
+                          🏢 COMPANY ⇄
+                        </span>
+                      )}
                       {c.preemption && (
                         <span style={{
                           marginLeft: 6,
@@ -5371,8 +5474,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                   />
                 </th>
                 <th style={{ padding: "12px 10px", width: 75, textTransform: "uppercase", fontSize: 11, fontWeight: "bold", fontFamily: fontStack.mono }}>Score</th>
+                <th style={{ padding: "12px 10px", width: 110, fontWeight: "bold" }}>Type</th>
                 <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Name</th>
-                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Sector</th>
+                <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Sector / Expertise</th>
                 <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Stage</th>
                 <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Geo</th>
                 <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Priority</th>
@@ -5412,6 +5516,26 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                     </td>
                     <td style={{ padding: "10px", fontWeight: "bold", color: scoreColor(comp), fontFamily: fontStack.mono }}>
                       {comp != null ? comp.toFixed(1) : "—"}
+                    </td>
+                    <td style={{ padding: "10px" }} onClick={(e) => e.stopPropagation()}>
+                      <span 
+                        onClick={() => updateCompany(c.id, { entityType: c.entityType === "Individual" ? "Company" : "Individual" })}
+                        title="Click to toggle Entity Type (Company <-> Individual)"
+                        style={{ 
+                          background: c.entityType === "Individual" ? "rgba(139, 92, 246, 0.12)" : "rgba(31, 45, 203, 0.08)", 
+                          color: c.entityType === "Individual" ? "#8B5CF6" : BLUE, 
+                          fontSize: 10, 
+                          padding: "2px 6px", 
+                          borderRadius: 3,
+                          border: `1px solid ${c.entityType === "Individual" ? "rgba(139, 92, 246, 0.3)" : "rgba(31, 45, 203, 0.2)"}`,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "inline-block",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        {c.entityType === "Individual" ? "👤 Individual ⇄" : "🏢 Company ⇄"}
+                      </span>
                     </td>
                     <td style={{ padding: "10px", fontWeight: 600 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -6353,6 +6477,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
   const comp = compositeScore(c.scores);
 
   const [isEditing, setIsEditing] = useState(false);
+  const [editEntityType, setEditEntityType] = useState(c.entityType || "Company");
   const [editName, setEditName] = useState(c.name || "");
   const [editOneLiner, setEditOneLiner] = useState(c.oneLiner || "");
   const [editSector, setEditSector] = useState(c.sector || "");
@@ -6370,6 +6495,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
   const [editExcludeFromTamQueue, setEditExcludeFromTamQueue] = useState(c.excludeFromTamQueue || false);
 
   useEffect(() => {
+    setEditEntityType(c.entityType || "Company");
     setEditName(c.name || "");
     setEditOneLiner(c.oneLiner || "");
     setEditSector(c.sector || "");
@@ -11230,6 +11356,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 }).filter(Boolean);
 
                 update({
+                  entityType: editEntityType,
                   name: editName,
                   oneLiner: editOneLiner,
                   sector: editSector,
@@ -11270,6 +11397,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             <Btn 
               small 
               onClick={() => {
+                setEditEntityType(c.entityType || "Company");
                 setEditName(c.name || "");
                 setEditOneLiner(c.oneLiner || "");
                 setEditSector(c.sector || "");
@@ -11299,7 +11427,18 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
           <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: 22 }}>
             {isEditing ? (
               <div style={{ marginBottom: 16 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <Label>Entity Type</Label>
+                    <select 
+                      value={editEntityType} 
+                      onChange={(e) => setEditEntityType(e.target.value)} 
+                      style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}
+                    >
+                      <option value="Company">🏢 Company</option>
+                      <option value="Individual">👤 Individual</option>
+                    </select>
+                  </div>
                   <div>
                     <Label>Company/Individual Name</Label>
                     <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
@@ -11422,6 +11561,15 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 )}
                 <div style={{ fontSize: 13, color: FADE, margin: "6px 0 10px" }}>{c.oneLiner}</div>
                 <div style={{ marginBottom: 14 }}>
+                  <span 
+                    onClick={() => update({ entityType: c.entityType === "Individual" ? "Company" : "Individual" })}
+                    style={{ cursor: "pointer" }}
+                    title="Click to toggle Entity Type (Company <-> Individual)"
+                  >
+                    <Tag color={c.entityType === "Individual" ? "#8B5CF6" : BLUE}>
+                      {c.entityType === "Individual" ? "👤 Individual (Click to change ⇄)" : "🏢 Company (Click to change ⇄)"}
+                    </Tag>
+                  </span>
                   <Tag color={statusColor(c.status)}>{c.status}</Tag>
                   <Tag color={BLUE}>{c.source}</Tag>
                   {c.priority && (
@@ -11531,7 +11679,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 )}
               </>
             )}
-            {[["Product", "product"], ["Market", "market"], ["Team", "team"], ["Traction", "traction"]].map(([label, k]) => (
+            {(c.entityType === "Individual"
+              ? [["Background & Project Focus", "product"], ["Target Domain & Industry", "market"], ["Credentials & Experience", "team"], ["Track Record & Sourcing Signals", "traction"]]
+              : [["Product", "product"], ["Market", "market"], ["Team", "team"], ["Traction", "traction"]]
+            ).map(([label, k]) => (
               <div key={k} style={{ marginBottom: 14 }}>
                 <Label>{label}</Label>
                 <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>
@@ -15264,6 +15415,7 @@ function AddCompany({ onAdd, companies, setCompanies, setInvestors }) {
   const [pdfLoading, setPdfLoading] = useState(false);
   
   const [context, setContext] = useState("");
+  const [entityType, setEntityType] = useState("Company");
   const [source, setSource] = useState("Manual");
   const [stage, setStage] = useState("Seed");
   const [geo, setGeo] = useState("");
@@ -15409,6 +15561,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
       const company = {
         id: uid(),
         name: out.name || (pdfFile ? pdfFile.name.replace(/\.[^\/.]+$/, "") : rawUrl),
+        entityType: entityType || "Company",
         url: formattedUrl,
         oneLiner: out.oneLiner || "",
         sector: out.sector || "",
@@ -15475,7 +15628,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
     ];
 
     onAdd({
-      id: uid(), name: derivedName, url: formattedUrl,
+      id: uid(), name: derivedName, entityType: entityType || "Company", url: formattedUrl,
       oneLiner: "", sector: "", stage, source, status: "Active opportunity", dtm: false,
       geo: geo || "", priority: priority || "Medium",
       overview: {}, scores: null, rationale: {},
@@ -15552,6 +15705,12 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
         }
       }
       
+      // Auto-detect entity type from URL if not specified
+      let detectedEntityType = parts[6] ? parts[6].trim() : "";
+      if (!detectedEntityType) {
+        detectedEntityType = rawUrl.includes("linkedin.com/in/") ? "Individual" : "Company";
+      }
+
       // Avoid duplicates
       const exists = companies.some(c => {
         if (formattedUrl && c.url) {
@@ -15577,6 +15736,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
         newCompanies.push({
           id: "bulk_" + uid(),
           name: name,
+          entityType: detectedEntityType,
           url: formattedUrl,
           oneLiner: "",
           sector: "",
@@ -15631,7 +15791,19 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div>
               <Label>Website or LinkedIn URL</Label>
-              <Input placeholder="https://company.com or linkedin.com/company/..." value={url} onChange={(e) => setUrl(e.target.value)} />
+              <Input 
+                placeholder="https://company.com or linkedin.com/in/name..." 
+                value={url} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setUrl(val);
+                  if (val.includes("linkedin.com/in/")) {
+                    setEntityType("Individual");
+                  } else if (val.includes("company.com") || val.includes("linkedin.com/company/")) {
+                    setEntityType("Company");
+                  }
+                }} 
+              />
             </div>
             <div>
               <Label>Pitch Deck URL / DocSend Link / Notion / Web Link (optional)</Label>
@@ -15663,6 +15835,27 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
           </div>
 
           <div style={{ display: "flex", gap: 12, margin: "14px 0", flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 140px" }}>
+              <Label>Entity Type</Label>
+              <select 
+                value={entityType} 
+                onChange={(e) => setEntityType(e.target.value)} 
+                style={{ 
+                  width: "100%", 
+                  padding: 9, 
+                  fontFamily: fontStack.ui, 
+                  fontSize: 13, 
+                  border: `1px solid ${entityType === "Individual" ? "#8B5CF6" : BLUE}`, 
+                  background: entityType === "Individual" ? "rgba(139, 92, 246, 0.05)" : "rgba(31, 45, 203, 0.04)", 
+                  color: entityType === "Individual" ? "#8B5CF6" : BLUE,
+                  borderRadius: 2,
+                  fontWeight: 600
+                }}
+              >
+                <option value="Company">🏢 Company</option>
+                <option value="Individual">👤 Individual</option>
+              </select>
+            </div>
             <div style={{ flex: "1 1 120px" }}>
               <Label>Source</Label>
               <select value={source} onChange={(e) => setSource(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
