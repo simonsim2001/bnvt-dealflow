@@ -785,6 +785,33 @@ def get_azava_secret():
         pass
     return default_secret
 
+MASK_PREFIX = "\u2022\u2022\u2022\u2022"
+SAFE_KEY_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
+
+def is_secret_key(key):
+    k = (key or "").lower()
+    return (k.endswith("_api_key") or k.endswith("_secret") or k.endswith("_token")
+            or k in ("supabase_key", "supabase_db_url", "azava_secret", "app_password"))
+
+def mask_secret(val):
+    if not isinstance(val, str) or not val.strip():
+        return val
+    v = val.strip()
+    return MASK_PREFIX + (v[-4:] if len(v) > 8 else "")
+
+def is_masked(val):
+    return isinstance(val, str) and val.startswith(MASK_PREFIX)
+
+def safe_storage_key(key):
+    return bool(key) and bool(SAFE_KEY_RE.match(key)) and ".." not in key
+
+def client_api_key(handler, header="X-Anthropic-API-Key"):
+    """A key sent by the browser is ignored if it is just the masked placeholder."""
+    v = handler.headers.get(header)
+    if not v or is_masked(v) or v == "configured_via_provider" or not v.isascii():
+        return None
+    return v
+
 def check_auth(handler):
     # Check Authorization header first
     auth_header = handler.headers.get('Authorization')
@@ -2131,7 +2158,127 @@ def execute_affinity_push(item, api_key=None):
 
 
 
+# ---- Access control --------------------------------------------------------------
+import hmac, hashlib
+from http import cookies as http_cookies
+
+STATIC_FILES = {"/": "index.html", "/index.html": "index.html", "/bnvt-dealflow.js": "bnvt-dealflow.js",
+                "/manifest.json": "manifest.json"}
+# Called by external services that carry their own token (or by Meta's webhook).
+PUBLIC_PATHS = {"/healthz", "/login", "/logout", "/api/whatsapp", "/api/azava",
+                "/ingest/voice", "/ingest/deck", "/pipeline/summary"}
+SESSION_DAYS = 30
+
+def app_password():
+    return (os.environ.get("APP_PASSWORD") or get_stored_value_file("app_password") or "").strip()
+
+def _session_secret():
+    base = os.environ.get("SESSION_SECRET") or ("bnvt-session:" + app_password())
+    return hashlib.sha256(base.encode()).digest()
+
+def make_session_cookie():
+    exp = str(int(time.time()) + SESSION_DAYS * 86400)
+    sig = hmac.new(_session_secret(), exp.encode(), hashlib.sha256).hexdigest()
+    return f"{exp}.{sig}"
+
+def valid_session(handler):
+    raw = handler.headers.get("Cookie")
+    if not raw:
+        return False
+    try:
+        c = http_cookies.SimpleCookie(raw)
+        exp, sig = c["bnvt_session"].value.split(".", 1)
+    except Exception:
+        return False
+    good = hmac.new(_session_secret(), exp.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, good) and int(exp) > time.time()
+
+LOGIN_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>BNVT Dealflow · Sign in</title>
+<style>body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;display:flex;
+align-items:center;justify-content:center;height:100vh}form{width:300px}h1{font-size:18px;margin:0 0 24px;
+letter-spacing:.02em}input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #111;font-size:14px;
+margin-bottom:12px}button{width:100%;padding:10px;background:#000;color:#fff;border:0;font-size:14px;cursor:pointer}
+.err{color:#C00000;font-size:13px;margin-bottom:12px}</style></head><body>
+<form method="POST" action="/login"><h1>BNVT Dealflow</h1>__ERR__
+<input type="password" name="password" placeholder="Team password" autofocus required>
+<button type="submit">Sign in</button></form></body></html>"""
+
+def gate_request(handler, method):
+    """Return True if the request may proceed; otherwise send the response and return False."""
+    path = urlparse(handler.path).path
+    if path in PUBLIC_PATHS:
+        return True
+    is_api = path.startswith("/api/")
+    if not is_api and path not in STATIC_FILES:
+        handler.send_response(404)
+        handler.end_headers()
+        return False
+    if not app_password() or valid_session(handler):
+        return True
+    if is_api or method != "GET":
+        handler.send_response(401)
+        handler.send_header("Content-Type", "application/json")
+        handler.end_headers()
+        handler.wfile.write(b'{"error":"Not signed in"}')
+    else:
+        handler.send_response(302)
+        handler.send_header("Location", "/login")
+        handler.end_headers()
+    return False
+
+def handle_login_logout(handler, method):
+    path = urlparse(handler.path).path
+    if path == "/logout":
+        handler.send_response(302)
+        handler.send_header("Set-Cookie", "bnvt_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+        handler.send_header("Location", "/login")
+        handler.end_headers()
+        return True
+    if path != "/login":
+        return False
+    err = ""
+    if method == "POST":
+        length = int(handler.headers.get("Content-Length", 0) or 0)
+        form = parse_qs(handler.rfile.read(length).decode("utf-8", "ignore"))
+        given = (form.get("password", [""])[0]).strip()
+        pw = app_password()
+        if pw and hmac.compare_digest(given.encode(), pw.encode()):
+            secure = "; Secure" if handler.headers.get("X-Forwarded-Proto") == "https" else ""
+            handler.send_response(302)
+            handler.send_header("Set-Cookie", f"bnvt_session={make_session_cookie()}; Path=/; Max-Age={SESSION_DAYS*86400}; HttpOnly; SameSite=Lax{secure}")
+            handler.send_header("Location", "/")
+            handler.end_headers()
+            return True
+        time.sleep(1)  # slow down guessing
+        err = '<div class="err">Wrong password.</div>'
+    body = LOGIN_HTML.replace("__ERR__", err).encode()
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.end_headers()
+    handler.wfile.write(body)
+    return True
+
+def handle_healthz(handler):
+    if urlparse(handler.path).path != "/healthz":
+        return False
+    ok, detail = True, {}
+    try:
+        db = read_db()
+        detail["companies"] = len(db.get("companies", []))
+    except Exception as e:
+        ok, detail["db_error"] = False, str(e)
+    detail["supabase"] = {"lastSyncAt": mirror_status.get("lastSyncAt"), "lastError": mirror_status.get("lastError")}
+    handler.send_response(200 if ok else 503)
+    handler.send_header("Content-Type", "application/json")
+    handler.end_headers()
+    handler.wfile.write(json.dumps({"ok": ok, **detail}).encode())
+    return True
+
 class DealflowHandler(http.server.SimpleHTTPRequestHandler):
+    def do_HEAD(self):
+        if gate_request(self, "HEAD"):
+            super().do_HEAD()
     def end_headers(self):
         # Always revalidate so a rebuilt app appears on a normal reload.
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -2140,6 +2287,10 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
+        if handle_healthz(self) or handle_login_logout(self, "GET"):
+            return
+        if not gate_request(self, "GET"):
+            return
         parsed_url = urlparse(self.path)
         query = parse_qs(parsed_url.query)
         
@@ -2184,6 +2335,20 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
 
         elif parsed_url.path == '/api/storage':
             key = query.get('key', [None])[0]
+            if key and not safe_storage_key(key):
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid key"}).encode('utf-8'))
+                return
+            if key and is_secret_key(key):
+                # Secrets never leave the server: report only whether one is configured.
+                val = get_stored_value(key)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"key": key, "value": mask_secret(val) if val else None, "masked": True}).encode('utf-8'))
+                return
             if not key:
                 self.send_response(400)
                 self.send_header("Content-Type", "application/json")
@@ -2327,6 +2492,10 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         import uuid
         import traceback
+        if handle_login_logout(self, "POST"):
+            return
+        if not gate_request(self, "POST"):
+            return
         parsed_url = urlparse(self.path)
         
         # Auth check for Azava & Ingest endpoints
@@ -3176,7 +3345,7 @@ Respond ONLY with valid JSON.
 
             else:
                 # Retrieve API key: client header has priority, environment variable is fallback
-                api_key = self.headers.get('X-Anthropic-API-Key')
+                api_key = client_api_key(self)
                 if not api_key or api_key == "configured_via_provider":
                     api_key = get_stored_value('anthropic_api_key')
                 if not api_key or api_key == "configured_via_provider":
@@ -3282,7 +3451,7 @@ Respond ONLY with valid JSON.
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length) if content_length > 0 else b''
             
-            granola_key = self.headers.get('X-Granola-API-Key')
+            granola_key = client_api_key(self, 'X-Granola-API-Key')
             if not granola_key:
                 self.send_response(400)
                 self.send_header("Content-Type", "application/json")
@@ -3603,6 +3772,15 @@ Respond ONLY with valid JSON.
                 value = data.get('value')
                 if not key:
                     raise Exception("Missing key")
+                if not safe_storage_key(key):
+                    raise Exception("Invalid key")
+                if is_masked(value):
+                    # The browser sent back the masked placeholder: keep the real secret.
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True, "unchanged": True}).encode('utf-8'))
+                    return
                 
                 if key == 'bnvt-dealflow-v1':
                     with db_lock:
@@ -3735,7 +3913,7 @@ Respond ONLY with valid JSON.
                     raise Exception("Missing 'name' parameter")
                 
                 # Retrieve API key
-                api_key = self.headers.get('X-Anthropic-API-Key')
+                api_key = client_api_key(self)
                 if not api_key or api_key == "configured_via_provider":
                     api_key = get_stored_value('anthropic_api_key')
                 if not api_key or api_key == "configured_via_provider":
