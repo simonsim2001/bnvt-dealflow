@@ -1,21 +1,25 @@
-# Ignore virtual environments
+# Virtual environments
 venv/
 .venv/
 env/
 
-# Ignore Python cache files
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Ignore operating system files
+# OS files
 .DS_Store
 Thumbs.db
 
-# Ignore keys and credentials in db_storage
-db_storage/openai_api_key.json
-db_storage/anthropic_api_key.json
-
-# Ignore scratch files and temporary uploads
-scratch/
+# Local data, keys and secrets: NEVER commit (production uses env vars + Supabase)
+db_storage/
 uploads/
+logs/
+.env
+.env.*
+!.env.example
+*.bundle
+
+# Scratch
+scratch/
