@@ -9,7 +9,7 @@ services:
     healthCheckPath: /healthz
     buildCommand: "./build.sh"
     # The persistent disk keeps the database and uploaded files across deploys/restarts.
-    startCommand: "mkdir -p /var/data/db_storage /var/data/uploads && ln -sfn /var/data/db_storage db_storage && ln -sfn /var/data/uploads uploads && python3 server.py"
+    startCommand: "bash start.sh"
     disk:
       name: bnvt-data
       mountPath: /var/data
