@@ -1,5 +1,4 @@
 pypdf
 requests
 pillow
-playwright
 psycopg2-binary

@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: bnvt-dealflow
+    runtime: python
+    plan: starter            # always on (free plan sleeps after 15 min)
+    region: frankfurt
+    branch: main
+    autoDeploy: true         # every push to main deploys automatically
+    healthCheckPath: /healthz
+    buildCommand: "./build.sh"
+    # The persistent disk keeps the database and uploaded files across deploys/restarts.
+    startCommand: "mkdir -p /var/data/db_storage /var/data/uploads && ln -sfn /var/data/db_storage db_storage && ln -sfn /var/data/uploads uploads && python3 server.py"
+    disk:
+      name: bnvt-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: APP_PASSWORD        # shared team password for the login page
+        sync: false
+      - key: SESSION_SECRET      # signs login cookies
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY        # sb_secret_... key
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

@@ -2374,6 +2374,77 @@ def handle_healthz(handler):
     handler.wfile.write(json.dumps({"ok": ok, **detail}).encode())
     return True
 
+
+# ---------------- Reading library: files + link metadata ----------------
+READING_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "reading")
+READING_MAX_BYTES = 30 * 1024 * 1024
+
+def _reading_safe_name(name):
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", os.path.basename(name or "file"))[:80] or "file"
+    return f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{base}"
+
+def reading_store_file(name, content_type, data):
+    """Store in Supabase Storage bucket 'reading' when configured; always keep a local copy."""
+    fname = _reading_safe_name(name)
+    os.makedirs(READING_DIR, exist_ok=True)
+    tmp = os.path.join(READING_DIR, fname + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, os.path.join(READING_DIR, fname))
+    remote = False
+    url, key = _sb_creds()
+    if url and key:
+        try:
+            req = urllib.request.Request(f"{url}/storage/v1/object/reading/{quote(fname)}", data=data, method="POST",
+                                         headers=sb_headers(key, {"Content-Type": content_type or "application/octet-stream", "x-upsert": "true"}))
+            urllib.request.urlopen(req, timeout=60).read()
+            remote = True
+        except Exception as e:
+            print("[reading] Supabase storage upload failed:", e)
+    return {"path": fname, "remote": remote, "url": f"/api/reading/file?path={quote(fname)}"}
+
+def reading_load_file(fname):
+    if not fname or "/" in fname or "\\" in fname or fname.startswith("."):
+        return None
+    local = os.path.join(READING_DIR, fname)
+    if os.path.isfile(local):
+        with open(local, "rb") as f:
+            return f.read()
+    url, key = _sb_creds()
+    if url and key:
+        try:
+            req = urllib.request.Request(f"{url}/storage/v1/object/reading/{quote(fname)}", headers=sb_headers(key))
+            data = urllib.request.urlopen(req, timeout=60).read()
+            os.makedirs(READING_DIR, exist_ok=True)
+            with open(local, "wb") as f:
+                f.write(data)
+            return data
+        except Exception as e:
+            print("[reading] Supabase storage fetch failed:", e)
+    return None
+
+def reading_link_meta(link):
+    import html as _html
+    if not re.match(r"^https?://", link or ""):
+        return {"ok": False, "error": "Link must start with http:// or https://"}
+    req = urllib.request.Request(link, headers={"User-Agent": "Mozilla/5.0 (BNVT reading library)"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        raw = resp.read(600000).decode("utf-8", "ignore")
+    def meta(*names):
+        for n in names:
+            m = re.search(r'<meta[^>]+(?:property|name)=["\']' + re.escape(n) + r'["\'][^>]*content=["\']([^"\']*)', raw, re.I) \
+                or re.search(r'<meta[^>]+content=["\']([^"\']*)["\'][^>]*(?:property|name)=["\']' + re.escape(n) + r'["\']', raw, re.I)
+            if m and m.group(1).strip():
+                return _html.unescape(m.group(1).strip())
+        return ""
+    title = meta("og:title", "twitter:title")
+    if not title:
+        m = re.search(r"<title[^>]*>(.*?)</title>", raw, re.I | re.S)
+        title = _html.unescape(re.sub(r"\s+", " ", m.group(1)).strip()) if m else ""
+    return {"ok": True, "title": title[:300], "description": meta("og:description", "description", "twitter:description")[:1000],
+            "site": meta("og:site_name") or urlparse(link).netloc.replace("www.", "")}
+
+
 class DealflowHandler(http.server.SimpleHTTPRequestHandler):
     def do_HEAD(self):
         if gate_request(self, "HEAD"):
@@ -2508,6 +2579,20 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"value": None}).encode('utf-8'))
+        elif parsed_url.path == '/api/reading/file':
+            fname = unquote(parse_qs(parsed_url.query).get("path", [""])[0])
+            data = reading_load_file(fname)
+            if data is None:
+                self.send_response(404); self.end_headers(); return
+            import mimetypes
+            ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", 'inline; filename="%s"' % fname.split("_", 2)[-1])
+            self.end_headers()
+            self.wfile.write(data)
+            return
         elif parsed_url.path == '/api/supabase/verify':
             try:
                 result = verify_records() if _sb_creds()[0] else {"ok": False, "error": "Supabase not configured"}
@@ -2607,6 +2692,27 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         if not gate_request(self, "POST"):
             return
         parsed_url = urlparse(self.path)
+        if parsed_url.path in ('/api/reading/upload', '/api/reading/meta'):
+            try:
+                n = int(self.headers.get('Content-Length', 0))
+                if n > READING_MAX_BYTES * 1.4:
+                    raise ValueError("File too large (max 30 MB)")
+                body = json.loads(self.rfile.read(n).decode('utf-8') or "{}")
+                if parsed_url.path == '/api/reading/upload':
+                    data = base64.b64decode(body.get("data", ""))
+                    if not data:
+                        raise ValueError("Empty file")
+                    result = {"ok": True, **reading_store_file(body.get("name"), body.get("type"), data)}
+                else:
+                    result = reading_link_meta(body.get("url", "").strip())
+                code = 200
+            except Exception as e:
+                result, code = {"ok": False, "error": str(e)}, 400
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode('utf-8'))
+            return
         
         # Auth check for Azava & Ingest endpoints
         if parsed_url.path in ('/api/azava', '/ingest/voice', '/ingest/deck'):

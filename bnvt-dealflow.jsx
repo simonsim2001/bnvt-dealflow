@@ -1574,6 +1574,518 @@ const Btn = ({ children, onClick, primary, danger, small, disabled, style }) => 
   </button>
 );
 
+
+// ===================== READING LIBRARY (canvas board) =====================
+const READING_TYPES = ["Article", "Report", "Research paper", "Newsletter", "Podcast / Video", "Memo", "Other"];
+const DEFAULT_READING_COLUMNS = [
+  { id: "toread", name: "To read" },
+  { id: "reading", name: "Reading" },
+  { id: "done", name: "Done" },
+  { id: "reference", name: "Key reference" },
+];
+const readingId = () => "rd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const fileToBase64 = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(",")[1] || "");
+  r.onerror = reject;
+  r.readAsDataURL(file);
+});
+const guessReadingType = (name = "", url = "") => {
+  const s = (name + " " + url).toLowerCase();
+  if (/youtube|vimeo|spotify|podcast|\.mp3|\.mp4/.test(s)) return "Podcast / Video";
+  if (/arxiv|ssrn|doi\.org|paper|journal/.test(s)) return "Research paper";
+  if (/substack|newsletter|beehiiv/.test(s)) return "Newsletter";
+  if (/report|\.pdf/.test(s)) return "Report";
+  if (/memo/.test(s)) return "Memo";
+  return "Article";
+};
+
+const ReadingTypeTag = ({ type }) => (
+  <span style={{ fontFamily: fontStack.ui, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", border: `1px solid ${INK}`, padding: "1px 6px", borderRadius: 2, background: type === "Report" || type === "Research paper" ? INK : PAPER, color: type === "Report" || type === "Research paper" ? PAPER : INK, whiteSpace: "nowrap" }}>{type || "Other"}</span>
+);
+
+const ReadingLibrary = ({ readingItems = [], setReadingItems, readingColumns, setReadingColumns, companies = [], markDeleted = () => {} }) => {
+  const columns = (readingColumns && readingColumns.length) ? readingColumns : DEFAULT_READING_COLUMNS;
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [adding, setAdding] = useState(null); // "link" | "note" | null
+  const [linkUrl, setLinkUrl] = useState("");
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteBody, setNoteBody] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [openId, setOpenId] = useState(null);
+  const [dragId, setDragId] = useState(null);
+  const [overCol, setOverCol] = useState(null);
+  const fileRef = useRef(null);
+
+  const addItem = (item) => {
+    const now = Date.now();
+    setReadingItems(prev => [{ id: readingId(), column: columns[0].id, tags: [], companyIds: [], createdAt: now, updatedAt: now, ...item }, ...(prev || [])]);
+  };
+  const updateItem = (id, patch) => setReadingItems(prev => (prev || []).map(it => it.id === id ? { ...it, ...patch, updatedAt: Date.now() } : it));
+  const removeItem = (id) => {
+    if (!window.confirm("Delete this item from the library?")) return;
+    setReadingItems(prev => (prev || []).filter(it => it.id !== id));
+    markDeleted(id);
+    setOpenId(null);
+  };
+
+  const onFiles = async (files) => {
+    setError("");
+    for (const file of Array.from(files || [])) {
+      if (file.size > 30 * 1024 * 1024) { setError(`${file.name} is larger than 30 MB.`); continue; }
+      setBusy(`Uploading ${file.name}…`);
+      try {
+        const data = await fileToBase64(file);
+        const res = await fetch("/api/reading/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: file.name, type: file.type, data }) });
+        const out = await res.json();
+        if (!out.ok) throw new Error(out.error || "Upload failed");
+        addItem({ title: file.name.replace(/\.[^.]+$/, ""), kind: "file", fileName: file.name, fileUrl: out.url, filePath: out.path, fileSize: file.size, type: guessReadingType(file.name) });
+      } catch (e) {
+        setError(`Could not upload ${file.name}: ${e.message}`);
+      }
+    }
+    setBusy("");
+  };
+
+  const addLink = async () => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    setBusy("Reading link…"); setError("");
+    let meta = {};
+    try {
+      const res = await fetch("/api/reading/meta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+      meta = await res.json();
+    } catch (e) { meta = {}; }
+    addItem({ title: meta.title || url, description: meta.description || "", source: meta.site || "", kind: "link", url, type: guessReadingType("", url) });
+    setLinkUrl(""); setAdding(null); setBusy("");
+  };
+
+  const addNote = () => {
+    if (!noteTitle.trim()) return;
+    addItem({ title: noteTitle.trim(), description: noteBody.trim(), kind: "note", type: "Memo" });
+    setNoteTitle(""); setNoteBody(""); setAdding(null);
+  };
+
+  const summarise = async (it) => {
+    setBusy("Summarising…"); setError("");
+    try {
+      const prompt = `Summarise this reading item for a venture capital team in 3 short bullet points (plain text, start each with "- "). Focus on what matters for investing.\nTitle: ${it.title}\nType: ${it.type}\nSource/URL: ${it.url || it.source || it.fileName || ""}\nDescription: ${it.description || ""}`;
+      const out = await callClaude(prompt, !!it.url, "light");
+      updateItem(it.id, { summary: String(out || "").trim() });
+    } catch (e) { setError("Summary failed: " + e.message); }
+    setBusy("");
+  };
+
+  const renameColumn = (colId) => {
+    const col = columns.find(c => c.id === colId);
+    const name = window.prompt("Column name", col?.name || "");
+    if (!name || !name.trim()) return;
+    setReadingColumns(columns.map(c => c.id === colId ? { ...c, name: name.trim() } : c));
+  };
+  const addColumn = () => {
+    const name = window.prompt("New column name");
+    if (!name || !name.trim()) return;
+    setReadingColumns([...columns, { id: "col_" + Date.now().toString(36), name: name.trim() }]);
+  };
+  const removeColumn = (colId) => {
+    if (columns.length <= 1) return;
+    const target = columns.find(c => c.id !== colId).id;
+    if (!window.confirm("Remove this column? Its items move to the first remaining column.")) return;
+    setReadingItems(prev => (prev || []).map(it => it.column === colId ? { ...it, column: target, updatedAt: Date.now() } : it));
+    setReadingColumns(columns.filter(c => c.id !== colId));
+  };
+
+  const q = query.trim().toLowerCase();
+  const visible = (readingItems || []).filter(it => {
+    if (typeFilter && it.type !== typeFilter) return false;
+    if (!q) return true;
+    return [it.title, it.description, it.summary, it.source, (it.tags || []).join(" ")].join(" ").toLowerCase().includes(q);
+  });
+  const validCols = new Set(columns.map(c => c.id));
+  const colOf = (it) => validCols.has(it.column) ? it.column : columns[0].id;
+  const open = (readingItems || []).find(it => it.id === openId);
+  const companyName = (id) => companies.find(c => String(c.id) === String(id))?.name || "";
+
+  return (
+    <div id="reading-library" style={{ padding: "8px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <h2 style={{ fontFamily: fontStack.display, fontSize: 24, margin: 0, fontWeight: 600 }}>Reading Library</h2>
+          <div style={{ fontSize: 13, color: FADE, marginTop: 4 }}>{(readingItems || []).length} items · drag cards between columns · drop files anywhere on the board</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn primary onClick={() => fileRef.current?.click()}>Upload file</Btn>
+          <Btn onClick={() => setAdding(adding === "link" ? null : "link")}>Add link</Btn>
+          <Btn onClick={() => setAdding(adding === "note" ? null : "note")}>Write note</Btn>
+          <input id="reading-file-input" ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+        </div>
+      </div>
+
+      {adding === "link" && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <Input id="reading-link-input" autoFocus placeholder="https://…" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLink()} style={{ flex: 1 }} />
+          <Btn primary onClick={addLink} disabled={!linkUrl.trim() || !!busy}>Add</Btn>
+        </div>
+      )}
+      {adding === "note" && (
+        <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+          <Input id="reading-note-title" autoFocus placeholder="Title" value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} />
+          <TextArea id="reading-note-body" placeholder="Notes" rows={4} value={noteBody} onChange={(e) => setNoteBody(e.target.value)} />
+          <div><Btn primary onClick={addNote} disabled={!noteTitle.trim()}>Save note</Btn></div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <Input id="reading-search" placeholder="Search title, notes, tags…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ maxWidth: 320 }} />
+        <button onClick={() => setTypeFilter("")} style={{ fontFamily: fontStack.ui, fontSize: 12, padding: "4px 10px", border: `1px solid ${INK}`, borderRadius: 2, cursor: "pointer", background: !typeFilter ? INK : PAPER, color: !typeFilter ? PAPER : INK }}>All</button>
+        {READING_TYPES.map(t => (
+          <button key={t} onClick={() => setTypeFilter(typeFilter === t ? "" : t)} style={{ fontFamily: fontStack.ui, fontSize: 12, padding: "4px 10px", border: `1px solid ${INK}`, borderRadius: 2, cursor: "pointer", background: typeFilter === t ? INK : PAPER, color: typeFilter === t ? PAPER : INK }}>{t}</button>
+        ))}
+      </div>
+
+      {busy && <div style={{ fontSize: 13, marginBottom: 8 }}>{busy}</div>}
+      {error && <div style={{ fontSize: 13, color: RUST, marginBottom: 8 }}>{error}</div>}
+
+      <div
+        onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
+        onDrop={(e) => { if (e.dataTransfer.files?.length) { e.preventDefault(); onFiles(e.dataTransfer.files); } }}
+        style={{ display: "flex", gap: 14, overflowX: "auto", alignItems: "flex-start", paddingBottom: 12 }}
+      >
+        {columns.map(col => {
+          const items = visible.filter(it => colOf(it) === col.id).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          return (
+            <div key={col.id}
+              onDragOver={(e) => { if (dragId) { e.preventDefault(); setOverCol(col.id); } }}
+              onDragLeave={() => setOverCol(null)}
+              onDrop={(e) => { if (dragId) { e.preventDefault(); e.stopPropagation(); updateItem(dragId, { column: col.id }); setDragId(null); setOverCol(null); } }}
+              style={{ flex: "0 0 280px", minHeight: 320, border: `1px solid ${overCol === col.id ? INK : LINE}`, background: overCol === col.id ? "#F5F5F5" : PAPER, borderRadius: 2, padding: 10, transition: "background .15s, border-color .15s" }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div onDoubleClick={() => renameColumn(col.id)} title="Double-click to rename" style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", cursor: "text" }}>{col.name} <span style={{ color: FADE, fontWeight: 400 }}>{items.length}</span></div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => renameColumn(col.id)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11, color: FADE }}>Rename</button>
+                  {columns.length > 1 && <button onClick={() => removeColumn(col.id)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11, color: FADE }}>×</button>}
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {items.map(it => (
+                  <div key={it.id} draggable
+                    onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.id); }}
+                    onDragEnd={() => { setDragId(null); setOverCol(null); }}
+                    onClick={() => setOpenId(it.id)}
+                    className="bnvt-reading-card"
+                    style={{ border: `1px solid ${openId === it.id ? INK : LINE}`, borderRadius: 2, padding: 10, background: PAPER, cursor: "grab", opacity: dragId === it.id ? 0.4 : 1 }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 6, marginBottom: 6 }}>
+                      <ReadingTypeTag type={it.type} />
+                      <span style={{ fontSize: 10, color: FADE }}>{new Date(it.createdAt || Date.now()).toLocaleDateString()}</span>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35, wordBreak: "break-word" }}>{it.title}</div>
+                    {(it.source || it.kind === "file") && <div style={{ fontSize: 11, color: FADE, marginTop: 3 }}>{it.source || it.fileName}</div>}
+                    {(it.tags || []).length > 0 && (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                        {it.tags.map(t => <span key={t} style={{ fontSize: 10, color: FADE }}>#{t}</span>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {items.length === 0 && <div style={{ fontSize: 12, color: FADE, padding: "18px 4px", textAlign: "center" }}>Drop items here</div>}
+              </div>
+            </div>
+          );
+        })}
+        <button onClick={addColumn} style={{ flex: "0 0 140px", minHeight: 60, border: `1px dashed ${LINE}`, background: PAPER, cursor: "pointer", fontFamily: fontStack.ui, fontSize: 12, color: FADE }}>+ Add column</button>
+      </div>
+
+      {open && (
+        <div onClick={() => setOpenId(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 1000, display: "flex", justifyContent: "flex-end" }}>
+          <div id="reading-detail" onClick={(e) => e.stopPropagation()} style={{ width: "min(520px, 100%)", height: "100%", background: PAPER, borderLeft: `1px solid ${INK}`, padding: 24, overflowY: "auto", display: "grid", gap: 12, alignContent: "start" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <ReadingTypeTag type={open.type} />
+              <button onClick={() => setOpenId(null)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 18 }}>×</button>
+            </div>
+            <Label>Title</Label>
+            <Input value={open.title || ""} onChange={(e) => updateItem(open.id, { title: e.target.value })} />
+            <Label>Type</Label>
+            <select value={open.type || "Other"} onChange={(e) => updateItem(open.id, { type: e.target.value })} style={{ fontFamily: fontStack.ui, fontSize: 13, padding: 8, border: `1px solid ${INK}`, borderRadius: 2, background: PAPER }}>
+              {READING_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+            <Label>Column</Label>
+            <select value={colOf(open)} onChange={(e) => updateItem(open.id, { column: e.target.value })} style={{ fontFamily: fontStack.ui, fontSize: 13, padding: 8, border: `1px solid ${INK}`, borderRadius: 2, background: PAPER }}>
+              {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {open.url && <div style={{ fontSize: 13 }}><a href={open.url} target="_blank" rel="noreferrer" style={{ color: INK }}>Open link ↗</a></div>}
+            {open.fileUrl && <div style={{ fontSize: 13 }}><a href={open.fileUrl} target="_blank" rel="noreferrer" style={{ color: INK }}>Open file: {open.fileName} ↗</a></div>}
+            <Label>Tags (comma separated)</Label>
+            <Input defaultValue={(open.tags || []).join(", ")} key={open.id + "-tags"} onBlur={(e) => updateItem(open.id, { tags: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })} />
+            <Label>Linked companies</Label>
+            <select value="" onChange={(e) => e.target.value && updateItem(open.id, { companyIds: Array.from(new Set([...(open.companyIds || []), e.target.value])) })} style={{ fontFamily: fontStack.ui, fontSize: 13, padding: 8, border: `1px solid ${INK}`, borderRadius: 2, background: PAPER }}>
+              <option value="">Link a pipeline company…</option>
+              {companies.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {(open.companyIds || []).length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {open.companyIds.map(id => (
+                  <span key={id} style={{ fontSize: 12, border: `1px solid ${LINE}`, padding: "2px 6px", borderRadius: 2 }}>
+                    {companyName(id) || id} <button onClick={() => updateItem(open.id, { companyIds: open.companyIds.filter(x => x !== id) })} style={{ border: "none", background: "none", cursor: "pointer" }}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <Label>Notes</Label>
+            <TextArea rows={5} value={open.description || ""} onChange={(e) => updateItem(open.id, { description: e.target.value })} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Label>AI summary</Label>
+              <Btn small onClick={() => summarise(open)} disabled={!!busy}>{open.summary ? "Regenerate" : "Summarise"}</Btn>
+            </div>
+            {open.summary && <div style={{ fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{open.summary}</div>}
+            <div style={{ fontSize: 11, color: FADE }}>Added {new Date(open.createdAt || Date.now()).toLocaleString()}</div>
+            <div><Btn danger small onClick={() => removeItem(open.id)}>Delete item</Btn></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ===================== WEEKLY REPORTS =====================
+const startOfIsoWeek = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); const day = (x.getDay() + 6) % 7; x.setDate(x.getDate() - day); return x; };
+const isoWeekInfo = (d) => {
+  const x = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = x.getUTCDay() || 7;
+  x.setUTCDate(x.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(x.getUTCFullYear(), 0, 1));
+  return { year: x.getUTCFullYear(), week: Math.ceil((((x - yearStart) / 86400000) + 1) / 7) };
+};
+const weekValue = (d) => { const { year, week } = isoWeekInfo(d); return `${year}-W${String(week).padStart(2, "0")}`; };
+const weekFromValue = (v) => {
+  const m = /^(\d{4})-W(\d{2})$/.exec(v || "");
+  if (!m) return startOfIsoWeek(new Date());
+  const jan4 = new Date(Number(m[1]), 0, 4);
+  const w1 = startOfIsoWeek(jan4);
+  w1.setDate(w1.getDate() + (Number(m[2]) - 1) * 7);
+  return w1;
+};
+const fmtDay = (d) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const lastNoteText = (notes) => {
+  if (!notes) return "";
+  if (typeof notes === "string") return notes.trim().split(/\n{2,}/).slice(-1)[0] || "";
+  if (Array.isArray(notes) && notes.length) {
+    const sorted = notes.slice().sort((a, b) => (b?.ts || b?.date || 0) - (a?.ts || a?.date || 0));
+    const n = sorted[0];
+    return typeof n === "string" ? n : (n?.text || "");
+  }
+  return "";
+};
+
+const buildReportData = ({ companies, readingItems, fromMs, toMs, allStarred }) => {
+  const inRange = (t) => t && Number(t) >= fromMs && Number(t) < toMs;
+  const deals = companies.filter(c => c.starred).filter(c => {
+    if (allStarred) return true;
+    const noteTs = Array.isArray(c.notes) ? c.notes.map(n => n?.ts || n?.date || 0) : [];
+    return inRange(c.starredAt) || inRange(c.createdAt) || inRange(c.statusChangedAt) || inRange(c.updatedAt) || noteTs.some(inRange);
+  }).map(c => {
+    const notesInRange = Array.isArray(c.notes) ? c.notes.filter(n => inRange(n?.ts || n?.date)).length : 0;
+    const changes = [];
+    if (inRange(c.starredAt)) changes.push("Starred");
+    if (inRange(c.createdAt)) changes.push("Added to pipeline");
+    if (inRange(c.statusChangedAt)) changes.push(`Status changed to ${c.status}`);
+    if (notesInRange) changes.push(`${notesInRange} new note${notesInRange > 1 ? "s" : ""}`);
+    return { id: c.id, name: c.name, status: c.status || "", stage: c.stage || "", sector: c.sector || "", score: compositeScore(c.scores), oneLiner: c.oneLiner || "", lastNote: lastNoteText(c.notes).replace(/\s+/g, " ").slice(0, 280), changes };
+  }).sort((a, b) => (b.score || 0) - (a.score || 0));
+  const reading = (readingItems || []).filter(it => inRange(it.createdAt)).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const byType = {};
+  reading.forEach(it => { (byType[it.type || "Other"] = byType[it.type || "Other"] || []).push({ id: it.id, title: it.title, source: it.source || it.fileName || "", url: it.url || "", summary: it.summary || it.description || "", createdAt: it.createdAt }); });
+  return { deals, readingByType: byType, readingCount: reading.length };
+};
+
+const reportToPdf = (report) => {
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) throw new Error("PDF library not loaded");
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W = 210, M = 18, maxW = W - M * 2;
+  let y = 20;
+  const ensure = (h) => { if (y + h > 280) { doc.addPage(); y = 20; } };
+  const text = (str, size = 10, style = "normal", gap = 1.5, color = 17) => {
+    doc.setFont("helvetica", style); doc.setFontSize(size); doc.setTextColor(color);
+    const lines = doc.splitTextToSize(String(str || ""), maxW);
+    lines.forEach(l => { ensure(size * 0.45); doc.text(l, M, y); y += size * 0.42; });
+    y += gap;
+  };
+  const rule = () => { ensure(4); doc.setDrawColor(17); doc.setLineWidth(0.3); doc.line(M, y, W - M, y); y += 5; };
+  text("BNVT CAPITAL", 8, "bold", 1, 90);
+  text(report.title, 18, "bold", 1);
+  text(`${fmtDay(report.from)} – ${fmtDay(report.to - 1)}  ·  generated ${fmtDay(report.createdAt)}`, 9, "normal", 3, 90);
+  rule();
+  if (report.summary) { text("Summary", 12, "bold", 1); text(report.summary, 10, "normal", 4); rule(); }
+  text(`Starred deals (${report.data.deals.length})`, 12, "bold", 2);
+  if (!report.data.deals.length) text("No starred deals with activity in this period.", 10, "italic", 3, 90);
+  report.data.deals.forEach(d => {
+    ensure(20);
+    text(`${d.name}${d.score != null ? `   ${Number(d.score).toFixed(1)}/5` : ""}`, 11, "bold", 0.5);
+    text([d.status, d.stage, d.sector].filter(Boolean).join(" · "), 8.5, "normal", 0.8, 90);
+    if (d.oneLiner) text(d.oneLiner, 9.5, "normal", 0.8);
+    if (d.changes.length) text("This period: " + d.changes.join(", "), 9, "italic", 0.8);
+    if (d.lastNote) text("Latest note: " + d.lastNote, 8.5, "normal", 0.8, 70);
+    y += 2.5;
+  });
+  rule();
+  text(`New reading materials (${report.data.readingCount})`, 12, "bold", 2);
+  if (!report.data.readingCount) text("No new reading added in this period.", 10, "italic", 3, 90);
+  Object.entries(report.data.readingByType).forEach(([type, items]) => {
+    text(type.toUpperCase(), 9, "bold", 1);
+    items.forEach(it => {
+      ensure(10);
+      text(`• ${it.title}${it.source ? ` — ${it.source}` : ""}`, 9.5, "normal", 0.5);
+      if (it.summary) text(it.summary.replace(/\s+/g, " ").slice(0, 400), 8.5, "normal", 0.5, 80);
+      if (it.url) text(it.url, 7.5, "normal", 0.5, 110);
+      y += 1.5;
+    });
+    y += 2;
+  });
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(120); doc.text(`${report.title}  ·  ${i}/${pages}`, M, 290); }
+  return doc;
+};
+
+const ReportsTab = ({ companies = [], readingItems = [], reports = [], setReports, markDeleted = () => {} }) => {
+  const thisWeek = startOfIsoWeek(new Date());
+  const [fromWeek, setFromWeek] = useState(weekValue(thisWeek));
+  const [toWeek, setToWeek] = useState(weekValue(thisWeek));
+  const [allStarred, setAllStarred] = useState(false);
+  const [withAI, setWithAI] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [viewId, setViewId] = useState(null);
+
+  const preset = (startOffset, endOffset) => {
+    const a = new Date(thisWeek); a.setDate(a.getDate() + startOffset * 7);
+    const b = new Date(thisWeek); b.setDate(b.getDate() + endOffset * 7);
+    setFromWeek(weekValue(a)); setToWeek(weekValue(b));
+  };
+  let fromDate = weekFromValue(fromWeek), toDate = weekFromValue(toWeek);
+  if (toDate < fromDate) [fromDate, toDate] = [toDate, fromDate];
+  const fromMs = fromDate.getTime();
+  const toMs = (() => { const e = new Date(toDate); e.setDate(e.getDate() + 7); return e.getTime(); })();
+  const preview = useMemo(() => buildReportData({ companies, readingItems, fromMs, toMs, allStarred }), [companies, readingItems, fromMs, toMs, allStarred]);
+
+  const generate = async () => {
+    setError(""); setBusy("Generating…");
+    const w1 = isoWeekInfo(fromDate), w2 = isoWeekInfo(toDate);
+    const title = w1.week === w2.week && w1.year === w2.year ? `Weekly report — W${w1.week} ${w1.year}` : `Report — W${w1.week} ${w1.year} to W${w2.week} ${w2.year}`;
+    let summary = "";
+    if (withAI) {
+      try {
+        const prompt = `Write a concise executive summary (max 120 words, plain prose, no markdown) for a VC partner covering this period's starred deals and new reading.\nDeals: ${JSON.stringify(preview.deals.slice(0, 25).map(d => ({ n: d.name, s: d.status, sc: d.score, ch: d.changes, o: d.oneLiner })))}\nReading: ${JSON.stringify(Object.fromEntries(Object.entries(preview.readingByType).map(([k, v]) => [k, v.map(i => i.title)])))}`;
+        summary = String(await callClaude(prompt, false, "light") || "").trim();
+      } catch (e) { setError("AI summary skipped: " + e.message); }
+    }
+    const report = { id: "rep_" + Date.now().toString(36), title, from: fromMs, to: toMs, fromWeek, toWeek, allStarred, summary, data: preview, createdAt: Date.now() };
+    setReports(prev => [report, ...(prev || [])]);
+    setViewId(report.id);
+    setBusy("");
+  };
+
+  const fileName = (r) => r.title.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") + ".pdf";
+  const download = (r) => { try { reportToPdf(r).save(fileName(r)); } catch (e) { setError(e.message); } };
+  const share = async (r) => {
+    try {
+      const blob = reportToPdf(r).output("blob");
+      const file = new File([blob], fileName(r), { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: r.title, text: r.title });
+      } else {
+        reportToPdf(r).save(fileName(r));
+        setError("Sharing isn't supported in this browser — the PDF was downloaded instead so you can attach it.");
+      }
+    } catch (e) { if (e.name !== "AbortError") setError(e.message); }
+  };
+  const viewing = (reports || []).find(r => r.id === viewId);
+  const pill = { fontFamily: fontStack.ui, fontSize: 12, padding: "4px 10px", border: `1px solid ${INK}`, borderRadius: 2, cursor: "pointer", background: PAPER, color: INK };
+
+  return (
+    <div id="reports-tab" style={{ padding: "8px 0", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 300px", gap: 24 }}>
+      <div>
+        <h2 style={{ fontFamily: fontStack.display, fontSize: 24, margin: 0, fontWeight: 600 }}>Reports</h2>
+        <div style={{ fontSize: 13, color: FADE, margin: "4px 0 16px" }}>Starred deals and new reading over a chosen range of weeks (Monday–Sunday).</div>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
+          <div><Label>From week</Label><input id="report-from-week" type="week" value={fromWeek} onChange={(e) => setFromWeek(e.target.value)} style={{ fontFamily: fontStack.ui, fontSize: 13, padding: 7, border: `1px solid ${INK}`, borderRadius: 2 }} /></div>
+          <div><Label>To week</Label><input id="report-to-week" type="week" value={toWeek} onChange={(e) => setToWeek(e.target.value)} style={{ fontFamily: fontStack.ui, fontSize: 13, padding: 7, border: `1px solid ${INK}`, borderRadius: 2 }} /></div>
+          <button style={pill} onClick={() => preset(0, 0)}>This week</button>
+          <button style={pill} onClick={() => preset(-1, -1)}>Last week</button>
+          <button style={pill} onClick={() => preset(-3, 0)}>Last 4 weeks</button>
+        </div>
+        <div style={{ fontSize: 12, color: FADE, marginBottom: 12 }}>{fmtDay(fromMs)} – {fmtDay(toMs - 1)}</div>
+        <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap", marginBottom: 16, fontSize: 13 }}>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={allStarred} onChange={(e) => setAllStarred(e.target.checked)} /> Include all starred deals (not only those active in the period)</label>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={withAI} onChange={(e) => setWithAI(e.target.checked)} /> Add AI summary</label>
+          <Btn primary onClick={generate} disabled={!!busy}>{busy || "Generate report"}</Btn>
+        </div>
+        {error && <div style={{ fontSize: 13, color: RUST, marginBottom: 10 }}>{error}</div>}
+
+        {(() => {
+          const r = viewing || { title: "Preview", from: fromMs, to: toMs, data: preview, summary: "" };
+          return (
+            <div style={{ border: `1px solid ${INK}`, borderRadius: 2, padding: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{r.title}</div>
+                  <div style={{ fontSize: 12, color: FADE }}>{fmtDay(r.from)} – {fmtDay(r.to - 1)}</div>
+                </div>
+                {viewing && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn small onClick={() => download(viewing)}>Download PDF</Btn>
+                    <Btn small onClick={() => share(viewing)}>Share</Btn>
+                    <Btn small onClick={() => setViewId(null)}>Back to preview</Btn>
+                  </div>
+                )}
+              </div>
+              {r.summary && <p style={{ fontSize: 13, lineHeight: 1.55, marginTop: 14 }}>{r.summary}</p>}
+              <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", margin: "18px 0 8px", borderTop: `1px solid ${INK}`, paddingTop: 12 }}>Starred deals ({r.data.deals.length})</div>
+              {r.data.deals.length === 0 && <div style={{ fontSize: 13, color: FADE }}>No starred deals with activity in this period. Tick "Include all starred deals" to list every starred deal.</div>}
+              {r.data.deals.map(d => (
+                <div key={d.id} style={{ padding: "8px 0", borderBottom: `1px solid ${LINE}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><strong style={{ fontSize: 14 }}>{d.name}</strong>{d.score != null && <span style={{ fontSize: 12 }}>{Number(d.score).toFixed(1)}/5</span>}</div>
+                  <div style={{ fontSize: 11, color: FADE }}>{[d.status, d.stage, d.sector].filter(Boolean).join(" · ")}</div>
+                  {d.oneLiner && <div style={{ fontSize: 13, marginTop: 2 }}>{d.oneLiner}</div>}
+                  {d.changes.length > 0 && <div style={{ fontSize: 12, fontStyle: "italic", marginTop: 2 }}>This period: {d.changes.join(", ")}</div>}
+                </div>
+              ))}
+              <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", margin: "18px 0 8px", borderTop: `1px solid ${INK}`, paddingTop: 12 }}>New reading materials ({r.data.readingCount})</div>
+              {r.data.readingCount === 0 && <div style={{ fontSize: 13, color: FADE }}>No new reading added in this period.</div>}
+              {Object.entries(r.data.readingByType).map(([type, items]) => (
+                <div key={type} style={{ marginBottom: 10 }}>
+                  <div style={{ marginBottom: 4 }}><ReadingTypeTag type={type} /></div>
+                  {items.map(it => <div key={it.id} style={{ fontSize: 13, padding: "2px 0" }}>{it.title}{it.source && <span style={{ color: FADE }}> — {it.source}</span>}</div>)}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
+      <div>
+        <Label>Saved reports</Label>
+        {(reports || []).length === 0 && <div style={{ fontSize: 13, color: FADE, marginTop: 6 }}>None yet.</div>}
+        <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+          {(reports || []).map(r => (
+            <div key={r.id} onClick={() => setViewId(r.id)} style={{ border: `1px solid ${viewId === r.id ? INK : LINE}`, borderRadius: 2, padding: 10, cursor: "pointer" }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.title}</div>
+              <div style={{ fontSize: 11, color: FADE }}>{r.data.deals.length} deals · {r.data.readingCount} reading · {fmtDay(r.createdAt)}</div>
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <button onClick={(e) => { e.stopPropagation(); download(r); }} style={{ border: "none", background: "none", padding: 0, fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>PDF</button>
+                <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this report?")) { setReports(prev => prev.filter(x => x.id !== r.id)); markDeleted(r.id); if (viewId === r.id) setViewId(null); } }} style={{ border: "none", background: "none", padding: 0, fontSize: 11, cursor: "pointer", color: FADE }}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const Input = (props) => (
   <input
     {...props}
@@ -3776,6 +4288,9 @@ window.App = function App() {
   const [investors, setInvestors] = useState([]);
   const [deepDives, setDeepDives] = useState([]);
   const [founderProfiles, setFounderProfiles] = useState([]);
+  const [readingItems, setReadingItems] = useState([]);
+  const [readingColumns, setReadingColumns] = useState(DEFAULT_READING_COLUMNS);
+  const [reports, setReports] = useState([]);
   const [deletedIds, setDeletedIds] = useState([]);
   const [distributePicked, setDistributePicked] = useState([]);
   const [distributeCompanyIds, setDistributeCompanyIds] = useState([]);
@@ -3973,6 +4488,9 @@ window.App = function App() {
           setDeepDives(d.deepDives || []);
           setFounderProfiles(d.founderProfiles?.length ? d.founderProfiles : SEED_FOUNDER_PROFILES);
           setDeletedIds(d.deletedIds || []);
+          setReadingItems(Array.isArray(d.readingItems) ? d.readingItems : []);
+          setReadingColumns(Array.isArray(d.readingColumns) && d.readingColumns.length ? d.readingColumns : DEFAULT_READING_COLUMNS);
+          setReports(Array.isArray(d.reports) ? d.reports : []);
         } else {
           setCompanies(deduplicateCompanies(SEED_COMPANIES.map(c => ({ geo: "", priority: "Medium", founders: [], assets: [], preemption: false, preemptionModel: null, ...c }))));
           setInvestors(deduplicateInvestors(SEED_INVESTORS));
@@ -4131,7 +4649,7 @@ window.App = function App() {
     if (!loaded) return;
     window.__bnvtSavePending = true;
     const t = setTimeout(() => {
-      const dbPayload = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds });
+      const dbPayload = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports });
       fetch("/api/storage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4148,7 +4666,7 @@ window.App = function App() {
         .finally(() => { window.__bnvtSavePending = false; });
     }, 600);
     return () => clearTimeout(t);
-  }, [companies, investors, deepDives, founderProfiles, deletedIds, loaded]);
+  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, loaded]);
 
   // Warn before closing/reloading while a save is in flight or has failed
   useEffect(() => {
@@ -4184,13 +4702,19 @@ window.App = function App() {
 
           const ddRes = mergeClientWithServerList(deepDives, d.deepDives || [], mergedDel);
           if (ddRes.changed) setDeepDives(ddRes.merged);
+
+          const rdRes = mergeClientWithServerList(readingItems, d.readingItems || [], mergedDel);
+          if (rdRes.changed) setReadingItems(rdRes.merged);
+
+          const repRes = mergeClientWithServerList(reports, d.reports || [], mergedDel);
+          if (repRes.changed) setReports(repRes.merged);
         }
       } catch (e) {
         console.warn("Storage polling sync check:", e.message);
       }
     }, 15000);
     return () => clearInterval(interval);
-  }, [companies, investors, deepDives, founderProfiles, deletedIds, loaded]);
+  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, loaded]);
 
   // AI Diligence Queue Runner
   useEffect(() => {
@@ -5024,6 +5548,8 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     ["deepdives", "Deep Dives"],
     ["founders", "Founder Assessment"],
     ["assets", "Asset Library"],
+    ["reading", "Reading"],
+    ["reports", "Reports"],
     ["settings", "Settings"],
   ];
 
@@ -5320,6 +5846,12 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             setSelected={setSelected}
             setTab={setTab}
           />
+        )}
+        {tab === "reading" && (
+          <ReadingLibrary readingItems={readingItems} setReadingItems={setReadingItems} readingColumns={readingColumns} setReadingColumns={setReadingColumns} companies={companies} markDeleted={(id) => setDeletedIds(prev => Array.from(new Set([...(prev || []), String(id)])))} />
+        )}
+        {tab === "reports" && (
+          <ReportsTab companies={companies} readingItems={readingItems} reports={reports} setReports={setReports} markDeleted={(id) => setDeletedIds(prev => Array.from(new Set([...(prev || []), String(id)])))} />
         )}
         {tab === "founders" && (
           <FounderAssessmentDashboard 
@@ -7467,7 +7999,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      updateCompany(c.id, { starred: !c.starred });
+                      updateCompany(c.id, { starred: !c.starred, starredAt: !c.starred ? Date.now() : null });
                     }}
                     style={{
                       fontFamily: fontStack.mono,
@@ -13599,7 +14131,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
           </Btn>
           <Btn 
             small 
-            onClick={() => update({ starred: !c.starred })} 
+            onClick={() => update({ starred: !c.starred, starredAt: !c.starred ? Date.now() : null })} 
             style={{ 
               borderColor: c.starred ? "#000000" : LINE, 
               color: c.starred ? "#000000" : FADE,

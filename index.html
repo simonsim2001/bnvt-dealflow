@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BNVT Dealflow Atelier</title>
     <!-- Load React and ReactDOM UMD builds -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 
     <!-- Load PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
@@ -279,7 +279,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=70.0"></script>
+    <script src="bnvt-dealflow.js?v=71.1"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {
