@@ -1252,6 +1252,15 @@ def fetch_remote_hashes(table):
 def _in_filter(ids):
     return "(" + ",".join('"' + str(i).replace('"', '\\"') + '"' for i in ids) + ")"
 
+def _strip_nul(v):
+    if isinstance(v, str):
+        return v.replace("\x00", "")
+    if isinstance(v, dict):
+        return {k: _strip_nul(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_strip_nul(x) for x in v]
+    return v
+
 def sync_records(db):
     """Upsert changed records and delete removed ones. Returns a summary dict."""
     url, _ = _sb_creds()
@@ -1264,7 +1273,7 @@ def sync_records(db):
             _remote_hashes[table] = fetch_remote_hashes(table)
         remote = _remote_hashes[table]
         now = datetime.utcnow().isoformat() + "Z"
-        changed = [{"id": i, "data": r, "hash": record_hash(r), "updated_at": now}
+        changed = [{"id": i, "data": _strip_nul(r), "hash": record_hash(r), "updated_at": now}
                    for i, r in local.items() if remote.get(i) != record_hash(r)]
         for n in range(0, len(changed), 100):
             batch = changed[n:n + 100]
