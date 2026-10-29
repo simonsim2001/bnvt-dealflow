@@ -26,7 +26,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // ----------------------------------------------------------------------------
-// BNVT Dealflow OS - pipeline, AI scoring, investor network, distribution
+// SL Deals - pipeline, AI scoring, investor network, distribution
 // ----------------------------------------------------------------------------
 
 const INK = "#111111";
@@ -1554,9 +1554,10 @@ const Label = ({ children, style }) => (
   </div>
 );
 
-const Btn = ({ children, onClick, primary, danger, small, disabled, style }) => (
+const Btn = ({ children, onClick, primary, danger, small, disabled, style, className, title }) => (
   <button
-    className="bnvt-btn"
+    className={"bnvt-btn" + (className ? " " + className : "")}
+    title={title}
     onClick={onClick}
     disabled={disabled}
     style={{
@@ -1915,7 +1916,7 @@ const reportToPdf = (report) => {
     y += gap;
   };
   const rule = () => { ensure(4); doc.setDrawColor(17); doc.setLineWidth(0.3); doc.line(M, y, W - M, y); y += 5; };
-  text("BNVT CAPITAL", 8, "bold", 1, 90);
+  text("SL DEALS", 8, "bold", 1, 90);
   text(report.title, 18, "bold", 1);
   text(`${fmtDay(report.from)} – ${fmtDay(report.to - 1)}  ·  generated ${fmtDay(report.createdAt)}`, 9, "normal", 3, 90);
   rule();
@@ -2082,6 +2083,330 @@ const ReportsTab = ({ companies = [], readingItems = [], reports = [], setReport
         </div>
       </div>
     </div>
+  );
+};
+
+
+
+// ===================== VOICE AGENT =====================
+const VOICE_STARTERS = [
+  "What came in this week?",
+  "Which sectors are heating up in my pipeline?",
+  "What are the biggest trends in AI investing right now?",
+  "Brief me on my starred deals",
+];
+const VOICE_SEARCH_RE = /\b(trend|trends|market|news|latest|today|this week in|online|raised|funding round|competitor|competitors|valuation|recent(ly)? (announced|raised)|what'?s happening|search|look up)\b/i;
+
+const buildVoiceContext = ({ companies = [], readingItems = [], days = 30 }) => {
+  const now = Date.now();
+  const since = now - days * 86400000;
+  const ts = (c) => Number(c.createdAt) || 0;
+  const recent = companies.filter(c => ts(c) >= since || Number(c.statusChangedAt) >= since || Number(c.starredAt) >= since)
+    .sort((a, b) => ts(b) - ts(a)).slice(0, 40);
+  const starred = companies.filter(c => c.starred && !recent.includes(c)).slice(0, 25);
+  const line = (c) => {
+    const sc = compositeScore(c.scores);
+    const note = lastNoteText(c.notes).replace(/\s+/g, " ").slice(0, 160);
+    return `- ${c.name} | ${c.sector || "?"} | ${c.stage || "?"} | ${c.geo || ""} | status: ${c.status || "?"}${sc != null ? ` | score ${Number(sc).toFixed(1)}/5` : ""}${c.starred ? " | STARRED" : ""} | added ${c.createdAt ? new Date(Number(c.createdAt)).toISOString().slice(0, 10) : "?"} | ${String(c.oneLiner || "").slice(0, 140)}${note ? ` | latest note: ${note}` : ""}`;
+  };
+  const count = (arr, key) => {
+    const m = {};
+    arr.forEach(c => { const k = String(c[key] || "Unknown").split(/[\/,]/)[0].trim(); m[k] = (m[k] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `${k} (${v})`).join(", ");
+  };
+  const lastWeek = companies.filter(c => ts(c) >= now - 7 * 86400000).length;
+  const prevWeek = companies.filter(c => ts(c) >= now - 14 * 86400000 && ts(c) < now - 7 * 86400000).length;
+  const reading = readingItems.filter(r => Number(r.createdAt) >= since).slice(0, 20)
+    .map(r => `- [${r.type}] ${r.title}${r.source ? ` (${r.source})` : ""}${r.summary || r.description ? `: ${String(r.summary || r.description).replace(/\s+/g, " ").slice(0, 200)}` : ""}`);
+  return [
+    `TODAY: ${new Date().toISOString().slice(0, 10)}`,
+    `PIPELINE: ${companies.length} companies total. Added last 7 days: ${lastWeek} (previous 7 days: ${prevWeek}).`,
+    `RECENT SECTOR MIX (last ${days} days): ${count(recent, "sector") || "n/a"}`,
+    `RECENT STAGE MIX: ${count(recent, "stage") || "n/a"}`,
+    `DEALS ADDED/CHANGED IN LAST ${days} DAYS (${recent.length}):`,
+    ...recent.map(line),
+    starred.length ? `OTHER STARRED DEALS (${starred.length}):` : "",
+    ...starred.map(line),
+    reading.length ? `NEW READING MATERIALS (${reading.length}):` : "",
+    ...reading,
+  ].filter(Boolean).join("\n").slice(0, 24000);
+};
+
+async function callVoiceClaude(system, messages, useSearch) {
+  const body = {
+    model: "claude-sonnet-4-6",
+    max_tokens: useSearch ? 1200 : 700,
+    system,
+    messages,
+  };
+  const headers = { "Content-Type": "application/json" };
+  const localKey = localStorage.getItem("anthropic_api_key") || "";
+  if (localKey) headers["X-Anthropic-API-Key"] = localKey;
+  if (useSearch) {
+    body.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }];
+    headers["anthropic-beta"] = "web-search-2025-03-05";
+  }
+  const res = await fetch("/api/anthropic", { method: "POST", headers, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || String(data.error));
+  return (data.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").replace(/\s+/g, " ").trim();
+}
+
+const speakText = (text, { rate = 1.05, onEnd } = {}) => {
+  const synth = window.speechSynthesis;
+  if (!synth) { onEnd && onEnd(); return; }
+  synth.cancel();
+  const clean = String(text).replace(/[*#_`>]/g, "").replace(/\[(.*?)\]\(.*?\)/g, "$1");
+  // Split into sentences: iOS stops long utterances early.
+  const parts = clean.match(/[^.!?]+[.!?]*/g) || [clean];
+  const voices = synth.getVoices();
+  const voice = voices.find(v => /en-(GB|US)/.test(v.lang) && /(Premium|Enhanced|Siri)/i.test(v.name))
+    || voices.find(v => /en-GB/.test(v.lang)) || voices.find(v => /^en/.test(v.lang));
+  parts.forEach((p, i) => {
+    const u = new SpeechSynthesisUtterance(p.trim());
+    if (voice) u.voice = voice;
+    u.rate = rate;
+    if (i === parts.length - 1 && onEnd) { u.onend = onEnd; u.onerror = onEnd; }
+    synth.speak(u);
+  });
+};
+
+const VoiceAgent = ({ companies = [], readingItems = [], voiceSessions = [], setVoiceSessions, updateCompany, setReadingItems }) => {
+  const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const [sessionId, setSessionId] = useState(null);
+  const [state, setState] = useState("idle"); // idle | listening | thinking | speaking
+  const [interim, setInterim] = useState("");
+  const [typed, setTyped] = useState("");
+  const [handsFree, setHandsFree] = useState(false);
+  const [days, setDays] = useState(30);
+  const [webMode, setWebMode] = useState("auto"); // auto | on | off
+  const [muted, setMuted] = useState(false);
+  const [error, setError] = useState("");
+  const [showPast, setShowPast] = useState(false);
+  const recRef = useRef(null);
+  const handsFreeRef = useRef(false);
+  const endRef = useRef(null);
+  handsFreeRef.current = handsFree;
+
+  const session = (voiceSessions || []).find(s => s.id === sessionId);
+  const messages = session?.messages || [];
+
+  useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" }); }, [messages.length, interim, state]);
+  useEffect(() => () => { try { recRef.current?.abort(); } catch (e) {} window.speechSynthesis?.cancel(); }, []);
+
+  const saveMessages = (id, msgs, titleHint) => {
+    setVoiceSessions(prev => {
+      const list = prev || [];
+      const exists = list.some(s => s.id === id);
+      const now = Date.now();
+      if (exists) return list.map(s => s.id === id ? { ...s, messages: msgs, updatedAt: now } : s);
+      return [{ id, title: (titleHint || "Conversation").slice(0, 60), messages: msgs, createdAt: now, updatedAt: now }, ...list];
+    });
+  };
+
+  const ask = async (text) => {
+    const q = String(text || "").trim();
+    if (!q) return;
+    setError("");
+    const id = sessionId || ("vs_" + Date.now().toString(36));
+    if (!sessionId) setSessionId(id);
+    const useSearch = webMode === "on" || (webMode === "auto" && VOICE_SEARCH_RE.test(q));
+    const userMsg = { role: "user", text: q, ts: Date.now() };
+    const history = [...messages, userMsg];
+    saveMessages(id, history, q);
+    setState("thinking");
+    try {
+      const system = `You are the voice research partner inside "SL Deals", a venture capital deal-flow app used by Simon, an early-stage investor. You speak out loud, so:
+- Answer conversationally in 2 to 6 short sentences unless asked to go deeper. No markdown, no bullet symbols, no URLs read out.
+- Ground observations in the pipeline data below; name specific companies. Spot patterns (sectors, stages, geographies, founder types) and say what is new versus last week.
+- When web search is available, use it for current market trends and news, and say briefly where information comes from.
+- Be candid: challenge assumptions, flag risks, suggest next steps or questions to ask founders.
+- End with a short follow-up question when it helps the discussion.
+
+PIPELINE DATA:
+${buildVoiceContext({ companies, readingItems, days })}`;
+      const apiMsgs = history.slice(-16).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+      const answer = await callVoiceClaude(system, apiMsgs, useSearch) || "Sorry, I didn't get an answer back.";
+      const final = [...history, { role: "assistant", text: answer, ts: Date.now(), web: useSearch }];
+      saveMessages(id, final);
+      if (muted) { setState("idle"); if (handsFreeRef.current) startListening(); return; }
+      setState("speaking");
+      speakText(answer, { onEnd: () => { setState("idle"); if (handsFreeRef.current) setTimeout(startListening, 250); } });
+    } catch (e) {
+      setError("Couldn't reach Claude: " + e.message);
+      setState("idle");
+    }
+  };
+
+  const startListening = () => {
+    if (!SR) { setError("Voice input isn't supported in this browser. On iPhone use Safari, or type below."); return; }
+    window.speechSynthesis?.cancel();
+    try { recRef.current?.abort(); } catch (e) {}
+    const rec = new SR();
+    rec.lang = "en-GB";
+    rec.interimResults = true;
+    rec.continuous = false;
+    let finalText = "";
+    rec.onresult = (e) => {
+      let txt = "";
+      for (let i = 0; i < e.results.length; i++) {
+        txt += e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText = txt;
+      }
+      setInterim(txt);
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed") setError("Microphone access was blocked. On iPhone: Settings → Safari → Microphone → Allow.");
+      else if (e.error !== "no-speech" && e.error !== "aborted") setError("Voice error: " + e.error);
+    };
+    rec.onend = () => {
+      const t = (finalText || "").trim();
+      setInterim("");
+      if (t) ask(t);
+      else setState(s => s === "listening" ? "idle" : s);
+    };
+    recRef.current = rec;
+    setState("listening");
+    try { rec.start(); } catch (e) { setError("Couldn't start microphone: " + e.message); setState("idle"); }
+  };
+
+  const onMic = () => {
+    // Unlock iOS speech synthesis inside the user gesture.
+    try { if (window.speechSynthesis && !window.__slVoiceUnlocked) { window.speechSynthesis.speak(new SpeechSynthesisUtterance("")); window.__slVoiceUnlocked = true; } } catch (e) {}
+    if (state === "listening") { try { recRef.current?.stop(); } catch (e) {} return; }
+    if (state === "speaking") { window.speechSynthesis?.cancel(); setState("idle"); startListening(); return; }
+    if (state === "thinking") return;
+    startListening();
+  };
+
+  const newSession = () => { window.speechSynthesis?.cancel(); setSessionId(null); setState("idle"); setShowPast(false); };
+  const saveToDeal = (companyId, text) => {
+    const c = companies.find(x => String(x.id) === String(companyId));
+    if (!c) return;
+    const note = { ts: Date.now(), text: `Voice discussion: ${text}` };
+    const notes = Array.isArray(c.notes) ? [...c.notes, note] : (typeof c.notes === "string" && c.notes.trim() ? `${c.notes}\n\n${note.text}` : [note]);
+    updateCompany(c.id, { notes });
+  };
+  const saveAsReading = (text) => {
+    const now = Date.now();
+    setReadingItems(prev => [{ id: "rd_" + now.toString(36), title: "Voice insight — " + new Date(now).toLocaleDateString("en-GB"), description: text, type: "Memo", kind: "note", column: "toread", tags: ["voice"], companyIds: [], createdAt: now, updatedAt: now }, ...(prev || [])]);
+  };
+
+  const label = { idle: "Tap to talk", listening: "Listening… tap to send", thinking: "Thinking…", speaking: "Speaking… tap to interrupt" }[state];
+  const chip = (active) => ({ fontFamily: fontStack.ui, fontSize: 12, padding: "6px 10px", border: `1px solid ${INK}`, borderRadius: 2, cursor: "pointer", background: active ? INK : PAPER, color: active ? PAPER : INK });
+
+  return (
+    <div id="voice-agent" className="voice-agent" style={{ display: "flex", flexDirection: "column", minHeight: "calc(100vh - 220px)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <h2 style={{ fontFamily: fontStack.display, fontSize: 24, margin: 0, fontWeight: 600 }}>Voice</h2>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button style={chip(false)} onClick={newSession}>New</button>
+          <button style={chip(showPast)} onClick={() => setShowPast(!showPast)}>History ({(voiceSessions || []).length})</button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, fontSize: 12, alignItems: "center" }}>
+        <span style={{ color: FADE }}>Deals from last</span>
+        {[7, 30, 90].map(d => <button key={d} style={chip(days === d)} onClick={() => setDays(d)}>{d}d</button>)}
+        <span style={{ color: FADE, marginLeft: 6 }}>Web</span>
+        {[["auto", "Auto"], ["on", "On"], ["off", "Off"]].map(([k, l]) => <button key={k} style={chip(webMode === k)} onClick={() => setWebMode(k)}>{l}</button>)}
+        <button style={chip(handsFree)} onClick={() => setHandsFree(!handsFree)}>Hands-free</button>
+        <button style={chip(muted)} onClick={() => { setMuted(!muted); window.speechSynthesis?.cancel(); }}>{muted ? "Muted" : "Sound on"}</button>
+      </div>
+
+      {showPast && (
+        <div style={{ border: `1px solid ${LINE}`, borderRadius: 2, marginBottom: 12, maxHeight: 260, overflowY: "auto" }}>
+          {(voiceSessions || []).length === 0 && <div style={{ padding: 12, fontSize: 13, color: FADE }}>No conversations yet.</div>}
+          {(voiceSessions || []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(s => (
+            <div key={s.id} onClick={() => { setSessionId(s.id); setShowPast(false); }} style={{ padding: "10px 12px", borderBottom: `1px solid ${LINE}`, cursor: "pointer", background: s.id === sessionId ? "#F3F3F3" : PAPER }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{s.title}</div>
+              <div style={{ fontSize: 11, color: FADE }}>{(s.messages || []).length} messages · {new Date(s.updatedAt || s.createdAt).toLocaleString("en-GB")}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ flex: 1, display: "grid", gap: 12, alignContent: "start", paddingBottom: 12 }}>
+        {messages.length === 0 && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 14, color: FADE }}>Ask about recent deals, patterns in your pipeline, or what's happening in the market. Try:</div>
+            {VOICE_STARTERS.map(s => (
+              <button key={s} onClick={() => ask(s)} style={{ textAlign: "left", fontFamily: fontStack.ui, fontSize: 14, padding: "12px 14px", border: `1px solid ${LINE}`, borderRadius: 2, background: PAPER, cursor: "pointer", color: INK }}>{s}</button>
+            ))}
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} style={{ justifySelf: m.role === "user" ? "end" : "start", maxWidth: "88%" }}>
+            <div style={{ fontSize: 15, lineHeight: 1.5, padding: "10px 14px", borderRadius: 2, background: m.role === "user" ? INK : PAPER, color: m.role === "user" ? PAPER : INK, border: `1px solid ${INK}` }}>{m.text}</div>
+            {m.role === "assistant" && (
+              <div style={{ display: "flex", gap: 10, marginTop: 4, flexWrap: "wrap", alignItems: "center", fontSize: 11, color: FADE }}>
+                {m.web && <span>web</span>}
+                <button onClick={() => speakText(m.text)} style={{ border: "none", background: "none", padding: 0, fontSize: 11, color: FADE, cursor: "pointer", textDecoration: "underline" }}>Replay</button>
+                <button onClick={() => saveAsReading(m.text)} style={{ border: "none", background: "none", padding: 0, fontSize: 11, color: FADE, cursor: "pointer", textDecoration: "underline" }}>Save to Reading</button>
+                <select value="" onChange={(e) => { if (e.target.value) { saveToDeal(e.target.value, m.text); e.target.value = ""; } }} style={{ fontSize: 11, border: `1px solid ${LINE}`, background: PAPER, maxWidth: 150 }}>
+                  <option value="">Add to deal notes…</option>
+                  {companies.slice().sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)).slice(0, 200).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+        ))}
+        {interim && <div style={{ justifySelf: "end", maxWidth: "88%", fontSize: 15, padding: "10px 14px", border: `1px dashed ${INK}`, borderRadius: 2, color: FADE }}>{interim}</div>}
+        {state === "thinking" && <div style={{ fontSize: 13, color: FADE }}>Thinking…</div>}
+        {error && <div style={{ fontSize: 13, color: RUST }}>{error}</div>}
+        <div ref={endRef} />
+      </div>
+
+      <div className="voice-controls" style={{ position: "sticky", bottom: 0, background: PAPER, borderTop: `1px solid ${LINE}`, paddingTop: 12, display: "grid", gap: 10, justifyItems: "center" }}>
+        <button id="voice-mic" onClick={onMic} aria-label={label} className={state === "listening" ? "voice-mic listening" : "voice-mic"}
+          style={{ width: 76, height: 76, borderRadius: "50%", border: `2px solid ${INK}`, background: state === "listening" ? INK : PAPER, color: state === "listening" ? PAPER : INK, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", WebkitTapHighlightColor: "transparent" }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {state === "speaking" ? <rect x="6" y="6" width="12" height="12" /> : (<g><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v1a7 7 0 0 0 14 0v-1" /><line x1="12" y1="18" x2="12" y2="22" /></g>)}
+          </svg>
+        </button>
+        <div style={{ fontSize: 12, color: FADE }}>{label}</div>
+        <div style={{ display: "flex", gap: 8, width: "100%" }}>
+          <Input id="voice-text" placeholder="Or type a question…" value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && typed.trim()) { ask(typed); setTyped(""); } }} style={{ flex: 1 }} />
+          <Btn primary onClick={() => { if (typed.trim()) { ask(typed); setTyped(""); } }} disabled={!typed.trim() || state === "thinking"}>Send</Btn>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ===================== MOBILE BOTTOM NAV =====================
+const MOBILE_PRIMARY_TABS = [["pipeline", "Pipeline"], ["voice", "Voice"], ["reading", "Reading"], ["reports", "Reports"]];
+const MobileNav = ({ tab, setTab, tabs, setSelected }) => {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const go = (k) => { setTab(k); setSelected && setSelected(null); setMoreOpen(false); window.scrollTo && window.scrollTo(0, 0); };
+  const primaryKeys = MOBILE_PRIMARY_TABS.map(t => t[0]);
+  const inMore = !primaryKeys.includes(tab);
+  const icon = (k) => {
+    const p = { pipeline: "M4 6h16M4 12h16M4 18h10", voice: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zM5 10v1a7 7 0 0 0 14 0v-1M12 18v4", reading: "M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z", reports: "M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8", more: "M5 12h.01M12 12h.01M19 12h.01" }[k];
+    return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={k === "more" ? 3.5 : 1.8} strokeLinecap="round" strokeLinejoin="round"><path d={p} /></svg>;
+  };
+  const btn = (k, l, active, onClick) => (
+    <button key={k} onClick={onClick} className="mobile-nav-btn" style={{ flex: 1, background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 0 6px", color: active ? INK : "#8A8A8A", fontFamily: fontStack.ui, fontSize: 10.5, fontWeight: active ? 700 : 500, cursor: "pointer", WebkitTapHighlightColor: "transparent" }}>
+      {icon(k)}<span>{l}</span>
+    </button>
+  );
+  return (
+    <>
+      {moreOpen && (
+        <div className="mobile-only" onClick={() => setMoreOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 1999 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: PAPER, borderTop: `1px solid ${INK}`, padding: "16px 16px calc(80px + env(safe-area-inset-bottom))", maxHeight: "75vh", overflowY: "auto" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>All sections</div>
+            {tabs.filter(([k]) => !primaryKeys.includes(k)).map(([k, l]) => (
+              <button key={k} onClick={() => go(k)} style={{ display: "block", width: "100%", textAlign: "left", padding: "14px 4px", fontSize: 16, fontFamily: fontStack.ui, border: "none", borderBottom: `1px solid ${LINE}`, background: "none", color: INK, fontWeight: tab === k ? 700 : 400 }}>{l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      <nav className="mobile-nav mobile-only" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 2000, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", borderTop: `1px solid ${LINE}`, paddingBottom: "env(safe-area-inset-bottom)", display: "flex" }}>
+        {MOBILE_PRIMARY_TABS.map(([k, l]) => btn(k, l, tab === k && !moreOpen, () => go(k)))}
+        {btn("more", "More", inMore || moreOpen, () => setMoreOpen(!moreOpen))}
+      </nav>
+    </>
   );
 };
 
@@ -4291,6 +4616,7 @@ window.App = function App() {
   const [readingItems, setReadingItems] = useState([]);
   const [readingColumns, setReadingColumns] = useState(DEFAULT_READING_COLUMNS);
   const [reports, setReports] = useState([]);
+  const [voiceSessions, setVoiceSessions] = useState([]);
   const [deletedIds, setDeletedIds] = useState([]);
   const [distributePicked, setDistributePicked] = useState([]);
   const [distributeCompanyIds, setDistributeCompanyIds] = useState([]);
@@ -4491,6 +4817,7 @@ window.App = function App() {
           setReadingItems(Array.isArray(d.readingItems) ? d.readingItems : []);
           setReadingColumns(Array.isArray(d.readingColumns) && d.readingColumns.length ? d.readingColumns : DEFAULT_READING_COLUMNS);
           setReports(Array.isArray(d.reports) ? d.reports : []);
+          setVoiceSessions(Array.isArray(d.voiceSessions) ? d.voiceSessions : []);
         } else {
           setCompanies(deduplicateCompanies(SEED_COMPANIES.map(c => ({ geo: "", priority: "Medium", founders: [], assets: [], preemption: false, preemptionModel: null, ...c }))));
           setInvestors(deduplicateInvestors(SEED_INVESTORS));
@@ -4649,7 +4976,7 @@ window.App = function App() {
     if (!loaded) return;
     window.__bnvtSavePending = true;
     const t = setTimeout(() => {
-      const dbPayload = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports });
+      const dbPayload = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions });
       fetch("/api/storage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4666,7 +4993,7 @@ window.App = function App() {
         .finally(() => { window.__bnvtSavePending = false; });
     }, 600);
     return () => clearTimeout(t);
-  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, loaded]);
+  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions, loaded]);
 
   // Warn before closing/reloading while a save is in flight or has failed
   useEffect(() => {
@@ -4708,13 +5035,16 @@ window.App = function App() {
 
           const repRes = mergeClientWithServerList(reports, d.reports || [], mergedDel);
           if (repRes.changed) setReports(repRes.merged);
+
+          const vsRes = mergeClientWithServerList(voiceSessions, d.voiceSessions || [], mergedDel);
+          if (vsRes.changed) setVoiceSessions(vsRes.merged);
         }
       } catch (e) {
         console.warn("Storage polling sync check:", e.message);
       }
     }, 15000);
     return () => clearInterval(interval);
-  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, loaded]);
+  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions, loaded]);
 
   // AI Diligence Queue Runner
   useEffect(() => {
@@ -5537,6 +5867,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
 
   const tabs = [
     ["pipeline", "Pipeline"],
+    ["voice", "Voice"],
     ["talentDashboard", "Talent Sourcing"],
     ["chat", "AI Assistant"],
     ["dtm", "Deal Team Meeting"],
@@ -5558,13 +5889,13 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       {/* Header */}
       <div className="app-header" style={{ borderBottom: `1px solid ${INK}`, padding: "18px 28px 0 28px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <div style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.18em", color: BLUE }}>BNVT CAPITAL</div>
+          
           <div style={{ display: "flex", alignItems: "baseline", gap: 24, flexWrap: "wrap" }}>
             <div className="app-title" style={{ fontFamily: fontStack.display, fontSize: 30, lineHeight: 1.1, marginBottom: 14 }}>
-              Dealflow Atelier
+              SL Deals
             </div>
             
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <div className="header-actions" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
               <Btn 
                 small 
                 onClick={() => setCmdKOpen(true)} 
@@ -5580,7 +5911,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
                   gap: 6,
                   borderRadius: 4
                 }}
-                title="Press ⌘K or Ctrl+K to search anything in BNVT Dealflow"
+                title="Press ⌘K or Ctrl+K to search anything in SL Deals"
               >
                 <span>🔍 Search</span>
                 <kbd style={{
@@ -5647,6 +5978,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
               <Btn 
                 small 
                 onClick={exportWholeDatabaseExcel} 
+                className="desktop-only"
                 style={{ 
                   borderColor: BLUE, 
                   color: BLUE, 
@@ -5663,7 +5995,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             </div>
           </div>
         </div>
-        <div className="tab-bar-container" style={{ display: "flex", gap: 0 }}>
+        <div className="tab-bar-container desktop-only" style={{ display: "flex", gap: 0 }}>
           {tabs.map(([k, label]) => (
             <button
               key={k}
@@ -5682,6 +6014,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         </div>
       </div>
 
+      <MobileNav tab={tab} setTab={setTab} tabs={tabs} setSelected={setSelected} />
       <div className="app-body" style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
         {tab === "pipeline" && (
           <Pipeline
@@ -5846,6 +6179,9 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             setSelected={setSelected}
             setTab={setTab}
           />
+        )}
+        {tab === "voice" && (
+          <VoiceAgent companies={companies} readingItems={readingItems} voiceSessions={voiceSessions} setVoiceSessions={setVoiceSessions} updateCompany={updateCompany} setReadingItems={setReadingItems} />
         )}
         {tab === "reading" && (
           <ReadingLibrary readingItems={readingItems} setReadingItems={setReadingItems} readingColumns={readingColumns} setReadingColumns={setReadingColumns} companies={companies} markDeleted={(id) => setDeletedIds(prev => Array.from(new Set([...(prev || []), String(id)])))} />
@@ -13149,7 +13485,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       </head>
       <body>
         <div class="header">
-          <span>BNVT CAPITAL</span>
+          <span>SL DEALS</span>
           <span>CONFIDENTIAL INVESTMENT BRIEFING</span>
         </div>
         <div class="title">${c.name} - First Call Diligence Prep Memo</div>
@@ -15569,7 +15905,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             {regeneratingField === `credsDeck.slide${activeSlideNum}` ? "⏳..." : "🔄 Refresh Slide"}
                           </span>
                         )}
-                        <span style={{ fontSize: 9, fontFamily: fontStack.mono, color: FADE }}>BNVT CAPITAL</span>
+                        <span style={{ fontSize: 9, fontFamily: fontStack.mono, color: FADE }}>SL DEALS</span>
                       </div>
                     </div>
 
@@ -21712,7 +22048,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
       </head>
       <body>
         <div class="header">
-          <span>BNVT CAPITAL</span>
+          <span>SL DEALS</span>
           <span>SECTOR BRIEFING &bull; OPPORTUNITY RANK #${selectedDive.rank}</span>
         </div>
         <div class="title">${selectedDive.topic}</div>
@@ -21746,7 +22082,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
         <div class="page-break"></div>
 
         <div class="header">
-          <span>BNVT CAPITAL</span>
+          <span>SL DEALS</span>
           <span>SECTOR BRIEFING &bull; OPPORTUNITY RANK #${selectedDive.rank}</span>
         </div>
 
@@ -21780,7 +22116,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
         <div class="page-break"></div>
 
         <div class="header">
-          <span>BNVT CAPITAL</span>
+          <span>SL DEALS</span>
           <span>TARGET EXPERT CALL DIRECTORY (50 CONTACT PERSONAS)</span>
         </div>
         
@@ -25496,7 +25832,7 @@ function FounderAssessmentDashboard({ founderProfiles, setFounderProfiles, apiKe
 
 function AIAssistant({ companies }) {
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "Hello! I am your BNVT Dealflow Assistant. I have full access to your pipeline database. How can I help you today? You can type or tap the microphone to talk to me!" }
+    { role: "assistant", text: "Hello! I am your SL Deals Assistant. I have full access to your pipeline database. How can I help you today? You can type or tap the microphone to talk to me!" }
   ]);
   const [inputText, setInputText] = useState("");
   const [isListening, setIsListening] = useState(false);

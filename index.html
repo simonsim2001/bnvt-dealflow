@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BNVT Dealflow Atelier</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>SL Deals</title>
+    <meta name="description" content="SL Deals: deal flow, reading library, reports and a voice research partner.">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SL Deals">
+    <meta name="theme-color" content="#FFFFFF">
+    <link rel="manifest" href="/app.webmanifest">
+    <link rel="apple-touch-icon" href="/icon-180.png">
     <!-- Load React and ReactDOM UMD builds -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -188,6 +196,36 @@
                 gap: 12px !important;
             }
         }
+        /* ---- SL Deals: phone layout (iPhone 16 Pro = 393pt wide) ---- */
+        .mobile-only { display: none !important; }
+        @media (max-width: 768px) {
+            .mobile-only { display: flex !important; }
+            div.mobile-only[style*="inset"] { display: block !important; }
+            .desktop-only { display: none !important; }
+            html, body { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
+            .app-header { position: sticky; top: 0; z-index: 1500; background: rgba(255,255,255,0.96) !important;
+                -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+                padding: calc(8px + env(safe-area-inset-top)) 14px 6px 14px !important;
+                flex-direction: row !important; align-items: center !important; }
+            .app-header > div:first-child { width: 100%; }
+            .app-header > div:first-child > div { flex-wrap: nowrap !important; justify-content: space-between; align-items: center !important; gap: 8px !important; width: 100%; }
+            .app-title { font-size: 22px !important; margin-bottom: 0 !important; font-weight: 700; }
+            .header-actions { margin-bottom: 0 !important; gap: 6px !important; }
+            .header-actions .bnvt-btn { padding: 6px 9px !important; min-height: 34px; }
+            .header-actions kbd { display: none !important; }
+            .app-body { padding: 14px 14px calc(96px + env(safe-area-inset-bottom)) 14px !important; }
+            input, select, textarea { font-size: 16px !important; }
+            .bnvt-btn { min-height: 40px; }
+            .voice-agent { min-height: calc(100vh - 200px) !important; }
+            .voice-controls { bottom: calc(64px + env(safe-area-inset-bottom)) !important; padding-bottom: 10px; }
+            #reading-library > div:last-of-type, #reading-library div[style*="overflow-x: auto"] { scroll-snap-type: x mandatory; border: none !important; }
+            #reading-library div[style*="flex: 0 0 280px"] { flex: 0 0 86vw !important; scroll-snap-align: start; }
+            #reports-tab { grid-template-columns: 1fr !important; }
+            #reading-detail { padding: calc(20px + env(safe-area-inset-top)) 18px 24px !important; }
+            h2 { font-size: 22px !important; }
+        }
+        .voice-mic.listening { animation: slPulse 1.4s ease-in-out infinite; }
+        @keyframes slPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(17,17,17,0.35); } 50% { box-shadow: 0 0 0 14px rgba(17,17,17,0); } }
     </style>
 </head>
 <body>
@@ -279,7 +317,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=71.1"></script>
+    <script src="bnvt-dealflow.js?v=72.0"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {

@@ -1026,6 +1026,7 @@ def merge_databases(client_db, server_db):
         "founderProfiles": merge_list(client_db.get("founderProfiles", []), server_db.get("founderProfiles", []), combined_deleted, "id"),
         "readingItems": merge_list(client_db.get("readingItems", []), server_db.get("readingItems", []), combined_deleted, "id"),
         "reports": merge_list(client_db.get("reports", []), server_db.get("reports", []), combined_deleted, "id"),
+        "voiceSessions": merge_list(client_db.get("voiceSessions", []), server_db.get("voiceSessions", []), combined_deleted, "id"),
         "readingColumns": client_db.get("readingColumns") or server_db.get("readingColumns") or None,
         "deletedIds": combined_deleted
     }
@@ -2271,10 +2272,11 @@ import hmac, hashlib
 from http import cookies as http_cookies
 
 STATIC_FILES = {"/": "index.html", "/index.html": "index.html", "/bnvt-dealflow.js": "bnvt-dealflow.js",
-                "/manifest.json": "manifest.json"}
+                "/manifest.json": "manifest.json", "/app.webmanifest": "app.webmanifest", "/icon-180.png": "icon-180.png", "/icon-512.png": "icon-512.png"}
 # Called by external services that carry their own token (or by Meta's webhook).
 PUBLIC_PATHS = {"/healthz", "/login", "/logout", "/api/whatsapp", "/api/azava",
-                "/ingest/voice", "/ingest/deck", "/pipeline/summary"}
+                "/ingest/voice", "/ingest/deck", "/pipeline/summary",
+                "/app.webmanifest", "/icon-180.png", "/icon-512.png"}
 SESSION_DAYS = 30
 
 def app_password():
@@ -2302,13 +2304,13 @@ def valid_session(handler):
     return hmac.compare_digest(sig, good) and int(exp) > time.time()
 
 LOGIN_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>BNVT Dealflow · Sign in</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>SL Deals · Sign in</title>
 <style>body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;display:flex;
 align-items:center;justify-content:center;height:100vh}form{width:300px}h1{font-size:18px;margin:0 0 24px;
 letter-spacing:.02em}input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #111;font-size:14px;
 margin-bottom:12px}button{width:100%;padding:10px;background:#000;color:#fff;border:0;font-size:14px;cursor:pointer}
 .err{color:#C00000;font-size:13px;margin-bottom:12px}</style></head><body>
-<form method="POST" action="/login"><h1>BNVT Dealflow</h1>__ERR__
+<form method="POST" action="/login"><h1>SL Deals</h1>__ERR__
 <input type="password" name="password" placeholder="Team password" autofocus required>
 <button type="submit">Sign in</button></form></body></html>"""
 
