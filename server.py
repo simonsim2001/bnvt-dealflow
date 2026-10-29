@@ -1024,6 +1024,9 @@ def merge_databases(client_db, server_db):
         "investors": investors,
         "deepDives": merge_list(client_db.get("deepDives", []), server_db.get("deepDives", []), combined_deleted, "id"),
         "founderProfiles": merge_list(client_db.get("founderProfiles", []), server_db.get("founderProfiles", []), combined_deleted, "id"),
+        "readingItems": merge_list(client_db.get("readingItems", []), server_db.get("readingItems", []), combined_deleted, "id"),
+        "reports": merge_list(client_db.get("reports", []), server_db.get("reports", []), combined_deleted, "id"),
+        "readingColumns": client_db.get("readingColumns") or server_db.get("readingColumns") or None,
         "deletedIds": combined_deleted
     }
 
@@ -1108,7 +1111,7 @@ def write_db(db):
 # ---- Supabase mirror: one worker, always uploads the newest snapshot -------------
 _mirror_cond = threading.Condition()
 _mirror_pending = {"payload": None}
-mirror_status = {"lastSyncAt": None, "lastError": None, "mode": None}
+mirror_status = {"lastSyncAt": None, "lastError": None, "mode": None, "records": None, "recordsError": None}
 
 def supabase_configured():
     has_db = bool(os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DATABASE_URL")
@@ -1140,6 +1143,16 @@ def _mirror_worker():
             _mirror_pending["payload"] = None
         ok_sql = set_sql_value(DB_KEY, payload)
         ok_rest = False if ok_sql else set_supabase_rest_value(DB_KEY, payload)
+        try:
+            mirror_status["records"] = sync_records(json.loads(payload))
+            mirror_status["recordsError"] = None
+        except urllib.error.HTTPError as e:
+            _remote_hashes.clear()
+            mirror_status["recordsError"] = (f"Record tables unavailable (HTTP {e.code}). Run supabase/schema.sql."
+                                             if e.code in (404, 400) else f"Record sync HTTP {e.code}")
+        except Exception as e:
+            _remote_hashes.clear()
+            mirror_status["recordsError"] = f"Record sync failed: {e}"
         if ok_sql or ok_rest:
             mirror_status.update(lastSyncAt=datetime.now().isoformat(timespec="seconds"),
                                  lastError=None, mode="postgresql" if ok_sql else "rest")
@@ -1202,6 +1215,92 @@ def check_supabase_connection():
         return {"status": "error", "mode": "rest",
                 "msg": "Read works but writes are blocked. Use the secret (service_role) key, not the anon/publishable key."}
     return {"status": "ok", "mode": "rest", "msg": "Connected to Supabase."}
+
+# ---- Per-record Supabase tables ----------------------------------------------------
+RECORD_TABLES = {"companies": "companies", "investors": "investors", "deepDives": "deep_dives",
+                 "founderProfiles": "founder_profiles", "readingItems": "reading_items", "reports": "reports"}
+_remote_hashes = {}  # table -> {id: hash}, refreshed from Supabase when empty
+
+def _sb_creds():
+    url = os.environ.get("SUPABASE_URL") or get_stored_value_file("supabase_url")
+    key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
+           or os.environ.get("SUPABASE_ANON_KEY") or get_stored_value_file("supabase_key"))
+    return (url.rstrip("/"), key) if url and key else (None, None)
+
+def _sb_request(method, path, body=None, extra=None, timeout=60):
+    url, key = _sb_creds()
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(f"{url}/rest/v1/{path}", data=data, method=method,
+                                 headers=sb_headers(key, {"Content-Type": "application/json", **(extra or {})}))
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+        return json.loads(raw) if raw else None
+
+def record_hash(rec):
+    return hashlib.sha1(json.dumps(rec, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+def fetch_remote_hashes(table):
+    out, offset = {}, 0
+    while True:
+        rows = _sb_request("GET", f"{table}?select=id,hash&order=id&limit=1000&offset={offset}")
+        for r in rows or []:
+            out[r["id"]] = r["hash"]
+        if not rows or len(rows) < 1000:
+            return out
+        offset += 1000
+
+def _in_filter(ids):
+    return "(" + ",".join('"' + str(i).replace('"', '\\"') + '"' for i in ids) + ")"
+
+def sync_records(db):
+    """Upsert changed records and delete removed ones. Returns a summary dict."""
+    url, _ = _sb_creds()
+    if not url:
+        return {"skipped": "no REST credentials"}
+    summary = {}
+    for coll, table in RECORD_TABLES.items():
+        local = {str(r["id"]): r for r in (db.get(coll) or []) if isinstance(r, dict) and r.get("id")}
+        if table not in _remote_hashes:
+            _remote_hashes[table] = fetch_remote_hashes(table)
+        remote = _remote_hashes[table]
+        now = datetime.utcnow().isoformat() + "Z"
+        changed = [{"id": i, "data": r, "hash": record_hash(r), "updated_at": now}
+                   for i, r in local.items() if remote.get(i) != record_hash(r)]
+        for n in range(0, len(changed), 100):
+            batch = changed[n:n + 100]
+            _sb_request("POST", f"{table}?on_conflict=id", batch,
+                        {"Prefer": "resolution=merge-duplicates,return=minimal"}, timeout=120)
+            for row in batch:
+                remote[row["id"]] = row["hash"]
+        removed = [i for i in list(remote) if i not in local]
+        for n in range(0, len(removed), 100):
+            batch = removed[n:n + 100]
+            _sb_request("DELETE", f"{table}?id=in.{quote(_in_filter(batch), safe='(),')}", None,
+                        {"Prefer": "return=minimal"})
+            for i in batch:
+                remote.pop(i, None)
+        summary[table] = {"upserted": len(changed), "deleted": len(removed), "total": len(local)}
+    return summary
+
+def verify_records():
+    """Compare every local record with Supabase by id + content hash."""
+    db = read_db()
+    report, all_ok = {}, True
+    for coll, table in RECORD_TABLES.items():
+        local = {str(r["id"]): record_hash(r) for r in (db.get(coll) or []) if isinstance(r, dict) and r.get("id")}
+        try:
+            remote = fetch_remote_hashes(table)
+            _remote_hashes[table] = dict(remote)
+        except urllib.error.HTTPError as e:
+            return {"ok": False, "error": f"Table '{table}' missing or inaccessible (HTTP {e.code}). Run supabase/schema.sql in the Supabase SQL Editor."}
+        missing = [i for i in local if i not in remote]
+        different = [i for i in local if i in remote and remote[i] != local[i]]
+        extra = [i for i in remote if i not in local]
+        ok = not (missing or different or extra)
+        all_ok &= ok
+        report[table] = {"local": len(local), "supabase": len(remote), "missing": missing[:20],
+                         "different": different[:20], "extra": extra[:20], "ok": ok}
+    return {"ok": all_ok, "checkedAt": datetime.now().isoformat(timespec="seconds"), "tables": report}
 
 def get_openai_key():
     path = os.path.join('db_storage', 'openai_api_key.json')
@@ -2409,11 +2508,22 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"value": None}).encode('utf-8'))
+        elif parsed_url.path == '/api/supabase/verify':
+            try:
+                result = verify_records() if _sb_creds()[0] else {"ok": False, "error": "Supabase not configured"}
+            except Exception as e:
+                result = {"ok": False, "error": str(e)}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode('utf-8'))
+            return
         elif parsed_url.path == '/api/supabase/status':
             result = check_supabase_connection()
             if result["status"] == "ok":
                 queue_remote_mirror()  # push the full current database right away
-            result.update(lastSyncAt=mirror_status["lastSyncAt"], lastSyncError=mirror_status["lastError"])
+            result.update(lastSyncAt=mirror_status["lastSyncAt"], lastSyncError=mirror_status["lastError"],
+                          records=mirror_status.get("records"), recordsError=mirror_status.get("recordsError"))
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
