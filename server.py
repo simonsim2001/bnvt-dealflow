@@ -10,8 +10,11 @@ import time
 import uuid
 import re
 import traceback
-from urllib.parse import urlparse, parse_qs, unquote
+import base64
+from urllib.parse import urlparse, parse_qs, unquote, quote
 import threading
+import shutil
+from datetime import datetime
 
 db_lock = threading.Lock()
 
@@ -30,19 +33,40 @@ PORT = int(os.environ.get("PORT", 8000))
 
 # ---- PostgreSQL Storage Fallback Helpers ------------------------------------------
 
+def get_stored_value_file(key):
+    path = os.path.join('db_storage', f"{key}.json")
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                val = data.get('value')
+                if isinstance(val, str):
+                    val = val.strip()
+                    if val == "configured_via_provider":
+                        val = None
+                return val
+        except Exception:
+            pass
+    return None
+
 def get_db_connection():
-    db_url = os.environ.get("DATABASE_URL")
+    db_url = (
+        os.environ.get("DATABASE_URL") or 
+        os.environ.get("SUPABASE_DATABASE_URL") or 
+        os.environ.get("SUPABASE_DB_URL") or 
+        get_stored_value_file("supabase_db_url")
+    )
     if not db_url:
         return None
     try:
         import psycopg2
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
-        conn = psycopg2.connect(db_url)
+        conn = psycopg2.connect(db_url, connect_timeout=5)
         conn.autocommit = True
         return conn
     except Exception as e:
-        print(f"[PostgreSQL Connection Error] {e}")
+        print(f"[PostgreSQL/Supabase Connection Error] {e}")
         return None
 
 def init_postgres():
@@ -57,9 +81,9 @@ def init_postgres():
                     value TEXT
                 )
             """)
-        print("[PostgreSQL] Table initialized successfully.")
+        print("[PostgreSQL/Supabase] Table initialized successfully.")
     except Exception as e:
-        print(f"[PostgreSQL Init Error] {e}")
+        print(f"[PostgreSQL/Supabase Init Error] {e}")
     finally:
         conn.close()
 
@@ -74,7 +98,7 @@ def get_sql_value(key):
             if row:
                 return row[0]
     except Exception as e:
-        print(f"[PostgreSQL Get Error for {key}] {e}")
+        print(f"[PostgreSQL/Supabase Get Error for {key}] {e}")
     finally:
         conn.close()
     return None
@@ -92,34 +116,81 @@ def set_sql_value(key, value):
             """, (key, value))
         return True
     except Exception as e:
-        print(f"[PostgreSQL Set Error for {key}] {e}")
+        print(f"[PostgreSQL/Supabase Set Error for {key}] {e}")
         return False
     finally:
         conn.close()
 
+def sb_headers(sb_key, extra=None):
+    """Legacy JWT keys (eyJ...) go in apikey + Bearer; new sb_secret_/sb_publishable_ keys only in apikey."""
+    h = {"apikey": sb_key}
+    if sb_key.startswith("eyJ"):
+        h["Authorization"] = f"Bearer {sb_key}"
+    if extra:
+        h.update(extra)
+    return h
+
+def get_supabase_rest_value(key):
+    sb_url = os.environ.get("SUPABASE_URL") or get_stored_value_file("supabase_url")
+    sb_key = (
+        os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or 
+        os.environ.get("SUPABASE_KEY") or 
+        os.environ.get("SUPABASE_ANON_KEY") or 
+        get_stored_value_file("supabase_key")
+    )
+    if not sb_url or not sb_key:
+        return None
+    try:
+        url = f"{sb_url.rstrip('/')}/rest/v1/key_value_store?key=eq.{quote(key)}&select=value"
+        req = urllib.request.Request(
+            url,
+            headers=sb_headers(sb_key, {"Accept": "application/json"}),
+            method="GET"
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            if isinstance(data, list) and len(data) > 0:
+                return data[0].get("value")
+    except Exception as e:
+        print(f"[Supabase REST Get Error for {key}] {e}")
+    return None
+
+def set_supabase_rest_value(key, value):
+    sb_url = os.environ.get("SUPABASE_URL") or get_stored_value_file("supabase_url")
+    sb_key = (
+        os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or 
+        os.environ.get("SUPABASE_KEY") or 
+        os.environ.get("SUPABASE_ANON_KEY") or 
+        get_stored_value_file("supabase_key")
+    )
+    if not sb_url or not sb_key:
+        return False
+    try:
+        url = f"{sb_url.rstrip('/')}/rest/v1/key_value_store"
+        payload = json.dumps({"key": key, "value": value}).encode('utf-8')
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers=sb_headers(sb_key, {"Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"}),
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status in (200, 201, 204)
+    except Exception as e:
+        print(f"[Supabase REST Set Error for {key}] {e}")
+        return False
+
 def get_stored_value(key):
-    val = None
-    if os.environ.get("DATABASE_URL"):
-        sql_val = get_sql_value(key)
-        if sql_val is not None:
-            val = sql_val
-            
+    # 1. Local file first: always present for this machine and never blocked by the network.
+    val = get_stored_value_file(key)
+
+    # 2. Remote copies (fresh deployments with no local files yet)
     if val is None:
-        path = os.path.join('db_storage', f"{key}.json")
-        if os.path.exists(path):
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    val = data.get('value')
-            except Exception:
-                pass
-                
-    # Normalize/strip and resolve "configured_via_provider" placeholder
-    if isinstance(val, str):
-        val = val.strip()
-        if val == "configured_via_provider":
-            val = None
-            
+        val = get_sql_value(key)
+    if val is None:
+        val = get_supabase_rest_value(key)
+
+    # 4. Fallback to Environment Variables
     if val is None or val == "":
         env_map = {
             "anthropic_api_key": "ANTHROPIC_API_KEY",
@@ -127,17 +198,22 @@ def get_stored_value(key):
             "groq_api_key": "GROQ_API_KEY",
             "openrouter_api_key": "OPENROUTER_API_KEY",
             "deepseek_api_key": "DEEPSEEK_API_KEY",
-            "openai_api_key": "OPENAI_API_KEY"
+            "openai_api_key": "OPENAI_API_KEY",
+            "supabase_url": "SUPABASE_URL",
+            "supabase_key": "SUPABASE_KEY",
+            "supabase_db_url": "DATABASE_URL"
         }
         if key in env_map:
             val = os.environ.get(env_map[key])
-            
+
     if isinstance(val, str):
-        return val.strip()
+        val = val.strip()
+        if val == "configured_via_provider":
+            return None
     return val
 
 def get_llm_config():
-    config = {"provider": "anthropic", "model": "claude-sonnet-4-6", "search_model": "claude-sonnet-4-6"}
+    config = {"provider": "anthropic", "model": "claude-sonnet-5", "search_model": "claude-sonnet-5"}
     
     # Check if config file exists
     config_path = os.path.join('db_storage', 'llm_config.json')
@@ -153,8 +229,8 @@ def get_llm_config():
     # Auto-detect provider based on available keys/env vars if config doesn't exist
     if get_stored_value("anthropic_api_key"):
         config["provider"] = "anthropic"
-        config["model"] = "claude-sonnet-4-6"
-        config["search_model"] = "claude-sonnet-4-6"
+        config["model"] = "claude-sonnet-5"
+        config["search_model"] = "claude-sonnet-5"
     elif get_stored_value("groq_api_key"):
         config["provider"] = "groq"
         config["model"] = "llama-3.3-70b-versatile"
@@ -196,7 +272,7 @@ def call_claude_api(api_key, prompt, use_search=False):
         ]
         
         payload = {
-            "model": config.get("model", "claude-sonnet-4-6"),
+            "model": config.get("search_model", "claude-sonnet-4-6") if use_search else config.get("model", "claude-sonnet-4-6"),
             "max_tokens": 4000,
             "messages": messages
         }
@@ -221,19 +297,16 @@ def call_claude_api(api_key, prompt, use_search=False):
                     content = res_json.get('content', [])
                     
                     print(f"[DEBUG CLAUDE] Loop {loop_idx}: stop_reason={stop_reason}")
-                    print(f"[DEBUG CLAUDE] Loop {loop_idx} content={content}")
                     
-                    has_tool_use = any(block.get('type') in ('server_tool_use', 'tool_use') for block in content)
-                    
-                    if stop_reason == 'end_turn' and not has_tool_use:
+                    if stop_reason == 'end_turn':
                         text_blocks = [b.get('text', '') for b in content if b.get('type') == 'text']
                         if text_blocks:
-                            text_val = "".join(text_blocks).strip()
-                            print(f"[DEBUG CLAUDE] Loop {loop_idx} returning combined: {text_val}")
+                            text_val = "\n".join(text_blocks).strip()
+                            print(f"[DEBUG CLAUDE] Loop {loop_idx} returning end_turn text: {text_val[:100]}...")
                             return text_val
                         raise Exception(f"Claude resolved request, but no text output was returned: {res_json}")
                     
-                    elif stop_reason == 'pause_turn' or (stop_reason == 'end_turn' and has_tool_use):
+                    elif stop_reason == 'pause_turn':
                         # Append assistant message content and loop again
                         print(f"[DEBUG CLAUDE] Loop {loop_idx} pausing/tool-using and appending to messages.")
                         assistant_content = []
@@ -730,18 +803,164 @@ def check_auth(handler):
         
     return False
 
+def get_note_key(n):
+    if isinstance(n, dict):
+        return str(n.get("id") or n.get("ts") or n.get("date") or n.get("text") or "")
+    elif isinstance(n, str):
+        return n.strip()
+    return str(n)
+
+def normalize_text_notes(notes):
+    """Collapse free-text notes (string, or a legacy list of versions) into one string of
+    unique paragraphs. Idempotent, so it can safely run on every save."""
+    parts = notes if isinstance(notes, list) else [notes]
+    paragraphs = []
+    for p in parts:
+        if isinstance(p, dict):
+            p = p.get("text") or ""
+        if not isinstance(p, str):
+            continue
+        for para in re.split(r"\n\s*\n", p):
+            para = re.sub(r"(\[object Object\]\s*,?\s*)+", "", para)
+            para = re.sub(r"Research failed:[^\n]*", "", para)
+            para = para.strip(" ,\n\t")
+            if para:
+                paragraphs.append(para)
+    seen, unique = set(), []
+    for para in paragraphs:
+        if para not in seen:
+            seen.add(para)
+            unique.append(para)
+    # Drop paragraphs fully contained in a longer one (left over from earlier concatenations).
+    unique.sort(key=len, reverse=True)
+    kept = []
+    for para in unique:
+        if not any(para in k for k in kept):
+            kept.append(para)
+    first_seen = {}
+    for i, p in enumerate(paragraphs):
+        first_seen.setdefault(p, i)
+    kept.sort(key=lambda p: first_seen.get(p, 0))
+    return "\n\n".join(kept)
+
+def merge_notes(client_notes, server_notes):
+    # Free-text notes (a string on either side) are a single field: last write wins.
+    # Unioning text versions is what made notes double in size on every save.
+    if isinstance(client_notes, str) or isinstance(server_notes, str):
+        if isinstance(client_notes, str) and client_notes.strip():
+            return client_notes
+        if isinstance(client_notes, list) and client_notes:
+            return client_notes
+        return server_notes if server_notes is not None else client_notes
+    if not isinstance(client_notes, list):
+        client_notes = [client_notes] if client_notes else []
+    if not isinstance(server_notes, list):
+        server_notes = [server_notes] if server_notes else []
+        
+    notes_map = {}
+    for n in server_notes:
+        if n is not None:
+            key = get_note_key(n)
+            if key:
+                notes_map[key] = n
+                
+    for n in client_notes:
+        if n is not None:
+            key = get_note_key(n)
+            if key:
+                notes_map[key] = n
+                
+    res = list(notes_map.values())
+    def get_time(n):
+        if isinstance(n, dict):
+            return n.get("date") or n.get("ts") or n.get("createdAt") or 0
+        return 0
+    try:
+        res.sort(key=get_time, reverse=True)
+    except Exception:
+        pass
+    return res
+
+def merge_sub_list(client_sub, server_sub, identity_fields=("id", "name", "url", "text")):
+    if not isinstance(client_sub, list):
+        client_sub = [client_sub] if client_sub else []
+    if not isinstance(server_sub, list):
+        server_sub = [server_sub] if server_sub else []
+
+    item_map = {}
+    def get_item_key(item):
+        if isinstance(item, dict):
+            for field in identity_fields:
+                val = item.get(field)
+                if val:
+                    return str(val)
+        return str(item)
+
+    for item in server_sub:
+        if item is not None:
+            k = get_item_key(item)
+            item_map[k] = item
+
+    for item in client_sub:
+        if item is not None:
+            k = get_item_key(item)
+            if k in item_map and isinstance(item, dict) and isinstance(item_map[k], dict):
+                merged = dict(item_map[k])
+                merged.update(item)
+                item_map[k] = merged
+            else:
+                item_map[k] = item
+
+    return list(item_map.values())
+
+def merge_single_item(client_item, server_item):
+    if not server_item:
+        return client_item
+    if not client_item:
+        return server_item
+
+    merged = dict(server_item)
+    c_ts = client_item.get("updatedAt") or client_item.get("ts") or 0
+    s_ts = server_item.get("updatedAt") or server_item.get("ts") or 0
+
+    for key, c_val in client_item.items():
+        s_val = server_item.get(key)
+        
+        if key == "notes":
+            merged["notes"] = merge_notes(c_val, s_val)
+        elif key in ("founders", "assets", "documents", "qa", "deckIngestHistory"):
+            merged[key] = merge_sub_list(c_val, s_val)
+        elif isinstance(c_val, dict) and isinstance(s_val, dict):
+            m_dict = dict(s_val)
+            m_dict.update(c_val)
+            merged[key] = m_dict
+        else:
+            if c_val is None or c_val == "" or (isinstance(c_val, list) and len(c_val) == 0):
+                if s_val is not None and s_val != "" and not (isinstance(s_val, list) and len(s_val) == 0):
+                    merged[key] = s_val
+                else:
+                    merged[key] = c_val
+            elif s_ts > c_ts and s_ts > 0 and s_val is not None and s_val != "":
+                merged[key] = s_val
+            else:
+                merged[key] = c_val
+
+    for key, s_val in server_item.items():
+        if key not in client_item and s_val is not None:
+            merged[key] = s_val
+
+    return merged
+
 def merge_list(client_list, server_list, deleted_ids, key_field):
     deleted_set = set(str(d) for d in deleted_ids)
-    client_filtered = [item for item in client_list if item.get(key_field) and str(item.get(key_field)) not in deleted_set]
-    server_filtered = [item for item in server_list if item.get(key_field) and str(item.get(key_field)) not in deleted_set]
+    client_filtered = [item for item in client_list if isinstance(item, dict) and item.get(key_field) and str(item.get(key_field)) not in deleted_set]
+    server_filtered = [item for item in server_list if isinstance(item, dict) and item.get(key_field) and str(item.get(key_field)) not in deleted_set]
 
-    # Maps by key_field (id)
     client_map = {item.get(key_field): item for item in client_filtered if item.get(key_field)}
     server_map = {item.get(key_field): item for item in server_filtered if item.get(key_field)}
     
     merged_list = []
     
-    # Iterate client items to preserve UI-defined order/edits
     for item in client_filtered:
         item_id = item.get(key_field)
         if not item_id:
@@ -750,41 +969,13 @@ def merge_list(client_list, server_list, deleted_ids, key_field):
             
         if item_id in server_map:
             server_item = server_map[item_id]
-            merged_item = dict(server_item) # Start with server properties
-            merged_item.update(item)        # Overwrite with client modifications
-            
-            # Combine notes list (union + deduplicate + sort by timestamp)
-            if "notes" in item or "notes" in server_item:
-                client_notes = item.get("notes", [])
-                server_notes = server_item.get("notes", [])
-                if isinstance(client_notes, list) and isinstance(server_notes, list):
-                    notes_map = {}
-                    for note in server_notes:
-                        note_id = note.get("id") or note.get("ts") or note.get("date")
-                        if note_id:
-                            notes_map[note_id] = note
-                    for note in client_notes:
-                        note_id = note.get("id") or note.get("ts") or note.get("date")
-                        if note_id:
-                            notes_map[note_id] = note
-                    
-                    combined_notes = list(notes_map.values())
-                    def get_note_time(n):
-                        return n.get("date") or n.get("ts") or n.get("createdAt") or 0
-                    try:
-                        combined_notes.sort(key=get_note_time, reverse=True)
-                    except Exception:
-                        pass
-                    merged_item["notes"] = combined_notes
-            
+            merged_item = merge_single_item(item, server_item)
             merged_list.append(merged_item)
         else:
             merged_list.append(item)
             
-    # Add server-only items (e.g. newly ingested via WhatsApp while client tab was open)
     for item_id, item in server_map.items():
         if item_id not in client_map:
-            # Prepend so new incoming deals are visible at top immediately
             merged_list.insert(0, item)
             
     return merged_list
@@ -794,56 +985,196 @@ def merge_databases(client_db, server_db):
     server_deleted = server_db.get("deletedIds", []) if isinstance(server_db, dict) else []
     combined_deleted = list(set(str(d) for d in client_deleted + server_deleted))
     
+    investors = merge_list(client_db.get("investors", []), server_db.get("investors", []), combined_deleted, "id")
+    for inv in investors:
+        if isinstance(inv, dict) and inv.get("notes") is not None and not isinstance(inv.get("notes"), str):
+            inv["notes"] = normalize_text_notes(inv["notes"])
+        elif isinstance(inv, dict) and isinstance(inv.get("notes"), str) and len(inv["notes"]) > 20000:
+            inv["notes"] = normalize_text_notes(inv["notes"])
+
     return {
         "companies": merge_list(client_db.get("companies", []), server_db.get("companies", []), combined_deleted, "id"),
-        "investors": merge_list(client_db.get("investors", []), server_db.get("investors", []), combined_deleted, "id"),
+        "investors": investors,
         "deepDives": merge_list(client_db.get("deepDives", []), server_db.get("deepDives", []), combined_deleted, "id"),
         "founderProfiles": merge_list(client_db.get("founderProfiles", []), server_db.get("founderProfiles", []), combined_deleted, "id"),
         "deletedIds": combined_deleted
     }
 
+DB_KEY = "bnvt-dealflow-v1"
+DB_PATH = os.path.join('db_storage', f"{DB_KEY}.json")
+BACKUP_DIR = os.path.join('db_storage', 'backups')
+BACKUP_KEEP = 72  # hourly snapshots (~3 days)
+
+def _load_db_file(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        outer = json.load(f)
+    value_str = outer.get('value', '')
+    return json.loads(value_str) if value_str else None
+
+def atomic_write_json(path, obj):
+    """Write to a temp file then rename, so readers never see a half-written file."""
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    tmp = f"{path}.tmp-{os.getpid()}-{threading.get_ident()}"
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(obj, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+def snapshot_db_if_due():
+    try:
+        if not os.path.exists(DB_PATH):
+            return
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        stamp = datetime.now().strftime('%Y%m%d-%H')
+        target = os.path.join(BACKUP_DIR, f"{DB_KEY}.{stamp}.json")
+        if not os.path.exists(target):
+            shutil.copy2(DB_PATH, target)
+            backups = sorted(p for p in os.listdir(BACKUP_DIR) if p.startswith(DB_KEY))
+            for old in backups[:-BACKUP_KEEP]:
+                os.remove(os.path.join(BACKUP_DIR, old))
+    except Exception as e:
+        print(f"[Backup snapshot error] {e}")
+
 def read_db():
-    db = {"companies": [], "investors": [], "deepDives": [], "founderProfiles": []}
-    if os.environ.get("DATABASE_URL"):
-        sql_val = get_sql_value("bnvt-dealflow-v1")
-        if sql_val:
-            try:
-                db = json.loads(sql_val)
-                return db
-            except Exception as e:
-                print(f"[Error parsing SQL db JSON] {e}")
-                
-    db_path = os.path.join('db_storage', 'bnvt-dealflow-v1.json')
-    if os.path.exists(db_path):
+    empty = {"companies": [], "investors": [], "deepDives": [], "founderProfiles": []}
+    # 1. Local file is the primary copy (always written on every save).
+    if os.path.exists(DB_PATH):
         try:
-            with open(db_path, 'r', encoding='utf-8') as f:
-                outer_data = json.load(f)
-                value_str = outer_data.get('value', '')
-                if value_str:
-                    db = json.loads(value_str)
+            db = _load_db_file(DB_PATH)
+            if db is not None:
+                return db
         except Exception as e:
-            print(f"[Error reading db] {e}")
-    return db
+            print(f"[DB file unreadable, trying backups] {e}")
+            # Never silently return an empty DB: that would wipe server-only records on merge.
+            if os.path.isdir(BACKUP_DIR):
+                for name in sorted(os.listdir(BACKUP_DIR), reverse=True):
+                    if name.startswith(DB_KEY):
+                        try:
+                            db = _load_db_file(os.path.join(BACKUP_DIR, name))
+                            if db is not None:
+                                print(f"[DB recovered from backup {name}]")
+                                return db
+                        except Exception:
+                            continue
+            raise RuntimeError("Database file is corrupt and no readable backup was found")
+    # 2. No local file yet: try remote copies (fresh install restoring from Supabase).
+    stored_str = get_sql_value(DB_KEY) or get_supabase_rest_value(DB_KEY)
+    if stored_str:
+        try:
+            return json.loads(stored_str)
+        except Exception as e:
+            print(f"[Error parsing remote DB JSON] {e}")
+    return empty
 
 def write_db(db):
     db_str = json.dumps(db, ensure_ascii=False)
-    if os.environ.get("DATABASE_URL"):
-        if set_sql_value("bnvt-dealflow-v1", db_str):
-            return True
-            
-    db_path = os.path.join('db_storage', 'bnvt-dealflow-v1.json')
     try:
-        outer_data = {
-            "key": "bnvt-dealflow-v1",
-            "value": db_str
-        }
-        os.makedirs('db_storage', exist_ok=True)
-        with open(db_path, 'w', encoding='utf-8') as f:
-            json.dump(outer_data, f, indent=2, ensure_ascii=False)
-        return True
+        atomic_write_json(DB_PATH, {"key": DB_KEY, "value": db_str})
     except Exception as e:
         print(f"[Error writing db] {e}")
         return False
+    snapshot_db_if_due()
+    queue_remote_mirror(db_str)
+    return True
+
+# ---- Supabase mirror: one worker, always uploads the newest snapshot -------------
+_mirror_cond = threading.Condition()
+_mirror_pending = {"payload": None}
+mirror_status = {"lastSyncAt": None, "lastError": None, "mode": None}
+
+def supabase_configured():
+    has_db = bool(os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DATABASE_URL")
+                  or os.environ.get("SUPABASE_DB_URL") or get_stored_value_file("supabase_db_url"))
+    has_rest = bool((os.environ.get("SUPABASE_URL") or get_stored_value_file("supabase_url")) and
+                    (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
+                     or os.environ.get("SUPABASE_ANON_KEY") or get_stored_value_file("supabase_key")))
+    return has_db or has_rest
+
+def queue_remote_mirror(db_str=None):
+    if not supabase_configured():
+        return
+    if db_str is None:
+        try:
+            db_str = json.dumps(read_db(), ensure_ascii=False)
+        except Exception as e:
+            mirror_status["lastError"] = f"Could not read local DB: {e}"
+            return
+    with _mirror_cond:
+        _mirror_pending["payload"] = db_str
+        _mirror_cond.notify()
+
+def _mirror_worker():
+    while True:
+        with _mirror_cond:
+            while _mirror_pending["payload"] is None:
+                _mirror_cond.wait()
+            payload = _mirror_pending["payload"]
+            _mirror_pending["payload"] = None
+        ok_sql = set_sql_value(DB_KEY, payload)
+        ok_rest = False if ok_sql else set_supabase_rest_value(DB_KEY, payload)
+        if ok_sql or ok_rest:
+            mirror_status.update(lastSyncAt=datetime.now().isoformat(timespec="seconds"),
+                                 lastError=None, mode="postgresql" if ok_sql else "rest")
+        else:
+            mirror_status["lastError"] = "Upload to Supabase failed (see server log)"
+            with _mirror_cond:
+                if _mirror_pending["payload"] is None:  # retry unless a newer snapshot arrived
+                    _mirror_pending["payload"] = payload
+            time.sleep(30)
+
+threading.Thread(target=_mirror_worker, daemon=True, name="supabase-mirror").start()
+
+SUPABASE_SETUP_SQL = ("create table if not exists public.key_value_store (key text primary key, value text); "
+                      "alter table public.key_value_store enable row level security;")
+
+def check_supabase_connection():
+    """Probe Supabase and explain failures in plain language."""
+    if not supabase_configured():
+        return {"status": "error", "msg": "Supabase is not configured. Add your project URL and secret key in Settings."}
+
+    # 1. PostgreSQL connection string (creates the table automatically)
+    db_url = (os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DATABASE_URL")
+              or os.environ.get("SUPABASE_DB_URL") or get_stored_value_file("supabase_db_url"))
+    pg_error = None
+    if db_url:
+        conn = get_db_connection()
+        if conn:
+            conn.close()
+            init_postgres()
+            return {"status": "ok", "mode": "postgresql", "msg": "Connected to Supabase (PostgreSQL)."}
+        pg_error = "The PostgreSQL connection string was rejected or unreachable. Use the Session pooler string from Supabase > Connect."
+
+    # 2. REST API
+    sb_url = os.environ.get("SUPABASE_URL") or get_stored_value_file("supabase_url")
+    sb_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
+              or os.environ.get("SUPABASE_ANON_KEY") or get_stored_value_file("supabase_key"))
+    if not (sb_url and sb_key):
+        return {"status": "error", "msg": pg_error or "Missing Supabase URL or key."}
+    try:
+        req = urllib.request.Request(
+            f"{sb_url.rstrip('/')}/rest/v1/key_value_store?select=key&limit=1",
+            headers=sb_headers(sb_key))
+        urllib.request.urlopen(req, timeout=10).read()
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "ignore")
+        if e.code in (401, 403):
+            msg = "Supabase rejected the key. Use the secret (service_role) key from Project Settings > API Keys."
+        elif e.code == 404 or "PGRST205" in body or "does not exist" in body:
+            msg = "Connected, but the table is missing. Run this in the Supabase SQL Editor: " + SUPABASE_SETUP_SQL
+        else:
+            msg = f"Supabase returned HTTP {e.code}: {body[:200]}"
+        return {"status": "error", "mode": "rest", "msg": msg, "setupSql": SUPABASE_SETUP_SQL}
+    except urllib.error.URLError as e:
+        return {"status": "error", "mode": "rest",
+                "msg": f"Cannot reach {sb_url}. Check the project URL; the project may be paused or deleted. ({e.reason})"}
+    except Exception as e:
+        return {"status": "error", "mode": "rest", "msg": f"Supabase check failed: {e}"}
+
+    if not set_supabase_rest_value("supabase_test_ping", "ping_ok"):
+        return {"status": "error", "mode": "rest",
+                "msg": "Read works but writes are blocked. Use the secret (service_role) key, not the anon/publishable key."}
+    return {"status": "ok", "mode": "rest", "msg": "Connected to Supabase."}
 
 def get_openai_key():
     path = os.path.join('db_storage', 'openai_api_key.json')
@@ -1237,6 +1568,9 @@ def get_pipeline_summary_text():
     companies = db.get('companies', [])
     
     total_deals = len(companies)
+    total_companies_cnt = sum(1 for c in companies if c.get('entityType', 'Company') == 'Company')
+    total_individuals_cnt = sum(1 for c in companies if c.get('entityType') == 'Individual')
+
     # Open deals: status is not Passed or Killed
     open_deals = [c for c in companies if c.get('status') not in ('Killed', 'Passed')]
     total_open = len(open_deals)
@@ -1271,15 +1605,16 @@ def get_pipeline_summary_text():
     for idx, c in enumerate(recent_deals, 1):
         name = c.get('name', 'Unknown')
         stage = c.get('stage', 'Unknown')
+        etype = "👤 Individual" if c.get('entityType') == 'Individual' else "🏢 Company"
         created_val = get_created_at(c)
         date_str = ""
         if created_val > 0:
             date_str = time.strftime('%m/%d/%Y', time.localtime(created_val / 1000))
-        recent_lines.append(f"{idx}. {name} ({stage}) - {date_str}")
+        recent_lines.append(f"{idx}. [{etype}] {name} ({stage}) - {date_str}")
         
     summary_parts = [
         "📊 *BNVT Pipeline Summary*",
-        f"Total Deals: {total_deals}",
+        f"Total Opportunities: {total_deals} ({total_companies_cnt} Companies · {total_individuals_cnt} Individuals)",
         f"Active Opportunities: {total_open}",
         "",
         "*By Stage:*",
@@ -1380,12 +1715,474 @@ def handle_update_record(db, type_id, record_id, fields):
     }
 
 
+# ---- Affinity CRM Integration Service ----
+AFFINITY_DEFAULT_API_KEY = "MIcwWj8tEWh4b7Cth_1HljnCIUFQHud9igdDF1VAYdk"
+DEALS_LIST_ID = 149159
+
+STATUS_FIELD_ID = 2949467      # Dropdown / Status
+OWNERS_FIELD_ID = 2949468      # Person field
+SECTOR_FIELD_ID = 3497697      # Dropdown (string value)
+ROUND_FIELD_ID = 2949470       # Dropdown (string value)
+AMOUNT_FIELD_ID = 2949469      # Number (float value)
+GEOGRAPHY_FIELD_ID = 3497698   # String value (Country)
+
+GEOGRAPHY_COUNTRY_MAP = {
+    'us': 'United States', 'usa': 'United States', 'united states': 'United States', 'america': 'United States',
+    'uk': 'United Kingdom', 'united kingdom': 'United Kingdom', 'britain': 'United Kingdom', 'london': 'United Kingdom',
+    'france': 'France', 'paris': 'France',
+    'germany': 'Germany', 'berlin': 'Germany', 'munich': 'Germany',
+    'sweden': 'Sweden', 'stockholm': 'Sweden',
+    'nordics': 'Sweden',
+    'switzerland': 'Switzerland',
+    'netherlands': 'Netherlands', 'holland': 'Netherlands', 'amsterdam': 'Netherlands',
+    'spain': 'Spain', 'barcelona': 'Spain', 'madrid': 'Spain',
+    'finland': 'Finland', 'helsinki': 'Finland',
+    'denmark': 'Denmark', 'copenhagen': 'Denmark',
+    'norway': 'Norway', 'oslo': 'Norway',
+    'ireland': 'Ireland', 'dublin': 'Ireland',
+    'italy': 'Italy', 'milan': 'Italy',
+    'israel': 'Israel', 'tel aviv': 'Israel',
+    'canada': 'Canada', 'toronto': 'Canada',
+    'singapore': 'Singapore',
+    'eu': 'Europe', 'europe': 'Europe'
+}
+
+def normalize_geography_val(geo_val):
+    if not geo_val:
+        return None
+    s = str(geo_val).strip()
+    s_lower = s.lower()
+    if s_lower in GEOGRAPHY_COUNTRY_MAP:
+        return GEOGRAPHY_COUNTRY_MAP[s_lower]
+    for key, country in GEOGRAPHY_COUNTRY_MAP.items():
+        if key in s_lower or s_lower in key:
+            return country
+    return s.title()
+
+SIMON_LEVY_PERSON_ID = 250639688
+
+STATUS_MAP = {
+    'New': 6133675,                  # Active opportunity / Reach Out
+    'Active Opportunity': 6133675,
+    'Active opportunity': 6133675,
+    'Reach Out': 6133675,
+    'Contacted': 6133675,
+    'First Meeting': 14358268,       # Meeting Scheduled
+    'Meeting Scheduled': 14358268,
+    'Second Meeting': 6133676,
+    'Due Diligence': 11000819,       # Due Diligence
+    'Term Sheet': 6133680,           # Invested
+    'Invested': 6133680,             # Invested
+    'Portfolio': 6133680,
+    'Passed': 6133681,               # Killed / Passed
+    'Killed': 6133681,
+    'To Kill': 6133681,
+    'Watchlist': 6133682,
+    'Tracking': 6133682,
+    'Pre-emption': 23363837,
+    'Pre-Emption': 23363837
+}
+
+VALID_ROUNDS = ['Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Series D', 'Series E']
+
+def normalize_round_string(round_val):
+    if not round_val:
+        return None
+    s = str(round_val).strip()
+    s_clean = re.sub(r'[-_\s]+', '', s.lower())
+    if 'pre' in s_clean and 'seed' in s_clean:
+        return 'Pre-Seed'
+    elif 'seed' in s_clean:
+        return 'Seed'
+    elif 'seriesa' in s_clean or 'rounda' in s_clean:
+        return 'Series A'
+    elif 'seriesb' in s_clean or 'roundb' in s_clean:
+        return 'Series B'
+    elif 'seriesc' in s_clean or 'roundc' in s_clean:
+        return 'Series C'
+    elif 'seriesd' in s_clean or 'roundd' in s_clean:
+        return 'Series D'
+    elif 'seriese' in s_clean or 'rounde' in s_clean:
+        return 'Series E'
+    for vr in VALID_ROUNDS:
+        if vr.lower() == s.lower():
+            return vr
+    return None
+
+def parse_amount_number(amt_val):
+    if amt_val is None or amt_val == '':
+        return None
+    if isinstance(amt_val, (int, float)):
+        return float(amt_val)
+    s = str(amt_val).strip().upper()
+    s = s.replace('$', '').replace(',', '').replace('€', '').replace('£', '').strip()
+    if not s:
+        return None
+    try:
+        if s.endswith('M'):
+            return float(s[:-1]) * 1_000_000
+        elif s.endswith('K'):
+            return float(s[:-1]) * 1_000
+        elif s.endswith('B'):
+            return float(s[:-1]) * 1_000_000_000
+        return float(s)
+    except Exception:
+        return None
+
+COMMON_PLATFORM_DOMAINS = {
+    'linkedin.com', 'twitter.com', 'x.com', 'github.com', 'docsend.com', 
+    'notion.so', 'medium.com', 'substack.com', 'google.com', 'drive.google.com',
+    'youtube.com', 'facebook.com', 'instagram.com'
+}
+
+def extract_domain_from_url(url_str):
+    if not url_str:
+        return None
+    url_str = str(url_str).strip()
+    if not url_str.startswith(('http://', 'https://')):
+        url_str = 'https://' + url_str
+    try:
+        parsed = urlparse(url_str)
+        host = parsed.netloc or parsed.path
+        host = host.split(':')[0].lower()
+        if host.startswith('www.'):
+            host = host[4:]
+        if host in COMMON_PLATFORM_DOMAINS or any(host.endswith('.' + d) for d in COMMON_PLATFORM_DOMAINS):
+            return None
+        if '.' in host and len(host.split('.')[-1]) >= 2:
+            return host
+    except Exception:
+        pass
+    return None
+
+def extract_fv_text(res_val):
+    if isinstance(res_val, list) and len(res_val) > 0:
+        res_val = res_val[0]
+    if isinstance(res_val, dict):
+        val = res_val.get('value')
+        if isinstance(val, dict):
+            return val.get('text', '')
+        if isinstance(val, list) and len(val) > 0 and isinstance(val[0], dict):
+            return val[0].get('text', '')
+        return str(val or "")
+    return str(res_val or "")
+
+def update_or_create_fv(auth_header, list_entry_id, org_id, existing_fvs, field_id, value):
+    if value is None or value == "":
+        return None
+    existing = next((fv for fv in existing_fvs if isinstance(fv, dict) and fv.get('field_id') == field_id), None)
+    if existing:
+        put_url = f'https://api.affinity.co/field-values/{existing["id"]}'
+        payload = json.dumps({'value': value}).encode()
+        req = urllib.request.Request(put_url, data=payload, headers={'Authorization': f'Basic {auth_header}', 'Content-Type': 'application/json'}, method='PUT')
+    else:
+        post_url = 'https://api.affinity.co/field-values'
+        payload = json.dumps({'field_id': field_id, 'entity_id': org_id, 'list_entry_id': list_entry_id, 'value': value}).encode()
+        req = urllib.request.Request(post_url, data=payload, headers={'Authorization': f'Basic {auth_header}', 'Content-Type': 'application/json'}, method='POST')
+        
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except Exception as e:
+        print(f"[Affinity Push] Error updating field {field_id} with {value}: {e}")
+        return None
+
+def push_affinity_note(auth_header, org_id, content):
+    if not content or not content.strip():
+        return None
+    url = 'https://api.affinity.co/notes'
+    payload = json.dumps({
+        'organization_ids': [org_id],
+        'content': content.strip()
+    }).encode()
+    req = urllib.request.Request(url, data=payload, headers={'Authorization': f'Basic {auth_header}', 'Content-Type': 'application/json'}, method='POST')
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except Exception as e:
+        print(f"[Affinity Push] Error creating note for org {org_id}: {e}")
+        return None
+
+def execute_affinity_push(item, api_key=None):
+    key = (api_key or AFFINITY_DEFAULT_API_KEY).strip()
+    auth_header = base64.b64encode(f':{key}'.encode()).decode()
+    
+    name = str(item.get('name', '') or '').strip()
+    url_val = str(item.get('url', '') or '').strip()
+    entity_type = item.get('entityType', 'Company')
+    status = item.get('status', 'Reach Out')
+    raw_stage = item.get('stage') or item.get('round') or (item.get('overview') or {}).get('stage')
+    raw_amount = item.get('amount_raising') or item.get('amountRaising') or item.get('amount') or item.get('raising') or (item.get('overview') or {}).get('amount')
+    
+    if not name:
+        raise Exception("Deal name is required to push to Affinity")
+        
+    option_id = STATUS_MAP.get(status, STATUS_MAP.get('Reach Out'))
+    domain = extract_domain_from_url(url_val) if entity_type == 'Company' else None
+    
+    org_id = None
+    
+    # 1. Match existing company by domain if available
+    if domain:
+        search_req = urllib.request.Request(f'https://api.affinity.co/organizations?term={quote(domain)}')
+        search_req.add_header('Authorization', f'Basic {auth_header}')
+        with urllib.request.urlopen(search_req) as resp:
+            res = json.loads(resp.read().decode())
+            org_list = res.get('organizations', []) if isinstance(res, dict) else res
+            for org in org_list:
+                org_domains = [d.lower() for d in org.get('domains', []) if d]
+                if domain.lower() in org_domains or org.get('domain', '').lower() == domain.lower():
+                    org_id = org['id']
+                    break
+    
+    # 2. Match existing company by name if domain not matched
+    if not org_id and name:
+        search_name_req = urllib.request.Request(f'https://api.affinity.co/organizations?term={quote(name)}')
+        search_name_req.add_header('Authorization', f'Basic {auth_header}')
+        with urllib.request.urlopen(search_name_req) as resp:
+            res = json.loads(resp.read().decode())
+            org_list = res.get('organizations', []) if isinstance(res, dict) else res
+            for org in org_list:
+                if org.get('name', '').strip().lower() == name.lower():
+                    org_id = org['id']
+                    break
+
+    # 3. Create new Organization if not found
+    if not org_id:
+        create_payload = {'name': name}
+        if domain:
+            create_payload['domain'] = domain
+        create_data = json.dumps(create_payload).encode()
+        create_req = urllib.request.Request('https://api.affinity.co/organizations', data=create_data, headers={'Authorization': f'Basic {auth_header}', 'Content-Type': 'application/json'})
+        with urllib.request.urlopen(create_req) as resp:
+            new_org = json.loads(resp.read().decode())
+            org_id = new_org['id']
+
+    # 4. Find or create List Entry in Deals list (149159)
+    entry_id = None
+    list_entries_req = urllib.request.Request(f'https://api.affinity.co/lists/{DEALS_LIST_ID}/list-entries')
+    list_entries_req.add_header('Authorization', f'Basic {auth_header}')
+    with urllib.request.urlopen(list_entries_req) as resp:
+        res_entries = json.loads(resp.read().decode())
+        entries = res_entries.get('list_entries', []) if isinstance(res_entries, dict) else res_entries
+        for ent in entries:
+            if isinstance(ent, dict) and ent.get('entity_id') == org_id:
+                entry_id = ent['id']
+                break
+                
+    if not entry_id:
+        add_entry_payload = json.dumps({'entity_id': org_id}).encode()
+        add_entry_req = urllib.request.Request(f'https://api.affinity.co/lists/{DEALS_LIST_ID}/list-entries', data=add_entry_payload, headers={'Authorization': f'Basic {auth_header}', 'Content-Type': 'application/json'})
+        with urllib.request.urlopen(add_entry_req) as resp:
+            new_entry = json.loads(resp.read().decode())
+            entry_id = new_entry['id']
+
+    # 5. Retrieve existing Field Values for List Entry
+    fv_req = urllib.request.Request(f'https://api.affinity.co/field-values?list_entry_id={entry_id}')
+    fv_req.add_header('Authorization', f'Basic {auth_header}')
+    with urllib.request.urlopen(fv_req) as resp:
+        fvs = json.loads(resp.read().decode())
+        if isinstance(fvs, dict):
+            fvs = fvs.get('field_values', [])
+            
+    # 6. Update Status
+    status_res = update_or_create_fv(auth_header, entry_id, org_id, fvs, STATUS_FIELD_ID, option_id)
+    status_text = extract_fv_text(status_res) if status_res else status
+    
+    # 7. Update Owner -> Simon Levy (250639688)
+    update_or_create_fv(auth_header, entry_id, org_id, fvs, OWNERS_FIELD_ID, SIMON_LEVY_PERSON_ID)
+
+    # 8. Update Sector -> AI
+    update_or_create_fv(auth_header, entry_id, org_id, fvs, SECTOR_FIELD_ID, "AI")
+
+    # 9. Update Round if available
+    round_str = normalize_round_string(raw_stage)
+    if round_str:
+        update_or_create_fv(auth_header, entry_id, org_id, fvs, ROUND_FIELD_ID, round_str)
+
+    # 10. Update Amount Raising if available (solely plain number)
+    amt_num = parse_amount_number(raw_amount)
+    if amt_num is not None:
+        update_or_create_fv(auth_header, entry_id, org_id, fvs, AMOUNT_FIELD_ID, amt_num)
+
+    # 11. Update Geography if available (Country string)
+    raw_geo = item.get('geo') or item.get('geography') or item.get('country') or (item.get('overview') or {}).get('geo')
+    geo_str = normalize_geography_val(raw_geo)
+    if geo_str:
+        update_or_create_fv(auth_header, entry_id, org_id, fvs, GEOGRAPHY_FIELD_ID, geo_str)
+
+    # 11. Create & Push Deal Summary Note
+    summary_parts = [f"=== BNVT DEAL SUMMARY: {name} ==="]
+    if item.get('entityType'):
+        summary_parts.append(f"Entity Type: {item.get('entityType')}")
+    if item.get('oneLiner'):
+        summary_parts.append(f"One-Liner: {item.get('oneLiner')}")
+    if url_val:
+        summary_parts.append(f"Website / URL: {url_val}")
+    if status_text:
+        summary_parts.append(f"Status: {status_text}")
+    if round_str or raw_stage:
+        summary_parts.append(f"Stage / Round: {round_str or raw_stage}")
+    if amt_num is not None or raw_amount:
+        summary_parts.append(f"Amount Raising: {amt_num if amt_num is not None else raw_amount}")
+    if item.get('geo'):
+        summary_parts.append(f"Geography: {item.get('geo')}")
+    if item.get('priority'):
+        summary_parts.append(f"Priority: {item.get('priority')}")
+    if item.get('source'):
+        summary_parts.append(f"Source: {item.get('source')}")
+
+    overview = item.get('overview') or {}
+    if isinstance(overview, dict) and any(overview.values()):
+        summary_parts.append("\n--- OVERVIEW ---")
+        if overview.get('product'):
+            summary_parts.append(f"• Product / Focus: {overview.get('product')}")
+        if overview.get('market'):
+            summary_parts.append(f"• Market: {overview.get('market')}")
+        if overview.get('team'):
+            summary_parts.append(f"• Team & Background: {overview.get('team')}")
+        if overview.get('traction'):
+            summary_parts.append(f"• Traction & Signals: {overview.get('traction')}")
+
+    scores = item.get('scores') or {}
+    rationale = item.get('rationale') or {}
+    if isinstance(scores, dict) and any(scores.values()):
+        summary_parts.append("\n--- DEFENSIBILITY & SCORING ---")
+        metric_names = {
+            'proprietaryTech': 'Proprietary Tech',
+            'dataMoat': 'Data Moat',
+            'distributionSwitching': 'Distribution / Switching',
+            'modelAgnostic': 'Model Agnostic',
+            'ipTimeToReplicate': 'IP / Time to Replicate',
+            'tam': 'TAM / Market Scale'
+        }
+        for k, label in metric_names.items():
+            if k in scores:
+                score_val = scores[k]
+                rat_val = rationale.get(k, '') if isinstance(rationale, dict) else ''
+                summary_parts.append(f"• {label}: {score_val}/5{f' — {rat_val}' if rat_val else ''}")
+
+    summary_note_text = "\n".join(summary_parts)
+    push_affinity_note(auth_header, org_id, summary_note_text)
+
+    # 12. Create & Push Granola Call Transcripts / Notes (as ONE note each)
+    granola_list = item.get('granolaNotes') or item.get('granola_notes') or []
+    if not isinstance(granola_list, list):
+        granola_list = []
+    
+    # Also extract call/meeting notes from item.get('notes') if present
+    crm_notes = item.get('notes') or []
+    if isinstance(crm_notes, list):
+        for n in crm_notes:
+            if isinstance(n, dict):
+                via = str(n.get('via', '')).lower()
+                text = str(n.get('text', ''))
+                if 'granola' in via or 'transcript' in text.lower() or 'meeting note' in text.lower():
+                    if not any(g.get('summary') == text or g.get('text') == text for g in granola_list if isinstance(g, dict)):
+                        granola_list.append({
+                            'title': f"Meeting Note ({n.get('via', 'Note')})",
+                            'summary': text
+                        })
+
+    pushed_granola_count = 0
+    for gnote in granola_list:
+        if not isinstance(gnote, dict):
+            continue
+        g_title = gnote.get('title') or gnote.get('name') or (gnote.get('calendar_event') or {}).get('event_title') or "Granola Meeting Note"
+        g_date = gnote.get('created_at') or gnote.get('createdAt') or gnote.get('date') or ""
+        g_summary = gnote.get('summary') or gnote.get('text') or gnote.get('overview') or ""
+        g_transcript = gnote.get('transcript') or gnote.get('raw_transcript') or ""
+        
+        g_parts = [f"=== GRANOLA MEETING NOTE: {g_title} ==="]
+        if g_date:
+            g_parts.append(f"Date: {g_date}")
+        if gnote.get('attendees'):
+            att = gnote['attendees']
+            if isinstance(att, list):
+                g_parts.append(f"Attendees: {', '.join(str(a) for a in att)}")
+            else:
+                g_parts.append(f"Attendees: {att}")
+                
+        if g_summary:
+            g_parts.append(f"\n--- SUMMARY / HIGHLIGHTS ---\n{g_summary}")
+        if g_transcript:
+            g_parts.append(f"\n--- FULL TRANSCRIPT ---\n{g_transcript}")
+            
+        note_content = "\n".join(g_parts).strip()
+        if note_content:
+            res_note = push_affinity_note(auth_header, org_id, note_content)
+            if res_note:
+                pushed_granola_count += 1
+
+    affinity_url = f"https://9900.affinity.co/companies/{org_id}"
+
+    return {
+        'success': True,
+        'affinity_org_id': org_id,
+        'list_entry_id': entry_id,
+        'status': status_text,
+        'owner': 'Simon Levy',
+        'sector': 'AI',
+        'round': round_str,
+        'amount_raising': amt_num,
+        'granola_notes_pushed': pushed_granola_count,
+        'affinity_url': affinity_url
+    }
+
+
+
 class DealflowHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # Always revalidate so a rebuilt app appears on a normal reload.
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def do_GET(self):
         parsed_url = urlparse(self.path)
         query = parse_qs(parsed_url.query)
         
-        if parsed_url.path == '/api/storage':
+        if parsed_url.path == '/api/affinity/auth':
+            try:
+                api_key = query.get('key', [None])[0] or self.headers.get('X-Affinity-Api-Key')
+                if not api_key or api_key == "configured_via_provider":
+                    api_key = get_stored_value('affinity_api_key')
+                if isinstance(api_key, str):
+                    api_key = api_key.strip()
+                if not api_key:
+                    raise Exception("No Affinity API Key provided")
+                
+                auth_b64 = base64.b64encode(f":{api_key}".encode('utf-8')).decode('utf-8')
+                req = urllib.request.Request(
+                    "https://api.affinity.co/auth/whoami",
+                    headers={
+                        "Authorization": f"Basic {auth_b64}",
+                        "Content-Type": "application/json"
+                    }
+                )
+                with urllib.request.urlopen(req) as resp:
+                    who_data = json.loads(resp.read().decode('utf-8'))
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "success": True,
+                        "tenant": who_data.get('tenant'),
+                        "user": who_data.get('user')
+                    }).encode('utf-8'))
+                    return
+            except Exception as auth_err:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": str(auth_err)
+                }).encode('utf-8'))
+                return
+
+        elif parsed_url.path == '/api/storage':
             key = query.get('key', [None])[0]
             if not key:
                 self.send_response(400)
@@ -1447,6 +2244,15 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"value": None}).encode('utf-8'))
+        elif parsed_url.path == '/api/supabase/status':
+            result = check_supabase_connection()
+            if result["status"] == "ok":
+                queue_remote_mirror()  # push the full current database right away
+            result.update(lastSyncAt=mirror_status["lastSyncAt"], lastSyncError=mirror_status["lastError"])
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode('utf-8'))
             return
             
         elif parsed_url.path == '/api/whatsapp':
@@ -2376,7 +3182,7 @@ Respond ONLY with valid JSON.
                 if not api_key or api_key == "configured_via_provider":
                     api_key = os.environ.get("ANTHROPIC_API_KEY")
                 if isinstance(api_key, str):
-                    api_key = api_key.strip()
+                    api_key = api_key.strip().strip('"').strip("'")
                     
                 if not api_key:
                     self.send_response(400)
@@ -2384,29 +3190,53 @@ Respond ONLY with valid JSON.
                     self.end_headers()
                     self.wfile.write(json.dumps({
                         "error": {
-                            "message": "No Anthropic API Key provided. Please enter it in the 'CLAUDE API KEY' field in the top header of the page, or set the ANTHROPIC_API_KEY environment variable in your terminal before launching."
+                            "message": "No Anthropic API Key provided. Please enter it in Settings or set ANTHROPIC_API_KEY."
                         }
                     }).encode('utf-8'))
                     return
 
-                # Read anthropic-beta header from client request
-                beta_header = self.headers.get('anthropic-beta')
-                if not beta_header:
-                    # If not provided, check if web_search is in post_data tools
-                    try:
-                        import json as pyjson
-                        body_json = pyjson.loads(post_data.decode('utf-8'))
-                        has_search = False
-                        for tool in body_json.get('tools', []):
-                            if tool.get('type') == 'web_search_20250305':
-                                has_search = True
-                                break
-                        if has_search:
-                            beta_header = "web-search-2025-03-05"
-                    except Exception:
-                        pass
+                try:
+                    import json as pyjson
+                    body_json = pyjson.loads(post_data.decode('utf-8'))
+                    has_search = False
+                    for tool in body_json.get('tools', []):
+                        if tool.get('type') == 'web_search_20250305' or tool.get('name') == 'web_search':
+                            has_search = True
+                            break
+                    
+                    if has_search:
+                        # Extract prompt text
+                        prompt_text = ""
+                        messages = body_json.get('messages', [])
+                        if messages:
+                            last_msg = messages[-1]
+                            content = last_msg.get('content')
+                            if isinstance(content, str):
+                                prompt_text = content
+                            elif isinstance(content, list):
+                                prompt_text = "".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+                        
+                        resolved_text = call_claude_api(api_key, prompt_text, use_search=True)
+                        response_obj = {
+                            "id": f"msg_resolved_{uuid.uuid4().hex[:10]}",
+                            "type": "message",
+                            "role": "assistant",
+                            "model": body_json.get("model", "claude-sonnet-4-6"),
+                            "content": [{"type": "text", "text": resolved_text}],
+                            "stop_reason": "end_turn"
+                        }
+                        res_bytes = pyjson.dumps(response_obj).encode('utf-8')
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(res_bytes)))
+                        self.end_headers()
+                        self.wfile.write(res_bytes)
+                        return
+                except Exception as parse_err:
+                    print(f"[Anthropic Proxy Search Auto-Resolve Exception] {parse_err}")
 
-                # Build Anthropic API request
+                # Standard Anthropic API proxy fallback via urllib.request
+                beta_header = self.headers.get('anthropic-beta')
                 headers = {
                     "Content-Type": "application/json",
                     "x-api-key": api_key,
@@ -2417,31 +3247,36 @@ Respond ONLY with valid JSON.
                     headers["anthropic-beta"] = beta_header
                 
                 try:
-                    import requests
-                    response = requests.post(
+                    req = urllib.request.Request(
                         "https://api.anthropic.com/v1/messages",
                         data=post_data,
                         headers=headers,
-                        timeout=180
+                        method="POST"
                     )
-                    self.send_response(response.status_code)
-                    # Forward non-hop-by-hop headers
-                    for key, val in response.headers.items():
-                        if key.lower() not in ('content-encoding', 'transfer-encoding', 'content-length', 'connection'):
-                            self.send_header(key, val)
-                    self.send_header('Content-Length', str(len(response.content)))
+                    with urllib.request.urlopen(req, timeout=180) as response:
+                        res_bytes = response.read()
+                        self.send_response(response.status)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(res_bytes)))
+                        self.end_headers()
+                        self.wfile.write(res_bytes)
+                        return
+                except urllib.error.HTTPError as http_err:
+                    err_bytes = http_err.read()
+                    self.send_response(http_err.code)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(err_bytes)))
                     self.end_headers()
-                    self.wfile.write(response.content)
+                    self.wfile.write(err_bytes)
+                    return
                 except Exception as e:
+                    err_msg = json.dumps({"error": {"message": f"Proxy request failed: {str(e)}"}}).encode('utf-8')
                     self.send_response(500)
                     self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(err_msg)))
                     self.end_headers()
-                    self.wfile.write(json.dumps({
-                        "error": {
-                            "message": f"Proxy request failed: {str(e)}"
-                        }
-                    }).encode('utf-8'))
-                return
+                    self.wfile.write(err_msg)
+                    return
 
         elif self.path == '/api/granola':
             content_length = int(self.headers.get('Content-Length', 0))
@@ -2607,7 +3442,6 @@ Respond ONLY with valid JSON.
                     "success": True,
                     "text": text
                 }).encode('utf-8'))
-                
             except Exception as e:
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
@@ -2616,6 +3450,150 @@ Respond ONLY with valid JSON.
                     "success": False,
                     "error": str(e)
                 }).encode('utf-8'))
+            return
+            
+        elif self.path == '/api/affinity/push':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length) if content_length > 0 else b''
+            try:
+                payload = json.loads(post_data.decode('utf-8'))
+                api_key = payload.get('api_key') or self.headers.get('X-Affinity-Api-Key')
+                item = payload.get('company') or payload.get('item') or payload
+                
+                print(f"[Affinity Push] Pushing item '{item.get('name')}' (Type: {item.get('entityType', 'Company')}, Status: {item.get('status')}) to Affinity Deals list...")
+                push_res = execute_affinity_push(item, api_key=api_key)
+                
+                # If company ID is provided, automatically update the DB record with Affinity metadata
+                comp_id = item.get('id')
+                if comp_id:
+                    with db_lock:
+                        db_latest = read_db()
+                        for c in db_latest.get('companies', []):
+                            if str(c.get('id')) == str(comp_id):
+                                c['affinityOrgId'] = push_res.get('affinity_org_id')
+                                c['affinityListEntryId'] = push_res.get('list_entry_id')
+                                c['affinityUrl'] = push_res.get('affinity_url')
+                                c['affinityPushedAt'] = int(time.time() * 1000)
+                                c['affinityStatus'] = push_res.get('status')
+                                break
+                        write_db(db_latest)
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": True,
+                    "affinity_org_id": push_res.get('affinity_org_id'),
+                    "list_entry_id": push_res.get('list_entry_id'),
+                    "status": push_res.get('status'),
+                    "affinity_url": push_res.get('affinity_url')
+                }).encode('utf-8'))
+            except Exception as push_err:
+                traceback.print_exc()
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": str(push_err)
+                }).encode('utf-8'))
+        elif self.path == '/api/affinity/add_note':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length) if content_length > 0 else b''
+            try:
+                payload = json.loads(post_data.decode('utf-8')) if post_data else {}
+                api_key = payload.get('api_key') or self.headers.get('X-Affinity-Api-Key')
+                if not api_key or api_key == "configured_via_provider":
+                    api_key = get_stored_value('affinity_api_key')
+                if not api_key:
+                    api_key = AFFINITY_DEFAULT_API_KEY
+                if isinstance(api_key, str):
+                    api_key = api_key.strip()
+                
+                auth_header = base64.b64encode(f':{api_key}'.encode()).decode()
+                org_id = payload.get('org_id') or payload.get('affinityOrgId')
+                comp_name = payload.get('company_name') or payload.get('name')
+                url_val = payload.get('url')
+                note_content = payload.get('note_text') or payload.get('content') or payload.get('text')
+                note_title = payload.get('title') or "BNVT Note"
+                
+                if not note_content or not note_content.strip():
+                    raise Exception("Note content is empty")
+
+                # If org_id not provided directly, match or create organization
+                if not org_id and comp_name:
+                    item_stub = {'name': comp_name, 'url': url_val or ''}
+                    push_res = execute_affinity_push(item_stub, api_key=api_key)
+                    org_id = push_res.get('affinity_org_id')
+
+                if not org_id:
+                    raise Exception("Could not find or create Affinity organization for note")
+
+                formatted_note = f"=== BNVT NOTE: {note_title.upper()} ===\n\n{note_content.strip()}"
+                res_note = push_affinity_note(auth_header, org_id, formatted_note)
+                
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": True,
+                    "note_id": res_note.get('id') if isinstance(res_note, dict) else None,
+                    "org_id": org_id
+                }).encode('utf-8'))
+                return
+            except Exception as note_err:
+                traceback.print_exc()
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": str(note_err)
+                }).encode('utf-8'))
+                return
+
+        elif self.path == '/api/affinity/auth':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length) if content_length > 0 else b''
+            try:
+                payload = json.loads(post_data.decode('utf-8')) if post_data else {}
+                api_key = payload.get('api_key') or self.headers.get('X-Affinity-Api-Key')
+                if not api_key or api_key == "configured_via_provider":
+                    api_key = get_stored_value('affinity_api_key')
+                if isinstance(api_key, str):
+                    api_key = api_key.strip()
+                if not api_key:
+                    raise Exception("No Affinity API Key provided")
+                
+                auth_b64 = base64.b64encode(f":{api_key}".encode('utf-8')).decode('utf-8')
+                req = urllib.request.Request(
+                    "https://api.affinity.co/auth/whoami",
+                    headers={
+                        "Authorization": f"Basic {auth_b64}",
+                        "Content-Type": "application/json"
+                    }
+                )
+                with urllib.request.urlopen(req) as resp:
+                    who_data = json.loads(resp.read().decode('utf-8'))
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "success": True,
+                        "tenant": who_data.get('tenant'),
+                        "user": who_data.get('user')
+                    }).encode('utf-8'))
+                    return
+            except Exception as auth_err:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": str(auth_err)
+                }).encode('utf-8'))
+                return
+
         elif self.path == '/api/storage':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length) if content_length > 0 else b''
@@ -2639,20 +3617,10 @@ Respond ONLY with valid JSON.
                             
                         # 3. Perform smart list-level merge to prevent clobbering
                         merged_db = merge_databases(client_db, db_latest)
+                        # 4. Save merged state atomically (local file primary, remote mirrors async)
+                        if not write_db(merged_db):
+                            raise Exception("Failed to write database file")
                         merged_str = json.dumps(merged_db, ensure_ascii=False)
-                        
-                        # 4. Save merged state to SQL / local JSON file
-                        if os.environ.get("DATABASE_URL"):
-                            set_sql_value(key, merged_str)
-                            
-                        os.makedirs('db_storage', exist_ok=True)
-                        path = os.path.join('db_storage', f"{key}.json")
-                        outer_data = {
-                            "key": key,
-                            "value": merged_str
-                        }
-                        with open(path, 'w', encoding='utf-8') as f:
-                            json.dump(outer_data, f, indent=2, ensure_ascii=False)
                             
                         # 5. Return success and the merged state back to client
                         self.send_response(200)
@@ -2668,22 +3636,25 @@ Respond ONLY with valid JSON.
                     try:
                         config_data = json.loads(value)
                     except Exception:
-                        config_data = {"provider": "groq", "model": "llama-3.3-70b-versatile", "search_model": "llama-3.3-70b-versatile"}
+                        config_data = {"provider": "anthropic", "model": "claude-sonnet-5", "search_model": "claude-sonnet-5"}
                         
                     os.makedirs('db_storage', exist_ok=True)
                     path = os.path.join('db_storage', 'llm_config.json')
                     with open(path, 'w', encoding='utf-8') as f:
                         json.dump(config_data, f, indent=2, ensure_ascii=False)
                         
+                    set_sql_value(key, value)
+                    set_supabase_rest_value(key, value)
+                    
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
                     self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
                     
                 else:
-                    # Write key directly to file (e.g. granola_api_key, groq_api_key, etc.)
-                    if os.environ.get("DATABASE_URL"):
-                        set_sql_value(key, value)
+                    # Write key directly to file (e.g. granola_api_key, groq_api_key, supabase_url, etc.)
+                    set_sql_value(key, value)
+                    set_supabase_rest_value(key, value)
                         
                     os.makedirs('db_storage', exist_ok=True)
                     path = os.path.join('db_storage', f"{key}.json")
@@ -2972,6 +3943,7 @@ def run():
     if os.environ.get("DATABASE_URL"):
         print("[PostgreSQL] Initializing database...")
         init_postgres()
+    queue_remote_mirror()  # bring Supabase up to date after any downtime (background, non-blocking)
         
     socketserver.TCPServer.allow_reuse_address = True
     server_address = ('', PORT)

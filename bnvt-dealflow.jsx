@@ -29,19 +29,19 @@ window.addEventListener('unhandledrejection', (event) => {
 // BNVT Dealflow OS - pipeline, AI scoring, investor network, distribution
 // ----------------------------------------------------------------------------
 
-const INK = "#15171C";
-const PAPER = "#F4F4F0";
+const INK = "#111111";
+const PAPER = "#FFFFFF";
 const CARD = "#FFFFFF";
-const BLUE = "#1F2DCB"; // International Klein Blue-ish, primary accent
-const RUST = "#B3402A";
-const AMBER = "#C07A2E";
-const FADE = "#6B6E76";
-const LINE = "#E2E2DA";
+const BLUE = "#000000"; // International Klein Blue-ish, primary accent
+const RUST = "#C00000";
+const AMBER = "#000000";
+const FADE = "#777777";
+const LINE = "#DDDDDD";
 
 const TAG_STYLES = {
-  "Second-time Founder": { bg: "rgba(16, 185, 129, 0.08)", text: "#059669", border: "rgba(16, 185, 129, 0.2)" },
-  "Young/Fearless/Creative": { bg: "rgba(245, 158, 11, 0.08)", text: "#d97706", border: "rgba(245, 158, 11, 0.2)" },
-  "Deep Problem Understanding": { bg: "rgba(99, 102, 241, 0.08)", text: "#4f46e5", border: "rgba(99, 102, 241, 0.2)" }
+  "Second-time Founder": { bg: "rgba(0, 0, 0, 0.08)", text: "#000000", border: "rgba(0, 0, 0, 0.2)" },
+  "Young/Fearless/Creative": { bg: "rgba(0, 0, 0, 0.08)", text: "#000000", border: "rgba(0, 0, 0, 0.2)" },
+  "Deep Problem Understanding": { bg: "rgba(221, 221, 221, 0.08)", text: "#000000", border: "rgba(221, 221, 221, 0.2)" }
 };
 
 const DIMS = [
@@ -58,38 +58,55 @@ const STAGES = ["Pre-seed", "Seed", "Series A", "Series B", "Growth"];
 
 // Customized workflow statuses
 const STATUSES = [
-  "Active opportunity",
-  "To contact",
-  "Contacted",
+  "Active Opportunity",
   "Meeting Scheduled",
   "Due Diligence",
-  "Watchlist",
   "Invested",
-  "Killed",
-  "To Kill"
+  "Killed"
 ];
 
 function statusColor(status) {
   switch (status) {
+    case "Active Opportunity":
     case "Active opportunity": return BLUE;
-    case "To contact": return "#F97316"; // Orange
-    case "Contacted": return AMBER;
-    case "Meeting Scheduled": return "#10B981"; // Emerald green
-    case "Due Diligence": return "#4F46E5"; // Indigo
-    case "Watchlist": return "#8B5CF6"; // Purple
-    case "Invested": return "#059669"; // Dark green
-    case "Killed": return RUST;
-    case "To Kill": return "#DC2626"; // Crimson red
+    case "Meeting Scheduled":
+    case "First Meeting": return "#000000"; // Emerald green
+    case "Due Diligence": return "#000000"; // Indigo
+    case "Invested":
+    case "Term Sheet": return "#000000"; // Dark green
+    case "Killed":
+    case "Passed":
+    case "To Kill": return RUST;
     default: return FADE;
   }
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
+// Investor notes are a single free-text field. Older data may hold a list of versions.
+const notesToText = (n) => {
+  if (n === null || n === undefined) return "";
+  if (typeof n === "string") return n;
+  if (Array.isArray(n)) return n.map((x) => (typeof x === "string" ? x : (x && x.text) || "")).filter(Boolean).join("\n\n");
+  return String(n.text || "");
+};
+// Append text notes without duplicating paragraphs (plain concatenation made notes double in size).
+const appendNotesText = (...parts) => {
+  const seen = new Set();
+  const out = [];
+  parts.map(notesToText).join("\n\n").split(/\n\s*\n/).forEach((p) => {
+    const t = p.replace(/(\[object Object\]\s*,?\s*)+/g, "").replace(/Research failed:[^\n]*/g, "").replace(/^[\s,]+|[\s,]+$/g, "");
+    if (!t || seen.has(t)) return;
+    seen.add(t);
+    out.push(t);
+  });
+  return out.join("\n\n");
+};
+
 const fontStack = {
-  ui: "'Space Grotesk', system-ui, sans-serif",
-  display: "'Newsreader', Georgia, serif",
-  mono: "'IBM Plex Mono', monospace",
+  ui: "Arial, \"Helvetica Neue\", Helvetica, sans-serif",
+  display: "Arial, \"Helvetica Neue\", Helvetica, sans-serif",
+  mono: "Arial, \"Helvetica Neue\", Helvetica, sans-serif",
 };
 
 // ---- Anthropic API helpers --------------------------------------------------
@@ -111,10 +128,13 @@ async function callClaude(prompt, useSearch = false, costTier = "heavy") {
   let selectedModel = "claude-sonnet-4-6"; // default Sonnet tier for the platform
   if (!useSearch) {
     if (modelTier === "haiku") {
-      selectedModel = "claude-3-5-haiku-20241022";
+      selectedModel = "claude-haiku-4-5";
     } else if (modelTier === "auto") {
-      selectedModel = costTier === "light" ? "claude-3-5-haiku-20241022" : "claude-sonnet-4-6";
+      selectedModel = costTier === "light" ? "claude-haiku-4-5" : "claude-sonnet-4-6";
     }
+  } else {
+    // Anthropic's web_search_20250305 requires Sonnet (claude-sonnet-4-6)
+    selectedModel = "claude-sonnet-4-6";
   }
 
   const body = {
@@ -1544,7 +1564,7 @@ const Btn = ({ children, onClick, primary, danger, small, disabled, style }) => 
       fontSize: small ? 12 : 13,
       padding: small ? "5px 10px" : "9px 16px",
       background: primary ? BLUE : danger ? "transparent" : "transparent",
-      color: primary ? "#fff" : danger ? RUST : INK,
+      color: primary ? "#FFFFFF" : danger ? RUST : INK,
       border: `1px solid ${primary ? BLUE : danger ? RUST : INK}`,
       borderRadius: 2, cursor: disabled ? "default" : "pointer",
       opacity: disabled ? 0.45 : 1, transition: "all .15s", ...style,
@@ -1560,7 +1580,7 @@ const Input = (props) => (
     className="bnvt-input"
     style={{
       width: "100%", fontFamily: fontStack.ui, fontSize: 13, padding: "9px 10px",
-      border: `1px solid ${LINE}`, borderRadius: 2, background: "#fff", color: INK,
+      border: `1px solid ${LINE}`, borderRadius: 2, background: "#FFFFFF", color: INK,
       outline: "none", boxSizing: "border-box", ...props.style,
     }}
   />
@@ -1572,7 +1592,7 @@ const TextArea = (props) => (
     className="bnvt-textarea"
     style={{
       width: "100%", fontFamily: fontStack.ui, fontSize: 13, padding: "9px 10px",
-      border: `1px solid ${LINE}`, borderRadius: 2, background: "#fff", color: INK,
+      border: `1px solid ${LINE}`, borderRadius: 2, background: "#FFFFFF", color: INK,
       outline: "none", resize: "vertical", boxSizing: "border-box", ...props.style,
     }}
   />
@@ -1685,7 +1705,7 @@ const DropZone = ({ onFileSelected, file, loading, progressText }) => {
       style={{
         border: `2px dashed ${dragOver ? BLUE : LINE}`,
         borderRadius: 4,
-        background: dragOver ? "rgba(31, 45, 203, 0.04)" : CARD,
+        background: dragOver ? "rgba(0, 0, 0, 0.04)" : CARD,
         padding: "20px 14px",
         textAlign: "center",
         cursor: "pointer",
@@ -1716,7 +1736,7 @@ const DropZone = ({ onFileSelected, file, loading, progressText }) => {
       )}
       
       {file && !loading && (
-        <div style={{ fontSize: 11, color: "#10B981", marginTop: 8, fontFamily: fontStack.mono, wordBreak: "break-all" }}>
+        <div style={{ fontSize: 11, color: "#000000", marginTop: 8, fontFamily: fontStack.mono, wordBreak: "break-all" }}>
           ✓ Ingested: {file.name} ({Math.round(file.size / 1024)} KB)
         </div>
       )}
@@ -1769,7 +1789,7 @@ const cleanAndStandardizeInvestors = (list) => {
     let geo = String(inv.geo || "").trim();
     let city = String(inv.city || "").trim();
     let stage = String(inv.stage || "").trim();
-    let notes = String(inv.notes || "").trim();
+    let notes = notesToText(inv.notes).trim();
 
     // 1. Clean Stage Focus: check if it contains a person's name
     if (stage) {
@@ -1883,7 +1903,7 @@ function renderMarkdownToHtml(markdown) {
     .replace(/>/g, "&gt;");
     
   // 1. Process Horizontal Rules (3 or more hyphens, underscores, or stars)
-  html = html.replace(/^\s*([-_*])\1{2,}\s*$/gm, '<hr style="border: none; border-top: 1px solid #E5E5E0; margin: 16px 0;" />');
+  html = html.replace(/^\s*([-_*])\1{2,}\s*$/gm, '<hr style="border: none; border-top: 1px solid #DDDDDD; margin: 16px 0;" />');
 
   // 2. Process Markdown Tables
   const lines = html.split('\n');
@@ -1894,9 +1914,9 @@ function renderMarkdownToHtml(markdown) {
 
   const renderHtmlTable = (headers, rows) => {
     if (!headers || headers.length === 0) return "";
-    const headerHtml = `<thead><tr style="background: #F4F4F0; text-align: left; border-bottom: 2px solid #15171C;">${headers.map(h => `<th style="padding: 8px 10px; font-weight: bold; border-bottom: 2px solid #15171C; color: #15171C; font-family: monospace; font-size: 11px;">${h}</th>`).join('')}</tr></thead>`;
-    const rowsHtml = `<tbody>${rows.map(row => `<tr style="border-bottom: 1px solid #E5E5E0;">${row.map(cell => `<td style="padding: 8px 10px; color: #15171C; word-break: break-word; font-family: monospace; font-size: 11px;">${cell}</td>`).join('')}</tr>`).join('')}</tbody>`;
-    return `<div style="overflow-x: auto; margin: 16px 0; border: 1px solid #E5E5E0;"><table style="width: 100%; border-collapse: collapse; background: #FFF; font-family: monospace; font-size: 11px;">${headerHtml}${rowsHtml}</table></div>`;
+    const headerHtml = `<thead><tr style="background: #F5F5F5; text-align: left; border-bottom: 2px solid #111111;">${headers.map(h => `<th style="padding: 8px 10px; font-weight: bold; border-bottom: 2px solid #111111; color: #111111; font-family: monospace; font-size: 11px;">${h}</th>`).join('')}</tr></thead>`;
+    const rowsHtml = `<tbody>${rows.map(row => `<tr style="border-bottom: 1px solid #DDDDDD;">${row.map(cell => `<td style="padding: 8px 10px; color: #111111; word-break: break-word; font-family: monospace; font-size: 11px;">${cell}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    return `<div style="overflow-x: auto; margin: 16px 0; border: 1px solid #DDDDDD;"><table style="width: 100%; border-collapse: collapse; background: #FFFFFF; font-family: monospace; font-size: 11px;">${headerHtml}${rowsHtml}</table></div>`;
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -1934,15 +1954,15 @@ function renderMarkdownToHtml(markdown) {
   html = processedLines.join('\n');
 
   // 3. Headings
-  html = html.replace(/^### (.*$)/gim, '<h4 style="font-size: 13px; font-weight: 600; margin-top: 10px; margin-bottom: 6px; color: #15171C;">$1</h4>');
-  html = html.replace(/^## (.*$)/gim, '<h3 style="font-size: 14px; font-weight: 600; margin-top: 14px; margin-bottom: 8px; color: #15171C; border-bottom: 1px solid #E5E5E0; padding-bottom: 4px;">$1</h3>');
-  html = html.replace(/^# (.*$)/gim, '<h2 style="font-size: 16px; font-weight: 700; margin-top: 16px; margin-bottom: 10px; color: #15171C;">$1</h2>');
+  html = html.replace(/^### (.*$)/gim, '<h4 style="font-size: 13px; font-weight: 600; margin-top: 10px; margin-bottom: 6px; color: #111111;">$1</h4>');
+  html = html.replace(/^## (.*$)/gim, '<h3 style="font-size: 14px; font-weight: 600; margin-top: 14px; margin-bottom: 8px; color: #111111; border-bottom: 1px solid #DDDDDD; padding-bottom: 4px;">$1</h3>');
+  html = html.replace(/^# (.*$)/gim, '<h2 style="font-size: 16px; font-weight: 700; margin-top: 16px; margin-bottom: 10px; color: #111111;">$1</h2>');
   
   // 4. Bold
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: 600; color: #15171C;">$1</strong>');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: 600; color: #111111;">$1</strong>');
   
   // 5. Lists
-  html = html.replace(/^\s*[-*]\s+(.*$)/gim, '<li style="margin-left: 14px; margin-bottom: 4px; list-style-type: disc; color: #15171C;">$1</li>');
+  html = html.replace(/^\s*[-*]\s+(.*$)/gim, '<li style="margin-left: 14px; margin-bottom: 4px; list-style-type: disc; color: #111111;">$1</li>');
   
   // 6. Paragraph blocks (split by double newlines)
   const blocks = html.split(/\n\s*\n/);
@@ -1953,7 +1973,7 @@ function renderMarkdownToHtml(markdown) {
       return block;
     }
     // Handle inline newlines as line breaks
-    return `<p style="margin-bottom: 8px; line-height: 1.5; color: #15171C;">${block.replace(/\n/g, '<br />')}</p>`;
+    return `<p style="margin-bottom: 8px; line-height: 1.5; color: #111111;">${block.replace(/\n/g, '<br />')}</p>`;
   }).join('\n');
   
   return html;
@@ -2055,7 +2075,7 @@ async function refineSingleSection(company, sectionName, sectionDescription, exi
     console.warn("Failed to get Granola context for refinement:", e);
   }
   const foundersList = (company.founders || []).map(f => `${f.name}${f.linkedin ? ` (LinkedIn: ${f.linkedin})` : ""}`).join(", ");
-  const notesText = (company.notes || []).map((n) => "- " + n.text).join("\n");
+  const notesText = Array.isArray(company.notes) ? company.notes.map((n) => "- " + (typeof n === 'string' ? n : n.text || "")).join("\n") : (typeof company.notes === 'string' ? company.notes : "");
   
   const prompt = `You are a Senior Venture Capital Investment Analyst.
 We need to generate a highly detailed, straight-to-the-point, and custom section for our pipeline company:
@@ -2109,6 +2129,28 @@ ${note.transcript ? note.transcript.map(line => `[${line.speaker || 'Speaker'}]:
     return `\n\nProprietary context from founder meeting notes (Granola):\n` + contextBlocks.join("\n\n");
   }
   return "";
+}
+
+async function pushNoteToAffinity(company, noteText, noteTitle = "BNVT Deal Note") {
+  if (!company || !noteText || !noteText.trim()) return;
+  try {
+    const res = await fetch("/api/affinity/add_note", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        org_id: company.affinityOrgId || null,
+        company_name: company.name,
+        url: company.url || "",
+        note_text: noteText.trim(),
+        title: noteTitle
+      })
+    });
+    const data = await res.json();
+    console.log("[Affinity Direct Note Push]", data);
+    return data;
+  } catch (err) {
+    console.warn("Failed to push note directly to Affinity:", err);
+  }
 }
 
 function initializeDefaultCredsDeck(companyName) {
@@ -2211,8 +2253,1525 @@ const getPreemptionModel = (company) => {
   };
 };
 
+function CmdKModal({
+  isOpen,
+  onClose,
+  companies = [],
+  founderProfiles = [],
+  investors = [],
+  deepDives = [],
+  onSelectCompany,
+  onSelectFounder,
+  onSelectInvestor,
+  onSelectDeepDive,
+  onSelectAction
+}) {
+  const [query, setQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef(null);
+  const resultsRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setQuery("");
+      setSelectedIndex(0);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [isOpen]);
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = [];
+
+    // 1. Actions & Quick Navigation
+    const actions = [
+      { id: "act_add", type: "action", icon: "➕", title: "Add New Opportunity / Profile", subtitle: "Open Add Opportunity modal & web research", badge: "Command", badgeColor: "#000000", action: () => onSelectAction("add_opportunity") },
+      { id: "act_pipe", type: "action", icon: "🏢", title: "Go to Dealflow Pipeline", subtitle: "View active deal pipeline grid & table view", badge: "Navigation", badgeColor: "#000000", action: () => onSelectAction("nav_pipeline") },
+      { id: "act_founders", type: "action", icon: "👤", title: "Go to Founder Assessments", subtitle: "Explore talent profiles, founder scoring & background check", badge: "Navigation", badgeColor: "#DDDDDD", action: () => onSelectAction("nav_founders") },
+      { id: "act_investors", type: "action", icon: "💼", title: "Go to Investor Matching", subtitle: "View co-investor database, syndicate match & city map", badge: "Navigation", badgeColor: "#000000", action: () => onSelectAction("nav_investors") },
+      { id: "act_deepdives", type: "action", icon: "🔬", title: "Go to Deep Dives & Market Research", subtitle: "Explore technical domain research, TAM maps & market sizing", badge: "Navigation", badgeColor: "#000000", action: () => onSelectAction("nav_deepdives") },
+      { id: "act_uncompiled", type: "action", icon: "⚡", title: "Run All Uncompiled AI Dives", subtitle: "Generate AI research dives for all pending market topics", badge: "Action", badgeColor: "#000000", action: () => onSelectAction("run_uncompiled_dives") },
+      { id: "act_affinity_bulk", type: "action", icon: "🌐", title: "Push Selected to Affinity CRM", subtitle: "Sync companies or profiles into Affinity list Deals", badge: "Action", badgeColor: "#000000", action: () => onSelectAction("affinity_push_all") },
+      { id: "act_export", type: "action", icon: "📥", title: "Export Full Database", subtitle: "Download Excel dump of all companies & investors", badge: "Action", badgeColor: "#555555", action: () => onSelectAction("export_excel") },
+      { id: "act_settings", type: "action", icon: "⚙️", title: "Platform Settings & API Keys", subtitle: "View, edit, and test Anthropic, Affinity, Granola & LLM keys", badge: "Settings", badgeColor: "#000000", action: () => onSelectAction("nav_settings") },
+    ];
+
+    actions.forEach(a => {
+      if (!q || a.title.toLowerCase().includes(q) || a.subtitle.toLowerCase().includes(q)) {
+        list.push(a);
+      }
+    });
+
+    // 2. Deals / Companies & Individual Profiles
+    companies.forEach(c => {
+      const matchName = c.name?.toLowerCase().includes(q);
+      const matchOneLiner = c.oneLiner?.toLowerCase().includes(q);
+      const matchSector = (c.sector || c.overview?.sector)?.toLowerCase().includes(q);
+      const matchStage = (c.stage || c.round)?.toLowerCase().includes(q);
+      const matchGeo = c.geo?.toLowerCase().includes(q);
+      const matchPriority = c.priority?.toLowerCase().includes(q);
+      const matchStatus = c.status?.toLowerCase().includes(q);
+      const matchUrl = c.url?.toLowerCase().includes(q);
+      const matchProduct = c.overview?.product?.toLowerCase().includes(q);
+      const matchMarket = c.overview?.market?.toLowerCase().includes(q);
+      const matchTeam = c.overview?.team?.toLowerCase().includes(q);
+      const matchTraction = c.overview?.traction?.toLowerCase().includes(q);
+      const matchFounders = c.founders?.some(f => 
+        f.name?.toLowerCase().includes(q) || f.title?.toLowerCase().includes(q) || f.background?.toLowerCase().includes(q)
+      );
+      const matchNotes = Array.isArray(c.notes) ? c.notes.some(n => (typeof n === 'string' ? n : n.text || "").toLowerCase().includes(q) || (n.via || "").toLowerCase().includes(q)) : (typeof c.notes === 'string' ? c.notes.toLowerCase().includes(q) : false);
+      const matchGranola = Array.isArray(c.granolaNotes) ? c.granolaNotes.some(g => 
+        (g.title || g.name || "").toLowerCase().includes(q) || 
+        (g.summary || g.text || "").toLowerCase().includes(q) || 
+        (g.transcript || g.raw_transcript || "").toLowerCase().includes(q)
+      ) : false;
+
+      if (!q || matchName || matchOneLiner || matchSector || matchStage || matchGeo || matchPriority || matchStatus || matchUrl || matchProduct || matchMarket || matchTeam || matchTraction || matchFounders || matchNotes || matchGranola) {
+        let subtitle = c.oneLiner || `${c.sector || "Tech"} • ${c.stage || "Seed"} • ${c.status || "Active"}`;
+        if (q && matchGranola) {
+          const gMatch = Array.isArray(c.granolaNotes) ? c.granolaNotes.find(g => ((g.title || "") + (g.summary || "") + (g.transcript || "")).toLowerCase().includes(q)) : null;
+          if (gMatch) subtitle = `🎙️ Granola Note: ${gMatch.title || gMatch.summary?.substring(0, 70)}`;
+        } else if (q && matchNotes) {
+          const nMatch = Array.isArray(c.notes) ? c.notes.find(n => (typeof n === 'string' ? n : n.text || "").toLowerCase().includes(q)) : null;
+          if (nMatch) subtitle = `📝 Note: ${typeof nMatch === 'string' ? nMatch.substring(0, 70) : nMatch.text?.substring(0, 70)}`;
+        } else if (q && matchFounders) {
+          const fMatch = c.founders?.find(f => (f.name || "").toLowerCase().includes(q));
+          if (fMatch) subtitle = `👤 Founder: ${fMatch.name} (${fMatch.title || "Founder"})`;
+        }
+
+        list.push({
+          id: `comp_${c.id}`,
+          type: "company",
+          icon: c.entityType === "Individual" ? "👤" : "🏢",
+          title: c.name,
+          subtitle: subtitle,
+          badge: c.entityType === "Individual" ? "Profile" : "Company",
+          badgeColor: c.entityType === "Individual" ? "#DDDDDD" : "#000000",
+          data: c,
+          action: () => onSelectCompany(c)
+        });
+      }
+    });
+
+    // 3. Founder Profiles
+    founderProfiles.forEach(fp => {
+      const matchName = fp.name?.toLowerCase().includes(q);
+      const matchCompany = fp.company?.toLowerCase().includes(q);
+      const matchTitle = fp.title?.toLowerCase().includes(q);
+      const matchBg = fp.background?.toLowerCase().includes(q);
+      const matchCity = fp.city?.toLowerCase().includes(q);
+      const matchNotes = Array.isArray(fp.notes) ? fp.notes.some(n => (typeof n === 'string' ? n : n.text || "").toLowerCase().includes(q)) : (typeof fp.notes === 'string' ? fp.notes.toLowerCase().includes(q) : false);
+
+      if (!q || matchName || matchCompany || matchTitle || matchBg || matchCity || matchNotes) {
+        list.push({
+          id: `fp_${fp.id}`,
+          type: "founder",
+          icon: "🎓",
+          title: fp.name,
+          subtitle: `${fp.title || "Founder"} ${fp.company ? `@ ${fp.company}` : ""} ${fp.city ? `• ${fp.city}` : ""}`,
+          badge: "Talent Profile",
+          badgeColor: "#000000",
+          data: fp,
+          action: () => onSelectFounder(fp)
+        });
+      }
+    });
+
+    // 4. Investors
+    investors.forEach(inv => {
+      const matchName = inv.name?.toLowerCase().includes(q);
+      const matchFund = inv.fund?.toLowerCase().includes(q);
+      const matchCity = inv.city?.toLowerCase().includes(q);
+      const matchFocus = Array.isArray(inv.focus) ? inv.focus.some(f => f.toLowerCase().includes(q)) : inv.focus?.toLowerCase().includes(q);
+      const matchNotes = Array.isArray(inv.notes) ? inv.notes.some(n => (typeof n === 'string' ? n : n.text || "").toLowerCase().includes(q)) : (typeof inv.notes === 'string' ? inv.notes.toLowerCase().includes(q) : false);
+
+      if (!q || matchName || matchFund || matchCity || matchFocus || matchNotes) {
+        list.push({
+          id: `inv_${inv.id}`,
+          type: "investor",
+          icon: "💼",
+          title: inv.name,
+          subtitle: `${inv.fund || "Fund"} • ${inv.focus ? (Array.isArray(inv.focus) ? inv.focus.slice(0, 2).join(", ") : inv.focus) : "AI"} ${inv.city ? `• ${inv.city}` : ""}`,
+          badge: "Investor",
+          badgeColor: "#000000",
+          data: inv,
+          action: () => onSelectInvestor(inv)
+        });
+      }
+    });
+
+    // 5. Deep Dives
+    deepDives.forEach(dd => {
+      const matchTopic = dd.topic?.toLowerCase().includes(q);
+      const matchMarket = dd.market?.toLowerCase().includes(q);
+      const matchSummary = dd.opportunitySummary?.toLowerCase().includes(q);
+      const matchExec = dd.executiveSummary?.toLowerCase().includes(q);
+      const matchNotes = Array.isArray(dd.notes) ? dd.notes.some(n => (typeof n === 'string' ? n : n.text || "").toLowerCase().includes(q)) : (typeof dd.notes === 'string' ? dd.notes.toLowerCase().includes(q) : false);
+
+      if (!q || matchTopic || matchMarket || matchSummary || matchExec || matchNotes) {
+        list.push({
+          id: `dd_${dd.id}`,
+          type: "deepdive",
+          icon: "🔬",
+          title: dd.topic,
+          subtitle: dd.opportunitySummary ? dd.opportunitySummary.substring(0, 90) + "..." : `${dd.market || "Market Research"}`,
+          badge: dd.rank ? `Rank #${dd.rank}` : "Deep Dive",
+          badgeColor: "#000000",
+          data: dd,
+          action: () => onSelectDeepDive(dd)
+        });
+      }
+    });
+
+    return list.slice(0, 50);
+  }, [query, companies, founderProfiles, investors, deepDives]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  useEffect(() => {
+    if (resultsRef.current && resultsRef.current.children[selectedIndex]) {
+      resultsRef.current.children[selectedIndex].scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedIndex]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev + 1) % Math.max(1, results.length));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev - 1 + results.length) % Math.max(1, results.length));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (results[selectedIndex]) {
+        results[selectedIndex].action();
+        onClose();
+      }
+    } else if (e.key === "Escape") {
+      onClose();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0, 0, 0, 0.65)",
+        backdropFilter: "blur(10px)",
+        WebkitBackdropFilter: "blur(10px)",
+        zIndex: 99999,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-start",
+        paddingTop: "10vh"
+      }}
+      onClick={onClose}
+    >
+      <div 
+        style={{
+          width: "92%",
+          maxWidth: 720,
+          background: "#FFFFFF",
+          borderRadius: 14,
+          boxShadow: "0 25px 60px -15px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.12)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          maxHeight: "78vh"
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          padding: "16px 20px",
+          borderBottom: "1px solid #EEEEEE",
+          gap: 12,
+          background: "#FAFAFA"
+        }}>
+          <span style={{ fontSize: 20, color: "#555555" }}>🔍</span>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Search deals, call notes, founders, deep dives, or actions (⌘K)..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{
+              flex: 1,
+              border: "none",
+              outline: "none",
+              fontSize: 16,
+              background: "transparent",
+              color: "#111111",
+              fontFamily: "Space Grotesk, system-ui, sans-serif",
+              fontWeight: 500
+            }}
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#999999",
+                fontSize: 14,
+                cursor: "pointer",
+                padding: "2px 6px"
+              }}
+            >✕</button>
+          )}
+          <kbd 
+            onClick={onClose}
+            style={{
+              background: "#EEEEEE",
+              color: "#555555",
+              padding: "3px 8px",
+              borderRadius: 5,
+              fontSize: 11,
+              fontFamily: "IBM Plex Mono, monospace",
+              fontWeight: 700,
+              cursor: "pointer"
+            }}
+          >ESC</kbd>
+        </div>
+
+        <div ref={resultsRef} style={{ overflowY: "auto", padding: "8px 0", flex: 1 }}>
+          {results.length === 0 ? (
+            <div style={{ padding: "40px 20px", textAlign: "center", color: "#777777" }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>🔍 No matches found</div>
+              <div style={{ fontSize: 13 }}>Try searching for a company name, founder, Granola note text, sector, or command.</div>
+            </div>
+          ) : (
+            results.map((item, idx) => {
+              const isSelected = idx === selectedIndex;
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => { item.action(); onClose(); }}
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "10px 20px",
+                    gap: 14,
+                    cursor: "pointer",
+                    background: isSelected ? "rgba(0, 0, 0, 0.07)" : "transparent",
+                    borderLeft: `3px solid ${isSelected ? "#000000" : "transparent"}`,
+                    transition: "all 0.08s ease"
+                  }}
+                >
+                  <span style={{ fontSize: 18, width: 26, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14, color: "#111111" }}>{item.title}</span>
+                      {item.badge && (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "1px 6px",
+                          borderRadius: 3,
+                          background: `${item.badgeColor}15`,
+                          color: item.badgeColor,
+                          border: `1px solid ${item.badgeColor}30`
+                        }}>
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
+                    {item.subtitle && (
+                      <div style={{
+                        fontSize: 12,
+                        color: "#777777",
+                        marginTop: 2,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis"
+                      }}>
+                        {item.subtitle}
+                      </div>
+                    )}
+                  </div>
+                  {isSelected && (
+                    <span style={{ fontSize: 11, color: "#000000", fontWeight: 700, fontFamily: "IBM Plex Mono, monospace", flexShrink: 0 }}>
+                      ↵ Jump to
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div style={{
+          padding: "10px 20px",
+          background: "#FAFAFA",
+          borderTop: "1px solid #EEEEEE",
+          display: "flex",
+          gap: 16,
+          fontSize: 12,
+          color: "#777777",
+          alignItems: "center"
+        }}>
+          <span><kbd style={{ background: "#EEEEEE", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: 10 }}>↑↓</kbd> Navigate</span>
+          <span><kbd style={{ background: "#EEEEEE", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: 10 }}>↵</kbd> Select</span>
+          <span><kbd style={{ background: "#EEEEEE", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: 10 }}>ESC</kbd> Close</span>
+          <span style={{ marginLeft: "auto", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#000000", fontWeight: 600 }}>BNVT Spotlight ({results.length} results)</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Settings({ setTab }) {
+  const [anthropicKey, setAnthropicKey] = useState(localStorage.getItem("anthropic_api_key") || "");
+  const [affinityKey, setAffinityKey] = useState(localStorage.getItem("affinity_api_key") || "");
+  const [granolaKey, setGranolaKey] = useState(localStorage.getItem("granola_api_key") || "");
+  const [openaiKey, setOpenaiKey] = useState(localStorage.getItem("openai_api_key") || "");
+  const [deepseekKey, setDeepseekKey] = useState(localStorage.getItem("deepseek_api_key") || "");
+  const [groqKey, setGroqKey] = useState(localStorage.getItem("groq_api_key") || "");
+  const [openrouterKey, setOpenrouterKey] = useState(localStorage.getItem("openrouter_api_key") || "");
+
+  const [supabaseDbUrl, setSupabaseDbUrl] = useState(localStorage.getItem("supabase_db_url") || "");
+  const [supabaseUrl, setSupabaseUrl] = useState(localStorage.getItem("supabase_url") || "");
+  const [supabaseKey, setSupabaseKey] = useState(localStorage.getItem("supabase_key") || "");
+
+  const [modelTier, setModelTier] = useState(localStorage.getItem("anthropic_model_tier") || "auto");
+  const [provider, setProvider] = useState(localStorage.getItem("llm_provider") || "anthropic");
+
+  const [showKeys, setShowKeys] = useState({
+    anthropic: false,
+    affinity: false,
+    granola: false,
+    openai: false,
+    deepseek: false,
+    groq: false,
+    openrouter: false,
+    supabase: false
+  });
+
+  const [anthropicStatus, setAnthropicStatus] = useState(null);
+  const [affinityStatus, setAffinityStatus] = useState(null);
+  const [supabaseStatus, setSupabaseStatus] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchKeys = async () => {
+      try {
+        const fetchK = async (k) => {
+          const res = await fetch(`/api/storage?key=${encodeURIComponent(k)}`);
+          if (res.ok) {
+            const data = await res.json();
+            return data.value || "";
+          }
+          return "";
+        };
+
+        const ant = await fetchK("anthropic_api_key");
+        if (ant) { setAnthropicKey(ant); localStorage.setItem("anthropic_api_key", ant); }
+
+        const aff = await fetchK("affinity_api_key");
+        if (aff) { setAffinityKey(aff); localStorage.setItem("affinity_api_key", aff); }
+
+        const gra = await fetchK("granola_api_key");
+        if (gra) { setGranolaKey(gra); localStorage.setItem("granola_api_key", gra); }
+
+        const oai = await fetchK("openai_api_key");
+        if (oai) { setOpenaiKey(oai); localStorage.setItem("openai_api_key", oai); }
+
+        const dsk = await fetchK("deepseek_api_key");
+        if (dsk) { setDeepseekKey(dsk); localStorage.setItem("deepseek_api_key", dsk); }
+
+        const grq = await fetchK("groq_api_key");
+        if (grq) { setGroqKey(grq); localStorage.setItem("groq_api_key", grq); }
+
+        const opr = await fetchK("openrouter_api_key");
+        if (opr) { setOpenrouterKey(opr); localStorage.setItem("openrouter_api_key", opr); }
+
+        const sdb = await fetchK("supabase_db_url");
+        if (sdb) { setSupabaseDbUrl(sdb); localStorage.setItem("supabase_db_url", sdb); }
+
+        const sur = await fetchK("supabase_url");
+        if (sur) { setSupabaseUrl(sur); localStorage.setItem("supabase_url", sur); }
+
+        const sky = await fetchK("supabase_key");
+        if (sky) { setSupabaseKey(sky); localStorage.setItem("supabase_key", sky); }
+      } catch (e) {
+        console.warn("Failed to load storage keys:", e);
+      }
+    };
+    fetchKeys();
+  }, []);
+
+  const toggleShow = (keyName) => {
+    setShowKeys(prev => ({ ...prev, [keyName]: !prev[keyName] }));
+  };
+
+  const saveKey = async (key, val) => {
+    localStorage.setItem(key, val);
+    try {
+      await fetch('/api/storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value: val }),
+      });
+    } catch (e) {
+      console.warn(`Error saving ${key}:`, e);
+    }
+  };
+
+  const handleSaveAll = async () => {
+    setSaving(true);
+    await saveKey("anthropic_api_key", anthropicKey.trim());
+    await saveKey("affinity_api_key", affinityKey.trim());
+    await saveKey("granola_api_key", granolaKey.trim());
+    await saveKey("openai_api_key", openaiKey.trim());
+    await saveKey("deepseek_api_key", deepseekKey.trim());
+    await saveKey("groq_api_key", groqKey.trim());
+    await saveKey("openrouter_api_key", openrouterKey.trim());
+    await saveKey("supabase_db_url", supabaseDbUrl.trim());
+    await saveKey("supabase_url", supabaseUrl.trim());
+    await saveKey("supabase_key", supabaseKey.trim());
+    await saveKey("anthropic_model_tier", modelTier);
+    await saveKey("llm_provider", provider);
+    setSaving(false);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3500);
+  };
+
+  const testAnthropicKey = async () => {
+    setAnthropicStatus({ loading: true, msg: "Testing Anthropic API connection..." });
+    try {
+      const keyToTest = anthropicKey.trim() || localStorage.getItem("anthropic_api_key") || "";
+      const res = await fetch("/api/anthropic", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Anthropic-API-Key": keyToTest
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-5",
+          max_tokens: 15,
+          messages: [{ role: "user", content: "Ping" }]
+        })
+      });
+      const data = await res.json();
+      if (res.ok && !data.error) {
+        setAnthropicStatus({ success: true, msg: "✓ Anthropic API Key Verified (Claude Sonnet 3.7 ready)" });
+      } else {
+        setAnthropicStatus({ success: false, msg: `❌ Connection Failed: ${data.error?.message || "Invalid API response"}` });
+      }
+    } catch (e) {
+      setAnthropicStatus({ success: false, msg: `❌ Connection Error: ${e.message}` });
+    }
+  };
+
+  const testAffinityKey = async () => {
+    setAffinityStatus({ loading: true, msg: "Testing Affinity CRM connection..." });
+    try {
+      const keyToTest = affinityKey.trim() || localStorage.getItem("affinity_api_key") || "";
+      const res = await fetch("/api/affinity/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: keyToTest })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAffinityStatus({
+          success: true,
+          msg: `✓ Connected to Affinity workspace "${data.tenant?.name || '9900'}" as ${data.user?.firstName || ''} ${data.user?.lastName || ''} (${data.user?.email || ''})`
+        });
+      } else {
+        setAffinityStatus({ success: false, msg: `❌ Affinity Auth Failed: ${data.error || "Invalid API Key"}` });
+      }
+    } catch (e) {
+      setAffinityStatus({ success: false, msg: `❌ Affinity Connection Error: ${e.message}` });
+    }
+  };
+
+  const testSupabaseKey = async () => {
+    setSupabaseStatus({ loading: true, msg: "Testing Supabase connection..." });
+    try {
+      await saveKey("supabase_db_url", supabaseDbUrl.trim());
+      await saveKey("supabase_url", supabaseUrl.trim());
+      await saveKey("supabase_key", supabaseKey.trim());
+      
+      const res = await fetch("/api/supabase/status");
+      const data = await res.json();
+      setSupabaseLive(data);
+      if (data.status === "ok") {
+        setSupabaseStatus({ success: true, msg: `${data.msg} Your database is being uploaded now.` });
+      } else {
+        setSupabaseStatus({ success: false, msg: data.msg || "Check credentials or table initialization." });
+      }
+    } catch (e) {
+      setSupabaseStatus({ success: false, msg: `Supabase connection error: ${e.message}` });
+    }
+  };
+
+  // Live connection state for the badge (credentials being filled in is not the same as connected)
+  const [supabaseLive, setSupabaseLive] = useState(null);
+  useEffect(() => {
+    fetch("/api/supabase/status").then((r) => r.json()).then(setSupabaseLive).catch(() => setSupabaseLive({ status: "error" }));
+  }, []);
+  const sbConnected = supabaseLive?.status === "ok";
+  const sbConfigured = !!(supabaseDbUrl || supabaseUrl);
+
+  return (
+    <div style={{ maxWidth: 940, margin: "0 auto", paddingBottom: 60 }}>
+      {/* Top Banner */}
+      <div style={{
+        background: "#FFFFFF",
+        borderRadius: 12,
+        padding: "24px 28px",
+        border: `1px solid ${INK}20`,
+        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.04)",
+        marginBottom: 24,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 16
+      }}>
+        <div>
+          <div style={{ fontFamily: fontStack.mono, fontSize: 11, letterSpacing: "0.15em", color: BLUE, fontWeight: 700, textTransform: "uppercase" }}>
+            Platform Credentials & Cloud Integrations
+          </div>
+          <h1 style={{ fontFamily: fontStack.display, fontSize: 28, margin: "4px 0 0 0", color: INK }}>
+            BNVT Platform Settings & Storage Config
+          </h1>
+          <p style={{ fontSize: 13, color: FADE, margin: "4px 0 0 0" }}>
+            Configure Anthropic Claude, Supabase Cloud Database, Affinity CRM, and LLM credentials. All changes automatically sync across local and cloud memory.
+          </p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {saveSuccess && (
+            <span style={{ fontSize: 12, color: "#000000", fontWeight: 600, fontFamily: fontStack.mono }}>
+              ✓ Saved & Synced
+            </span>
+          )}
+          <Btn primary onClick={handleSaveAll} disabled={saving} style={{ padding: "8px 20px", fontSize: 13 }}>
+            {saving ? "Saving..." : "💾 Save All Settings"}
+          </Btn>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Supabase Cloud Database Card */}
+        <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${BLUE}40`, padding: "22px 26px", boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 22 }}>⚡</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>Supabase Cloud Database & Storage</div>
+                <div style={{ fontSize: 12, color: FADE }}>Connect your app directly to Supabase PostgreSQL or REST API to sync all deals, notes, and metrics cloud-wide.</div>
+              </div>
+            </div>
+            <span style={{
+              fontSize: 10,
+              fontFamily: fontStack.mono,
+              fontWeight: 700,
+              padding: "3px 8px",
+              borderRadius: 4,
+              background: sbConnected ? "#000000" : "#FFFFFF",
+              color: sbConnected ? "#FFFFFF" : (sbConfigured ? "#C00000" : FADE),
+              border: `1px solid ${sbConnected ? "#000000" : (sbConfigured ? "#C00000" : "#DDDDDD")}`
+            }} title={supabaseLive?.msg || ""}>
+              {supabaseLive === null ? "CHECKING…" : sbConnected ? (supabaseLive.lastSyncAt ? `CONNECTED · SYNCED ${supabaseLive.lastSyncAt.replace("T", " ").slice(0, 16)}` : "CONNECTED") : sbConfigured ? "NOT CONNECTED" : "NOT CONFIGURED"}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: INK, display: "block", marginBottom: 4 }}>
+                Supabase PostgreSQL Connection String (optional — use the Session pooler string)
+              </label>
+              <input
+                type="text"
+                value={supabaseDbUrl}
+                onChange={(e) => setSupabaseDbUrl(e.target.value)}
+                placeholder="postgresql://postgres.[REF]:[PASSWORD]@aws-0-[region].pooler.supabase.com:5432/postgres"
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  border: `1px solid ${INK}30`,
+                  fontFamily: fontStack.mono,
+                  fontSize: 12,
+                  outline: "none",
+                  boxSizing: "border-box"
+                }}
+              />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: INK, display: "block", marginBottom: 4 }}>
+                  Supabase Project REST URL (SUPABASE_URL)
+                </label>
+                <input
+                  type="text"
+                  value={supabaseUrl}
+                  onChange={(e) => setSupabaseUrl(e.target.value)}
+                  placeholder="https://[ref].supabase.co"
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: `1px solid ${INK}30`,
+                    fontFamily: fontStack.mono,
+                    fontSize: 12,
+                    outline: "none",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: INK, display: "block", marginBottom: 4 }}>
+                  Supabase Secret Key (sb_secret_… or service_role)
+                </label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showKeys.supabase ? "text" : "password"}
+                    value={supabaseKey}
+                    onChange={(e) => setSupabaseKey(e.target.value)}
+                    placeholder="sb_secret_..."
+                    style={{
+                      width: "100%",
+                      padding: "8px 36px 8px 12px",
+                      borderRadius: 6,
+                      border: `1px solid ${INK}30`,
+                      fontFamily: fontStack.mono,
+                      fontSize: 12,
+                      outline: "none",
+                      boxSizing: "border-box"
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleShow("supabase")}
+                    style={{
+                      position: "absolute",
+                      right: 8,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      color: FADE
+                    }}
+                  >
+                    {showKeys.supabase ? "🙈" : "👁️"}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+              <Btn small onClick={testSupabaseKey} style={{ borderColor: BLUE, color: BLUE, padding: "6px 14px" }}>
+                Test & Connect Supabase
+              </Btn>
+            </div>
+            {supabaseStatus && (
+              <div style={{
+                fontSize: 12,
+                fontFamily: fontStack.mono,
+                color: supabaseStatus.loading ? FADE : (supabaseStatus.success ? "#000000" : "#C00000"),
+                background: supabaseStatus.loading ? "#F5F5F5" : (supabaseStatus.success ? "rgba(0, 0, 0, 0.06)" : "rgba(192, 0, 0, 0.06)"),
+                padding: "8px 12px",
+                borderRadius: 6,
+                border: `1px solid ${supabaseStatus.loading ? "#EEEEEE" : (supabaseStatus.success ? "rgba(0, 0, 0, 0.2)" : "rgba(192, 0, 0, 0.2)")}`
+              }}>
+                {supabaseStatus.msg}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 1. Anthropic API Key Card */}
+        <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 22 }}>🧠</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>Anthropic Claude API Key</div>
+                <div style={{ fontSize: 12, color: FADE }}>Required for AI Diligence, Market Research, IC Memos, and automated scoring</div>
+              </div>
+            </div>
+            <span style={{
+              fontSize: 10,
+              fontFamily: fontStack.mono,
+              fontWeight: 700,
+              padding: "3px 8px",
+              borderRadius: 4,
+              background: anthropicKey ? "rgba(0, 0, 0, 0.1)" : "rgba(192, 0, 0, 0.1)",
+              color: anthropicKey ? "#000000" : "#C00000",
+              border: `1px solid ${anthropicKey ? "rgba(0, 0, 0, 0.3)" : "rgba(192, 0, 0, 0.3)"}`
+            }}>
+              {anthropicKey ? "CONFIGURED" : "MISSING KEY"}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <input
+                type={showKeys.anthropic ? "text" : "password"}
+                value={anthropicKey}
+                onChange={(e) => setAnthropicKey(e.target.value)}
+                placeholder="sk-ant-api03-..."
+                style={{
+                  width: "100%",
+                  padding: "10px 40px 10px 14px",
+                  borderRadius: 6,
+                  border: `1px solid ${INK}30`,
+                  fontFamily: fontStack.mono,
+                  fontSize: 13,
+                  outline: "none",
+                  boxSizing: "border-box"
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => toggleShow("anthropic")}
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  color: FADE
+                }}
+                title={showKeys.anthropic ? "Hide key" : "Show key"}
+              >
+                {showKeys.anthropic ? "🙈" : "👁️"}
+              </button>
+            </div>
+            <Btn small onClick={testAnthropicKey} disabled={!anthropicKey} style={{ borderColor: BLUE, color: BLUE, padding: "8px 14px" }}>
+              ⚡ Test Key
+            </Btn>
+          </div>
+
+          {anthropicStatus && (
+            <div style={{
+              marginTop: 10,
+              fontSize: 12,
+              fontFamily: fontStack.mono,
+              color: anthropicStatus.loading ? FADE : (anthropicStatus.success ? "#000000" : "#C00000"),
+              background: anthropicStatus.loading ? "#F5F5F5" : (anthropicStatus.success ? "rgba(0, 0, 0, 0.06)" : "rgba(192, 0, 0, 0.06)"),
+              padding: "8px 12px",
+              borderRadius: 6,
+              border: `1px solid ${anthropicStatus.loading ? "#EEEEEE" : (anthropicStatus.success ? "rgba(0, 0, 0, 0.2)" : "rgba(192, 0, 0, 0.2)")}`
+            }}>
+              {anthropicStatus.msg}
+            </div>
+          )}
+        </div>
+
+        {/* 2. Affinity CRM API Key Card */}
+        <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 22 }}>📊</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>Affinity CRM API Key</div>
+                <div style={{ fontSize: 12, color: FADE }}>Pushes companies, founders, deals, status, rounds, and Granola call notes directly to Affinity CRM</div>
+              </div>
+            </div>
+            <span style={{
+              fontSize: 10,
+              fontFamily: fontStack.mono,
+              fontWeight: 700,
+              padding: "3px 8px",
+              borderRadius: 4,
+              background: affinityKey ? "rgba(0, 0, 0, 0.1)" : "rgba(192, 0, 0, 0.1)",
+              color: affinityKey ? "#000000" : "#C00000",
+              border: `1px solid ${affinityKey ? "rgba(0, 0, 0, 0.3)" : "rgba(192, 0, 0, 0.3)"}`
+            }}>
+              {affinityKey ? "CONFIGURED" : "MISSING KEY"}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <input
+                type={showKeys.affinity ? "text" : "password"}
+                value={affinityKey}
+                onChange={(e) => setAffinityKey(e.target.value)}
+                placeholder="MIcwWj8tEWh4..."
+                style={{
+                  width: "100%",
+                  padding: "10px 40px 10px 14px",
+                  borderRadius: 6,
+                  border: `1px solid ${INK}30`,
+                  fontFamily: fontStack.mono,
+                  fontSize: 13,
+                  outline: "none",
+                  boxSizing: "border-box"
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => toggleShow("affinity")}
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  color: FADE
+                }}
+                title={showKeys.affinity ? "Hide key" : "Show key"}
+              >
+                {showKeys.affinity ? "🙈" : "👁️"}
+              </button>
+            </div>
+            <Btn small onClick={testAffinityKey} disabled={!affinityKey} style={{ borderColor: BLUE, color: BLUE, padding: "8px 14px" }}>
+              🔄 Test Connection
+            </Btn>
+          </div>
+
+          {affinityStatus && (
+            <div style={{
+              marginTop: 10,
+              fontSize: 12,
+              fontFamily: fontStack.mono,
+              color: affinityStatus.loading ? FADE : (affinityStatus.success ? "#000000" : "#C00000"),
+              background: affinityStatus.loading ? "#F5F5F5" : (affinityStatus.success ? "rgba(0, 0, 0, 0.06)" : "rgba(192, 0, 0, 0.06)"),
+              padding: "8px 12px",
+              borderRadius: 6,
+              border: `1px solid ${affinityStatus.loading ? "#EEEEEE" : (affinityStatus.success ? "rgba(0, 0, 0, 0.2)" : "rgba(192, 0, 0, 0.2)")}`
+            }}>
+              {affinityStatus.msg}
+            </div>
+          )}
+        </div>
+
+        {/* 3. Granola API Key Card */}
+        <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 22 }}>🥣</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>Granola Call Transcripts API Key</div>
+                <div style={{ fontSize: 12, color: FADE }}>Automatically syncs Granola meeting transcripts and summaries into company notes</div>
+              </div>
+            </div>
+            <span style={{
+              fontSize: 10,
+              fontFamily: fontStack.mono,
+              fontWeight: 700,
+              padding: "3px 8px",
+              borderRadius: 4,
+              background: granolaKey ? "rgba(0, 0, 0, 0.1)" : "rgba(119, 119, 119, 0.1)",
+              color: granolaKey ? "#000000" : FADE,
+              border: `1px solid ${granolaKey ? "rgba(0, 0, 0, 0.3)" : "rgba(119, 119, 119, 0.3)"}`
+            }}>
+              {granolaKey ? "CONFIGURED" : "OPTIONAL"}
+            </span>
+          </div>
+
+          <div style={{ position: "relative" }}>
+            <input
+              type={showKeys.granola ? "text" : "password"}
+              value={granolaKey}
+              onChange={(e) => setGranolaKey(e.target.value)}
+              placeholder="granola_live_..."
+              style={{
+                width: "100%",
+                padding: "10px 40px 10px 14px",
+                borderRadius: 6,
+                border: `1px solid ${INK}30`,
+                fontFamily: fontStack.mono,
+                fontSize: 13,
+                outline: "none",
+                boxSizing: "border-box"
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => toggleShow("granola")}
+              style={{
+                position: "absolute",
+                right: 10,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 14,
+                color: FADE
+              }}
+              title={showKeys.granola ? "Hide key" : "Show key"}
+            >
+              {showKeys.granola ? "🙈" : "👁️"}
+            </button>
+          </div>
+        </div>
+
+        {/* 4. Model Tier & Provider Preferences */}
+        <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: INK, marginBottom: 4 }}>
+            🤖 AI Model Tier & Provider Preferences
+          </div>
+          <div style={{ fontSize: 12, color: FADE, marginBottom: 16 }}>
+            Customize default intelligence tiers and models for automated research, web search, and document generation.
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 6, color: INK }}>
+                Primary LLM Provider
+              </label>
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  borderRadius: 6,
+                  border: `1px solid ${INK}30`,
+                  fontSize: 13,
+                  fontFamily: fontStack.ui,
+                  background: "#FAFAFA",
+                  color: INK
+                }}
+              >
+                <option value="anthropic">Anthropic Claude (Recommended)</option>
+                <option value="openai">OpenAI (GPT-4o)</option>
+                <option value="deepseek">DeepSeek (V3 / R1)</option>
+                <option value="groq">Groq (Llama 3)</option>
+                <option value="openrouter">OpenRouter API</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 6, color: INK }}>
+                Anthropic Model Intelligence Tier
+              </label>
+              <select
+                value={modelTier}
+                onChange={(e) => setModelTier(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  borderRadius: 6,
+                  border: `1px solid ${INK}30`,
+                  fontSize: 13,
+                  fontFamily: fontStack.ui,
+                  background: "#FAFAFA",
+                  color: INK
+                }}
+              >
+                <option value="auto">Auto (Sonnet 4.6 for Heavy/Search, Haiku for Fast)</option>
+                <option value="sonnet">Claude Sonnet 4.6 Always (Highest Analytical Depth)</option>
+                <option value="haiku">Claude Haiku 3.5 Always (Fastest & Lowest Token Cost)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Save Controls */}
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 14, marginTop: 10 }}>
+          {saveSuccess && (
+            <span style={{ fontSize: 13, color: "#000000", fontWeight: 600, fontFamily: fontStack.mono }}>
+              ✓ All Settings & Keys Saved
+            </span>
+          )}
+          <Btn primary onClick={handleSaveAll} disabled={saving} style={{ padding: "10px 26px", fontSize: 14 }}>
+            {saving ? "Saving..." : "💾 Save All Settings"}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("Uncaught Error in BNVT App:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, textAlign: "center", fontFamily: "sans-serif", background: "#F5F5F5", minHeight: "100vh" }}>
+          <h2 style={{ color: "#C00000" }}>Application Encountered a Render Error</h2>
+          <pre style={{ textAlign: "left", background: "#FFFFFF", padding: 16, border: "1px solid #DDDDDD", borderRadius: 4, overflow: "auto", fontSize: 12, maxWait: 400 }}>
+            {this.state.error ? this.state.error.toString() : "Unknown render error"}
+            {"\n\nStack:\n" + (this.state.error?.stack || "")}
+          </pre>
+          <button 
+            onClick={() => { localStorage.clear(); window.location.reload(); }}
+            style={{ padding: "10px 20px", fontSize: 14, cursor: "pointer", background: "#000000", color: "#FFFFFF", border: "none", borderRadius: 4, marginTop: 16 }}
+          >
+            Clear Cache & Reload App
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+window.ErrorBoundary = ErrorBoundary;
+
+function RecontactNotificationModal({
+  isOpen,
+  onClose,
+  reminders = [],
+  thresholdDays = 14,
+  setThresholdDays,
+  onUpdateStatus,
+  onMarkRecontacted,
+  onSnooze,
+  onSnoozeAll,
+  onSelectCompany,
+  onOpenOutreach
+}) {
+  const [filterType, setFilterType] = useState("all");
+
+  if (!isOpen) return null;
+
+  const filtered = reminders.filter(r => {
+    if (filterType === "company") return r.category === "Company";
+    if (filterType === "individual") return r.category === "Individual";
+    if (filterType === "investor") return r.category === "Investor";
+    return true;
+  });
+
+  const exportOverdueList = () => {
+    const csvRows = [
+      ["Entity Name", "Type", "Status", "Days Inactive / Unchanged", "One-Liner"]
+    ];
+    reminders.forEach(r => {
+      csvRows.push([
+        `"${r.name.replace(/"/g, '""')}"`,
+        `"${r.entityType}"`,
+        `"${r.status}"`,
+        r.daysInactive,
+        `"${(r.oneLiner || "").replace(/"/g, '""')}"`
+      ]);
+    });
+    const csvString = csvRows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `BNVT_Recontact_Reminders_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const statusOptions = [
+    "Active opportunity",
+    "To contact",
+    "Contacted",
+    "Meeting Scheduled",
+    "Due Diligence",
+    "Watchlist",
+    "Term Sheet",
+    "Invested",
+    "Killed"
+  ];
+
+  return (
+    <div 
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0, 0, 0, 0.65)",
+        backdropFilter: "blur(10px)",
+        WebkitBackdropFilter: "blur(10px)",
+        zIndex: 99999,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 20
+      }}
+      onClick={onClose}
+    >
+      <div 
+        style={{
+          width: "100%",
+          maxWidth: 780,
+          background: "#FFFFFF",
+          borderRadius: 14,
+          boxShadow: "0 25px 60px -15px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.12)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          maxHeight: "85vh"
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{
+          padding: "18px 24px",
+          borderBottom: "1px solid #EEEEEE",
+          background: "#F5F5F5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between"
+        }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 22 }}>🔔</span>
+              <span style={{ fontWeight: 700, fontSize: 17, color: "#000000", fontFamily: fontStack.ui }}>
+                Recontact Reminders ({reminders.length} Overdue)
+              </span>
+            </div>
+            <div style={{ fontSize: 12.5, color: "#000000", marginTop: 4 }}>
+              Entities added over {thresholdDays} days ago with no status progression. Reach out or update stage to keep pipeline active.
+            </div>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* Threshold Pills */}
+            <div style={{ display: "flex", background: "#F2F2F2", padding: "2px", borderRadius: 6, border: "1px solid #DDDDDD" }}>
+              {[7, 14, 30].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setThresholdDays && setThresholdDays(d)}
+                  style={{
+                    border: "none",
+                    background: thresholdDays === d ? "#000000" : "transparent",
+                    color: thresholdDays === d ? "#FFFFFF" : "#000000",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "3px 8px",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    fontFamily: fontStack.mono
+                  }}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={onClose}
+              style={{
+                background: "transparent",
+                border: "none",
+                fontSize: 18,
+                color: "#000000",
+                cursor: "pointer",
+                fontWeight: 700,
+                padding: "4px 8px"
+              }}
+            >✕</button>
+          </div>
+        </div>
+
+        {/* Filter Pills */}
+        <div style={{
+          padding: "10px 24px",
+          borderBottom: "1px solid #F5F5F5",
+          display: "flex",
+          gap: 8,
+          background: "#FAFAFA",
+          alignItems: "center"
+        }}>
+          <button
+            onClick={() => setFilterType("all")}
+            style={{
+              padding: "4px 12px",
+              borderRadius: 20,
+              fontSize: 11,
+              fontWeight: 600,
+              border: filterType === "all" ? "1px solid #000000" : "1px solid #EEEEEE",
+              background: filterType === "all" ? "rgba(0, 0, 0, 0.08)" : "#FFFFFF",
+              color: filterType === "all" ? "#000000" : "#555555",
+              cursor: "pointer"
+            }}
+          >
+            All Overdue ({reminders.length})
+          </button>
+          <button
+            onClick={() => setFilterType("company")}
+            style={{
+              padding: "4px 12px",
+              borderRadius: 20,
+              fontSize: 11,
+              fontWeight: 600,
+              border: filterType === "company" ? "1px solid #000000" : "1px solid #EEEEEE",
+              background: filterType === "company" ? "rgba(0, 0, 0, 0.08)" : "#FFFFFF",
+              color: filterType === "company" ? "#000000" : "#555555",
+              cursor: "pointer"
+            }}
+          >
+            🏢 Companies ({reminders.filter(r => r.category === "Company").length})
+          </button>
+          <button
+            onClick={() => setFilterType("individual")}
+            style={{
+              padding: "4px 12px",
+              borderRadius: 20,
+              fontSize: 11,
+              fontWeight: 600,
+              border: filterType === "individual" ? "1px solid #DDDDDD" : "1px solid #EEEEEE",
+              background: filterType === "individual" ? "rgba(221, 221, 221, 0.08)" : "#FFFFFF",
+              color: filterType === "individual" ? "#DDDDDD" : "#555555",
+              cursor: "pointer"
+            }}
+          >
+            👤 Individual Profiles ({reminders.filter(r => r.category === "Individual").length})
+          </button>
+          <button
+            onClick={() => setFilterType("investor")}
+            style={{
+              padding: "4px 12px",
+              borderRadius: 20,
+              fontSize: 11,
+              fontWeight: 600,
+              border: filterType === "investor" ? "1px solid #000000" : "1px solid #EEEEEE",
+              background: filterType === "investor" ? "rgba(0, 0, 0, 0.08)" : "#FFFFFF",
+              color: filterType === "investor" ? "#000000" : "#555555",
+              cursor: "pointer"
+            }}
+          >
+            💼 Investors ({reminders.filter(r => r.category === "Investor").length})
+          </button>
+        </div>
+
+        {/* List of Reminders */}
+        <div style={{ overflowY: "auto", padding: "14px 24px", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: "45px 20px", textAlign: "center", color: "#777777" }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>🎉 All Clear!</div>
+              <div style={{ fontSize: 13.5 }}>No pending recontact reminders for this view threshold ({thresholdDays} days).</div>
+            </div>
+          ) : (
+            filtered.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #EEEEEE",
+                  borderRadius: 10,
+                  padding: "14px 18px",
+                  background: "#FFFFFF",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  boxShadow: "0 2px 5px rgba(0, 0, 0, 0.03)",
+                  transition: "all 0.15s ease"
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 18 }}>{item.category === "Individual" ? "👤" : item.category === "Investor" ? "💼" : "🏢"}</span>
+                      <span 
+                        onClick={() => { onSelectCompany(item.raw, item.source); onClose(); }}
+                        style={{ fontWeight: 700, fontSize: 15, color: "#111111", cursor: "pointer", textDecoration: "underline" }}
+                        title="Click to open full profile / detail view"
+                      >
+                        {item.name}
+                      </span>
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "2px 7px",
+                        borderRadius: 4,
+                        background: item.category === "Individual" ? "rgba(221, 221, 221, 0.12)" : item.category === "Investor" ? "rgba(0, 0, 0, 0.12)" : "rgba(0, 0, 0, 0.08)",
+                        color: item.category === "Individual" ? "#DDDDDD" : item.category === "Investor" ? "#000000" : BLUE,
+                        border: `1px solid ${item.category === "Individual" ? "rgba(221, 221, 221, 0.25)" : item.category === "Investor" ? "rgba(0, 0, 0, 0.25)" : "rgba(0, 0, 0, 0.2)"}`
+                      }}>
+                        {item.entityType || item.category}
+                      </span>
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "2px 7px",
+                        borderRadius: 4,
+                        background: "rgba(192, 0, 0, 0.08)",
+                        color: "#C00000",
+                        border: "1px solid rgba(192, 0, 0, 0.2)",
+                        fontFamily: fontStack.mono
+                      }}>
+                        ⏳ Unchanged for {item.daysInactive} days
+                      </span>
+                    </div>
+                    {item.oneLiner && (
+                      <div style={{ fontSize: 12.5, color: "#555555", marginTop: 4 }}>
+                        {item.oneLiner}
+                      </div>
+                    )}
+                    {item.url && (
+                      <div style={{ fontSize: 11.5, marginTop: 4 }}>
+                        <a 
+                          href={item.url.startsWith("http") ? item.url : `https://${item.url}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ color: BLUE, textDecoration: "underline", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}
+                          onClick={(e) => e.stopPropagation()}
+                          title="Open company website or profile link in a new tab"
+                        >
+                          🌐 {item.url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Inline Stage Dropdown */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                    <span style={{ fontSize: 9.5, color: FADE, textTransform: "uppercase", fontWeight: 700, fontFamily: fontStack.mono }}>Current Stage</span>
+                    <select
+                      value={item.status}
+                      onChange={(e) => onUpdateStatus(item.id, e.target.value, item.source)}
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 5,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        background: "rgba(0, 0, 0, 0.06)",
+                        color: BLUE,
+                        border: `1px solid rgba(0, 0, 0, 0.2)`,
+                        fontFamily: fontStack.mono,
+                        cursor: "pointer",
+                        outline: "none"
+                      }}
+                    >
+                      {statusOptions.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Quick Actions Bar */}
+                <div style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  paddingTop: 10,
+                  borderTop: "1px solid #F5F5F5",
+                  marginTop: 2
+                }}>
+                  <Btn
+                    small
+                    primary
+                    onClick={() => onMarkRecontacted(item)}
+                    style={{ background: "#000000", color: "#FFFFFF", borderColor: "#000000", fontSize: 10.5, padding: "4px 10px" }}
+                  >
+                    ✓ Mark Re-contacted Today
+                  </Btn>
+
+                  <Btn
+                    small
+                    onClick={() => { onOpenOutreach(item.raw); onClose(); }}
+                    style={{ background: "rgba(0, 0, 0, 0.08)", color: BLUE, borderColor: "rgba(0, 0, 0, 0.3)", fontSize: 10.5, padding: "4px 10px" }}
+                  >
+                    ✉️ Draft Follow-Up Outreach
+                  </Btn>
+
+                  <Btn
+                    small
+                    onClick={() => onUpdateStatus(item.id, "Meeting Scheduled", item.source)}
+                    style={{ background: "rgba(0, 0, 0, 0.08)", color: "#000000", borderColor: "rgba(0, 0, 0, 0.3)", fontSize: 10.5, padding: "4px 10px" }}
+                  >
+                    📅 Move to First Meeting
+                  </Btn>
+
+                  <Btn
+                    small
+                    danger
+                    onClick={() => onUpdateStatus(item.id, "Killed", item.source)}
+                    style={{ fontSize: 10.5, padding: "4px 10px" }}
+                  >
+                    ❌ Mark Killed
+                  </Btn>
+
+                  <button
+                    onClick={() => onSnooze(item.id)}
+                    style={{
+                      marginLeft: "auto",
+                      background: "transparent",
+                      border: "1px solid #DDDDDD",
+                      color: "#777777",
+                      fontSize: 10.5,
+                      padding: "4px 10px",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      fontFamily: fontStack.mono
+                    }}
+                  >
+                    ⏰ Snooze 7 Days
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: "14px 24px",
+          background: "#FAFAFA",
+          borderTop: "1px solid #EEEEEE",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontSize: 12,
+          color: "#777777"
+        }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span>Showing entities with no stage change in &gt; {thresholdDays} days</span>
+            <Btn small onClick={exportOverdueList} style={{ fontSize: 10.5, padding: "3px 8px" }}>
+              📥 Export CSV
+            </Btn>
+            {reminders.length > 0 && (
+              <Btn small onClick={onSnoozeAll} style={{ fontSize: 10.5, padding: "3px 8px" }}>
+                💤 Snooze All (7 Days)
+              </Btn>
+            )}
+          </div>
+          <Btn small onClick={onClose}>Close Window</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 window.App = function App() {
   const [tab, setTab] = useState("pipeline");
+  const [isCmdKOpen, setCmdKOpen] = useState(false);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [hasAutoOpenedReminders, setHasAutoOpenedReminders] = useState(false);
+  
+  const [snoozedReminders, setSnoozedReminders] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("snoozed_reminders") || "{}");
+    } catch (e) {
+      return {};
+    }
+  });
+
   const [companies, setCompanies] = useState([]);
   const [investors, setInvestors] = useState([]);
   const [deepDives, setDeepDives] = useState([]);
@@ -2224,6 +3783,132 @@ window.App = function App() {
   const [selected, setSelected] = useState(null); // company id for detail drawer
   const [apiKey, setApiKey] = useState(localStorage.getItem("anthropic_api_key") || "");
   const [granolaApiKey, setGranolaApiKey] = useState(localStorage.getItem("granola_api_key") || "");
+
+  const [reminderThresholdDays, setReminderThresholdDays] = useState(14);
+
+  // Recontact reminders calculation (entities added > N days ago with status unchanged)
+  const reminders = useMemo(() => {
+    const now = Date.now();
+    const excludeStatuses = new Set(["Invested", "Killed", "To Kill", "Passed"]);
+
+    const list = [];
+
+    // 1. Pipeline Companies & Individual entries in companies
+    (companies || []).forEach(c => {
+      if (!c || !c.id) return;
+      if (excludeStatuses.has(c.status)) return;
+
+      const snoozeUntil = snoozedReminders[c.id];
+      if (snoozeUntil && now < snoozeUntil) return;
+
+      const lastActivityTime = c.lastContactedAt || c.statusChangedAt || c.createdAt || c.affinityPushedAt || (now - (15 * 24 * 60 * 60 * 1000));
+      const ageMs = now - lastActivityTime;
+      const daysInactive = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+
+      if (daysInactive >= reminderThresholdDays) {
+        list.push({
+          id: c.id,
+          name: c.name,
+          url: c.url || c.website || (c.founders && c.founders[0] ? c.founders[0].linkedin : ""),
+          oneLiner: c.oneLiner || c.overview?.oneLiner || "",
+          entityType: c.entityType || "Company",
+          category: c.entityType === "Individual" ? "Individual" : "Company",
+          status: c.status || "Active Opportunity",
+          daysInactive: daysInactive,
+          raw: c,
+          source: "pipeline"
+        });
+      }
+    });
+
+    // 2. Talent / Founder Profiles
+    (founderProfiles || []).forEach(fp => {
+      if (!fp || !fp.id) return;
+      if (excludeStatuses.has(fp.status)) return;
+
+      const snoozeUntil = snoozedReminders[`fp_${fp.id}`];
+      if (snoozeUntil && now < snoozeUntil) return;
+
+      const lastActivityTime = fp.lastContactedAt || fp.statusChangedAt || fp.createdAt || (now - (15 * 24 * 60 * 60 * 1000));
+      const ageMs = now - lastActivityTime;
+      const daysInactive = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+
+      if (daysInactive >= reminderThresholdDays) {
+        list.push({
+          id: `fp_${fp.id}`,
+          originalId: fp.id,
+          name: fp.name,
+          url: fp.linkedin || fp.url || fp.website || "",
+          oneLiner: `${fp.title || "Founder"} ${fp.company ? `@ ${fp.company}` : ""}`.trim(),
+          entityType: "Individual",
+          category: "Individual",
+          status: fp.status || "To contact",
+          daysInactive: daysInactive,
+          raw: fp,
+          source: "founderProfile"
+        });
+      }
+    });
+
+    // 3. Investor Profiles
+    (investors || []).forEach(inv => {
+      if (!inv || !inv.id) return;
+      if (excludeStatuses.has(inv.status)) return;
+
+      const snoozeUntil = snoozedReminders[`inv_${inv.id}`];
+      if (snoozeUntil && now < snoozeUntil) return;
+
+      const lastActivityTime = inv.lastContactedAt || inv.statusChangedAt || inv.createdAt || (now - (15 * 24 * 60 * 60 * 1000));
+      const ageMs = now - lastActivityTime;
+      const daysInactive = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+
+      if (daysInactive >= reminderThresholdDays) {
+        list.push({
+          id: `inv_${inv.id}`,
+          originalId: inv.id,
+          name: inv.name,
+          url: inv.linkedin || inv.website || inv.url || "",
+          oneLiner: `${inv.fund || "Fund"} • ${Array.isArray(inv.focus) ? inv.focus.slice(0, 2).join(", ") : (inv.focus || "Investor")}`,
+          entityType: "Investor",
+          category: "Investor",
+          status: inv.status || "Active",
+          daysInactive: daysInactive,
+          raw: inv,
+          source: "investor"
+        });
+      }
+    });
+
+    return list.sort((a, b) => b.daysInactive - a.daysInactive);
+  }, [companies, founderProfiles, investors, snoozedReminders, reminderThresholdDays]);
+
+  useEffect(() => {
+    if (loaded && reminders.length > 0 && !hasAutoOpenedReminders) {
+      setIsReminderModalOpen(true);
+      setHasAutoOpenedReminders(true);
+    }
+  }, [loaded, reminders.length, hasAutoOpenedReminders]);
+
+  const handleSnoozeReminder = (id) => {
+    const snoozeUntil = Date.now() + (7 * 24 * 60 * 60 * 1000);
+    setSnoozedReminders(prev => {
+      const updated = { ...prev, [id]: snoozeUntil };
+      localStorage.setItem("snoozed_reminders", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Cmd+K Keyboard Shortcut Listener
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCmdKOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
 
 
@@ -2260,13 +3945,6 @@ window.App = function App() {
   const [investorDefaultRegion, setInvestorDefaultRegion] = useState("");
   const [investorDefaultNotes, setInvestorDefaultNotes] = useState("");
 
-  // fonts
-  useEffect(() => {
-    const l = document.createElement("link");
-    l.rel = "stylesheet";
-    l.href = "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap";
-    document.head.appendChild(l);
-  }, []);
 
   // Clear selected companies when active tab changes
   useEffect(() => {
@@ -2314,16 +3992,177 @@ window.App = function App() {
     })();
   }, []);
 
-  // persist
+  // Helper to merge server updates into local state without clobbering client edits
+  const mergeClientWithServerList = (clientList = [], serverList = [], deletedIds = []) => {
+    const deletedSet = new Set((deletedIds || []).map(String));
+    const clientArr = (Array.isArray(clientList) ? clientList : []).filter(c => c && c.id && !deletedSet.has(String(c.id)));
+    const serverArr = (Array.isArray(serverList) ? serverList : []).filter(s => s && s.id && !deletedSet.has(String(s.id)));
+
+    const clientMap = new Map();
+    clientArr.forEach(c => clientMap.set(String(c.id), c));
+
+    const serverMap = new Map();
+    serverArr.forEach(s => serverMap.set(String(s.id), s));
+
+    let changed = false;
+    const merged = [];
+
+    const mergeNotesInternal = (cNotes = [], sNotes = []) => {
+      if (typeof cNotes === "string" || typeof sNotes === "string") {
+        if (typeof cNotes === "string" && cNotes.trim()) return cNotes;
+        if (Array.isArray(cNotes) && cNotes.length) return cNotes;
+        return sNotes;
+      }
+      const arrC = Array.isArray(cNotes) ? cNotes : (cNotes ? [{ text: String(cNotes) }] : []);
+      const arrS = Array.isArray(sNotes) ? sNotes : (sNotes ? [{ text: String(sNotes) }] : []);
+      const map = new Map();
+      for (const n of arrS) {
+        if (!n) continue;
+        const key = typeof n === "object" ? (n.id || n.ts || n.date || n.text || JSON.stringify(n)) : String(n).trim();
+        if (key) map.set(key, n);
+      }
+      for (const n of arrC) {
+        if (!n) continue;
+        const key = typeof n === "object" ? (n.id || n.ts || n.date || n.text || JSON.stringify(n)) : String(n).trim();
+        if (key) map.set(key, n);
+      }
+      const res = Array.from(map.values());
+      try {
+        res.sort((a, b) => {
+          const tA = (a && typeof a === "object") ? (a.date || a.ts || a.createdAt || 0) : 0;
+          const tB = (b && typeof b === "object") ? (b.date || b.ts || b.createdAt || 0) : 0;
+          return tB - tA;
+        });
+      } catch(e) {}
+      return res;
+    };
+
+    const mergeSubListInternal = (cSub = [], sSub = []) => {
+      const arrC = Array.isArray(cSub) ? cSub : [];
+      const arrS = Array.isArray(sSub) ? sSub : [];
+      const map = new Map();
+      const getKey = (item) => {
+        if (item && typeof item === "object") {
+          for (const k of ["id", "name", "url", "text"]) {
+            if (item[k]) return String(item[k]);
+          }
+        }
+        return String(item);
+      };
+      for (const item of arrS) {
+        if (item) map.set(getKey(item), item);
+      }
+      for (const item of arrC) {
+        if (!item) continue;
+        const k = getKey(item);
+        if (map.has(k) && typeof item === "object" && typeof map.get(k) === "object") {
+          map.set(k, { ...map.get(k), ...item });
+        } else {
+          map.set(k, item);
+        }
+      }
+      return Array.from(map.values());
+    };
+
+    const mergeItemInternal = (cItem, sItem) => {
+      if (!sItem) return cItem;
+      if (!cItem) return sItem;
+      const mergedItem = { ...sItem };
+      const cTs = cItem.updatedAt || cItem.ts || 0;
+      const sTs = sItem.updatedAt || sItem.ts || 0;
+
+      for (const [key, cVal] of Object.entries(cItem)) {
+        const sVal = sItem[key];
+        if (key === "notes") {
+          mergedItem.notes = mergeNotesInternal(cVal, sVal);
+        } else if (["founders", "assets", "documents", "qa", "deckIngestHistory"].includes(key)) {
+          mergedItem[key] = mergeSubListInternal(cVal, sVal);
+        } else if (cVal && typeof cVal === "object" && !Array.isArray(cVal) && sVal && typeof sVal === "object" && !Array.isArray(sVal)) {
+          mergedItem[key] = { ...sVal, ...cVal };
+        } else {
+          if (cVal === undefined || cVal === null || cVal === "" || (Array.isArray(cVal) && cVal.length === 0)) {
+            if (sVal !== undefined && sVal !== null && sVal !== "" && (!Array.isArray(sVal) || sVal.length > 0)) {
+              mergedItem[key] = sVal;
+            } else {
+              mergedItem[key] = cVal;
+            }
+          } else if (sTs > cTs && sTs > 0 && sVal !== undefined && sVal !== null && sVal !== "") {
+            mergedItem[key] = sVal;
+          } else {
+            mergedItem[key] = cVal;
+          }
+        }
+      }
+      for (const [key, sVal] of Object.entries(sItem)) {
+        if (!(key in cItem) && sVal !== undefined) {
+          mergedItem[key] = sVal;
+        }
+      }
+      return mergedItem;
+    };
+
+    clientArr.forEach(cItem => {
+      const sId = String(cItem.id);
+      const sItem = serverMap.get(sId);
+      if (sItem) {
+        const mergedItem = mergeItemInternal(cItem, sItem);
+        if (JSON.stringify(mergedItem) !== JSON.stringify(cItem)) {
+          changed = true;
+        }
+        merged.push(mergedItem);
+      } else {
+        merged.push(cItem);
+      }
+    });
+
+    serverArr.forEach(sItem => {
+      const sId = String(sItem.id);
+      if (!clientMap.has(sId)) {
+        merged.unshift(sItem);
+        changed = true;
+      }
+    });
+
+    return { merged, changed };
+  };
+
+  // persist: single debounced server save (server is the source of truth for the DB)
   useEffect(() => {
     if (!loaded) return;
+    window.__bnvtSavePending = true;
     const t = setTimeout(() => {
-      window.storage.set("bnvt-dealflow-v1", JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds })).catch(() => {});
+      const dbPayload = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds });
+      fetch("/api/storage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "bnvt-dealflow-v1", value: dbPayload })
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          window.__bnvtSaveFailed = false;
+        })
+        .catch((e) => {
+          window.__bnvtSaveFailed = true;
+          console.error("SAVE TO SERVER FAILED", e);
+        })
+        .finally(() => { window.__bnvtSavePending = false; });
     }, 600);
     return () => clearTimeout(t);
   }, [companies, investors, deepDives, founderProfiles, deletedIds, loaded]);
 
-  // Poll server for database updates (e.g. from WhatsApp API)
+  // Warn before closing/reloading while a save is in flight or has failed
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (window.__bnvtSavePending || window.__bnvtSaveFailed) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
+  // Poll server for external updates (e.g. from WhatsApp API) safely without overwriting local memory
   useEffect(() => {
     if (!loaded) return;
     const interval = setInterval(async () => {
@@ -2331,37 +4170,25 @@ window.App = function App() {
         const r = await window.storage.get("bnvt-dealflow-v1");
         if (r?.value) {
           const d = JSON.parse(r.value);
-          const currentStr = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds });
-          const newStr = JSON.stringify({
-            companies: d.companies || [],
-            investors: d.investors || [],
-            deepDives: d.deepDives || [],
-            founderProfiles: d.founderProfiles || [],
-            deletedIds: d.deletedIds || []
-          });
-          if (currentStr !== newStr) {
-            console.log("Database updated on server. Syncing local state...");
-            if (JSON.stringify(companies) !== JSON.stringify(d.companies)) {
-              setCompanies(deduplicateCompanies(d.companies || []));
-            }
-            if (JSON.stringify(investors) !== JSON.stringify(d.investors)) {
-              setInvestors(deduplicateInvestors(d.investors || []));
-            }
-            if (JSON.stringify(deepDives) !== JSON.stringify(d.deepDives)) {
-              setDeepDives(d.deepDives || []);
-            }
-            if (JSON.stringify(founderProfiles) !== JSON.stringify(d.founderProfiles)) {
-              setFounderProfiles(d.founderProfiles || []);
-            }
-            if (JSON.stringify(deletedIds) !== JSON.stringify(d.deletedIds)) {
-              setDeletedIds(d.deletedIds || []);
-            }
-          }
+          const serverDeleted = d.deletedIds || [];
+          const mergedDel = Array.from(new Set([...(deletedIds || []), ...serverDeleted]));
+
+          const compRes = mergeClientWithServerList(companies, d.companies || [], mergedDel);
+          if (compRes.changed) setCompanies(deduplicateCompanies(compRes.merged));
+
+          const invRes = mergeClientWithServerList(investors, d.investors || [], mergedDel);
+          if (invRes.changed) setInvestors(deduplicateInvestors(invRes.merged));
+
+          const fpRes = mergeClientWithServerList(founderProfiles, d.founderProfiles || [], mergedDel);
+          if (fpRes.changed) setFounderProfiles(fpRes.merged);
+
+          const ddRes = mergeClientWithServerList(deepDives, d.deepDives || [], mergedDel);
+          if (ddRes.changed) setDeepDives(ddRes.merged);
         }
       } catch (e) {
-        console.error("Failed to poll storage updates", e);
+        console.warn("Storage polling sync check:", e.message);
       }
-    }, 10000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [companies, investors, deepDives, founderProfiles, deletedIds, loaded]);
 
@@ -2493,7 +4320,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
           console.warn("Failed to get Granola context for market study:", e);
         }
         const foundersList = (nextComp.founders || []).map(f => `${f.name}${f.linkedin ? ` (LinkedIn: ${f.linkedin})` : ""}`).join(", ");
-        const notesText = (nextComp.notes || []).map((n) => "- " + n.text).join("\n");
+        const notesText = Array.isArray(nextComp.notes) ? nextComp.notes.map((n) => "- " + (typeof n === 'string' ? n : n.text || "")).join("\n") : (typeof nextComp.notes === 'string' ? nextComp.notes : "");
         const prompt = `You are a principal investment analyst at BNVT Capital, a premium early-stage AI venture capital fund.
 We need a deep, analytically dense, one-pager market overview and TAM/SAM/SOM sizing study for:
 Company: ${nextComp.name}
@@ -2691,7 +4518,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 ...newInv,
                 id: i.id,
                 focus: Array.from(new Set([...(i.focus || []), ...(newInv.focus || [])])),
-                notes: [i.notes, newInv.notes].filter(Boolean).join("\n\n")
+                notes: appendNotesText(i.notes, newInv.notes)
               };
             }
             return i;
@@ -2707,7 +4534,6 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
         const finalPriority = item.priority || investorDefaultPriority;
         const finalRegion = item.region || investorDefaultRegion || "Unknown";
         const combinedNotes = [
-          "Research failed: " + err.message,
           item.notes ? `User Import Notes: ${item.notes}` : "",
           investorDefaultNotes ? `Import Context: ${investorDefaultNotes}` : ""
         ].filter(Boolean).join("\n\n");
@@ -2740,7 +4566,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 ...newInv,
                 id: i.id,
                 focus: Array.from(new Set([...(i.focus || []), ...(newInv.focus || [])])),
-                notes: [i.notes, newInv.notes].filter(Boolean).join("\n\n")
+                notes: appendNotesText(i.notes, newInv.notes)
               };
             }
             return i;
@@ -2754,8 +4580,42 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
     return () => clearTimeout(timer);
   }, [investorQueueActive, investorQueueIndex, investorQueueList]);
 
-  const updateCompany = (id, patch) =>
-    setCompanies((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  const syncAffinityStatusDirectly = async (company, newStatus) => {
+    if (!company || !(company.affinityOrgId || company.affinityListEntryId || company.affinityUrl)) return;
+    try {
+      console.log(`[Affinity Auto-Sync] Syncing status change for ${company.name} -> ${newStatus}...`);
+      const payloadCompany = {
+        ...company,
+        status: newStatus
+      };
+      const res = await fetch("/api/affinity/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company: payloadCompany })
+      });
+      const data = await res.json();
+      if (data.success) {
+        console.log(`[Affinity Auto-Sync] Status updated on Affinity list "Deals": ${data.status}`);
+        setCompanies((cs) => cs.map((c) => (c.id === company.id ? { ...c, affinityStatus: data.status, affinityPushedAt: Date.now() } : c)));
+      } else {
+        console.warn("[Affinity Auto-Sync] Sync error:", data.error);
+      }
+    } catch (err) {
+      console.error("[Affinity Auto-Sync] Network error:", err);
+    }
+  };
+
+  const updateCompany = (id, patch) => {
+    setCompanies((cs) => {
+      const target = cs.find(c => c.id === id);
+      const isStatusChange = patch.status && target && target.status !== patch.status;
+      const updatedPatch = isStatusChange ? { ...patch, statusChangedAt: Date.now() } : patch;
+      if (isStatusChange && (target.affinityOrgId || target.affinityListEntryId || target.affinityUrl)) {
+        syncAffinityStatusDirectly(target, patch.status);
+      }
+      return cs.map((c) => (c.id === id ? { ...c, ...updatedPatch } : c));
+    });
+  };
 
   const runDiligenceForId = async (id) => {
     const comp = companies.find(c => c.id === id);
@@ -2779,7 +4639,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
         }
       }
       
-      const notes = (comp.notes || []).map((n) => "- " + n.text).join("\n") + granolaContext;
+      const notes = (Array.isArray(comp.notes) ? comp.notes.map((n) => "- " + (typeof n === 'string' ? n : n.text || "")).join("\n") : (typeof comp.notes === 'string' ? comp.notes : "")) + granolaContext;
       const prompt = `You are an analyst at BNVT Capital, an early-stage AI fund (tickets up to $10M, US + EU). Research this entity (which could be a company website or an individual founder's LinkedIn profile/name) using web search: ${comp.url || comp.name}
 ${notes ? `
 Proprietary context from the partner (weight this heavily):
@@ -2845,7 +4705,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
         console.warn("Failed to get Granola context for market study:", e);
       }
       const foundersList = (comp.founders || []).map(f => `${f.name}${f.linkedin ? ` (LinkedIn: ${f.linkedin})` : ""}`).join(", ");
-      const notesText = (comp.notes || []).map((n) => "- " + n.text).join("\n");
+      const notesText = Array.isArray(comp.notes) ? comp.notes.map((n) => "- " + (typeof n === 'string' ? n : n.text || "")).join("\n") : (typeof comp.notes === 'string' ? comp.notes : "");
       const prompt = `You are a principal investment analyst at BNVT Capital, a premium early-stage AI venture capital fund.
 We need a deep, analytically dense, one-pager market overview and TAM/SAM/SOM sizing study for:
 Company: ${comp.name}
@@ -2960,32 +4820,32 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     </Style>
     <Style ss:ID="Header">
       <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
-      <Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/>
+      <Interior ss:Color="#F5F5F5" ss:Pattern="Solid"/>
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
       </Borders>
     </Style>
     <Style ss:ID="Title">
-      <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#1F2DCB" ss:Bold="1"/>
+      <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#000000" ss:Bold="1"/>
     </Style>
     <Style ss:ID="GridCell">
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
       </Borders>
     </Style>
     <Style ss:ID="GridCellBold">
       <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
       </Borders>
     </Style>
   </Styles>
@@ -3133,7 +4993,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(inv.sweetSpot || "")}</Data></Cell>
         <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(inv.geo || "")}</Data></Cell>
         <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(inv.city || "")}</Data></Cell>
-        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(inv.notes || "")}</Data></Cell>
+        <Cell ss:StyleID="GridCell"><Data ss:Type="String">${escapeXml(notesToText(inv.notes))}</Data></Cell>
       </Row>`;
       }).join("")}
     </Table>
@@ -3153,6 +5013,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
 
   const tabs = [
     ["pipeline", "Pipeline"],
+    ["talentDashboard", "Talent Sourcing"],
     ["chat", "AI Assistant"],
     ["dtm", "Deal Team Meeting"],
     ["preemption", "Pre-emption Sandbox"],
@@ -3163,6 +5024,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     ["deepdives", "Deep Dives"],
     ["founders", "Founder Assessment"],
     ["assets", "Asset Library"],
+    ["settings", "Settings"],
   ];
 
   return (
@@ -3172,11 +5034,90 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.18em", color: BLUE }}>BNVT CAPITAL</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 24, flexWrap: "wrap" }}>
-            <div className="app-title" style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 30, lineHeight: 1.1, marginBottom: 14 }}>
+            <div className="app-title" style={{ fontFamily: fontStack.display, fontSize: 30, lineHeight: 1.1, marginBottom: 14 }}>
               Dealflow Atelier
             </div>
             
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <Btn 
+                small 
+                onClick={() => setCmdKOpen(true)} 
+                style={{ 
+                  borderColor: "rgba(0, 0, 0, 0.35)", 
+                  color: INK, 
+                  fontFamily: fontStack.mono, 
+                  fontSize: 11, 
+                  padding: "4px 12px",
+                  background: "rgba(0, 0, 0, 0.06)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  borderRadius: 4
+                }}
+                title="Press ⌘K or Ctrl+K to search anything in BNVT Dealflow"
+              >
+                <span>🔍 Search</span>
+                <kbd style={{
+                  background: "rgba(0, 0, 0, 0.08)",
+                  padding: "1px 5px",
+                  borderRadius: 3,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  fontFamily: fontStack.mono
+                }}>⌘K</kbd>
+              </Btn>
+              <Btn 
+                small 
+                onClick={() => { setTab("settings"); setSelected(null); }} 
+                style={{ 
+                  borderColor: tab === "settings" ? BLUE : "rgba(0, 0, 0, 0.35)", 
+                  color: tab === "settings" ? "#FFFFFF" : INK, 
+                  background: tab === "settings" ? BLUE : "rgba(0, 0, 0, 0.06)",
+                  fontFamily: fontStack.mono, 
+                  fontSize: 11, 
+                  padding: "4px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  borderRadius: 4
+                }}
+                title="Manage & Test Anthropic, Affinity CRM & Granola API Keys"
+              >
+                <span>⚙️ Settings</span>
+              </Btn>
+              <Btn 
+                small 
+                onClick={() => setIsReminderModalOpen(true)} 
+                style={{ 
+                  borderColor: reminders.length > 0 ? "#000000" : "rgba(0, 0, 0, 0.35)", 
+                  color: reminders.length > 0 ? "#000000" : INK, 
+                  background: reminders.length > 0 ? "rgba(0, 0, 0, 0.1)" : "rgba(0, 0, 0, 0.06)",
+                  fontFamily: fontStack.mono, 
+                  fontSize: 11, 
+                  padding: "4px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  borderRadius: 4,
+                  position: "relative"
+                }}
+                title="Recontact Reminders for entities added 2+ weeks ago"
+              >
+                <span>🔔 Reminders</span>
+                {reminders.length > 0 && (
+                  <span style={{
+                    background: "#C00000",
+                    color: "#FFFFFF",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "1px 6px",
+                    borderRadius: 10,
+                    lineHeight: 1
+                  }}>
+                    {reminders.length}
+                  </span>
+                )}
+              </Btn>
               <Btn 
                 small 
                 onClick={exportWholeDatabaseExcel} 
@@ -3370,6 +5311,16 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             updateCompany={updateCompany} 
           />
         )}
+        {tab === "talentDashboard" && (
+          <TalentSourcingDashboard 
+            founderProfiles={founderProfiles} 
+            setFounderProfiles={setFounderProfiles}
+            companies={companies}
+            updateCompany={updateCompany}
+            setSelected={setSelected}
+            setTab={setTab}
+          />
+        )}
         {tab === "founders" && (
           <FounderAssessmentDashboard 
             founderProfiles={founderProfiles} 
@@ -3382,7 +5333,101 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             companies={companies} 
           />
         )}
+        {tab === "settings" && (
+          <Settings 
+            setTab={setTab} 
+          />
+        )}
       </div>
+
+      <CmdKModal
+        isOpen={isCmdKOpen}
+        onClose={() => setCmdKOpen(false)}
+        companies={companies}
+        founderProfiles={founderProfiles}
+        investors={investors}
+        deepDives={deepDives}
+        onSelectCompany={(c) => {
+          setSelected(c.id);
+          setTab("pipeline");
+        }}
+        onSelectFounder={() => {
+          setTab("founders");
+        }}
+        onSelectInvestor={() => {
+          setTab("investors");
+        }}
+        onSelectDeepDive={() => {
+          setTab("deepDives");
+        }}
+        onSelectAction={(actKey) => {
+          if (actKey === "nav_pipeline" || actKey === "add_opportunity") setTab("pipeline");
+          else if (actKey === "nav_founders") setTab("founders");
+          else if (actKey === "nav_investors") setTab("investors");
+          else if (actKey === "nav_deepdives" || actKey === "run_uncompiled_dives") setTab("deepDives");
+          else if (actKey === "nav_settings") setTab("settings");
+          else if (actKey === "nav_icmemos") setTab("pipeline");
+          else if (actKey === "export_excel") exportWholeDatabaseExcel();
+          else if (actKey === "affinity_push_all") runBulkAffinityPush();
+        }}
+      />
+
+      <RecontactNotificationModal
+        isOpen={isReminderModalOpen}
+        onClose={() => setIsReminderModalOpen(false)}
+        reminders={reminders}
+        thresholdDays={reminderThresholdDays}
+        setThresholdDays={setReminderThresholdDays}
+        onUpdateStatus={(id, newStatus, source) => {
+          const now = Date.now();
+          if (source === "founderProfile") {
+            setFounderProfiles(fps => fps.map(fp => fp.id === id || `fp_${fp.id}` === id ? { ...fp, status: newStatus, statusChangedAt: now } : fp));
+          } else if (source === "investor") {
+            setInvestors(invs => invs.map(inv => inv.id === id || `inv_${inv.id}` === id ? { ...inv, status: newStatus, statusChangedAt: now } : inv));
+          } else {
+            updateCompany(id, { status: newStatus, statusChangedAt: now });
+          }
+        }}
+        onMarkRecontacted={(item) => {
+          const now = Date.now();
+          if (item.source === "founderProfile") {
+            setFounderProfiles(fps => fps.map(fp => fp.id === item.raw.id ? { ...fp, lastContactedAt: now, statusChangedAt: now } : fp));
+          } else if (item.source === "investor") {
+            setInvestors(invs => invs.map(inv => inv.id === item.raw.id ? { ...inv, lastContactedAt: now, statusChangedAt: now } : inv));
+          } else {
+            const existingNotes = Array.isArray(item.raw.notes) ? item.raw.notes : (typeof item.raw.notes === "string" && item.raw.notes ? [{ text: item.raw.notes, ts: now, via: "Import" }] : []);
+            updateCompany(item.id, { 
+              lastContactedAt: now, 
+              statusChangedAt: now, 
+              notes: [...existingNotes, { ts: now, text: `Re-contacted / outreach follow-up logged`, via: "Reminder Modal" }] 
+            });
+          }
+        }}
+        onSnooze={handleSnoozeReminder}
+        onSnoozeAll={() => {
+          const snoozeUntil = Date.now() + (7 * 24 * 60 * 60 * 1000);
+          setSnoozedReminders(prev => {
+            const updated = { ...prev };
+            reminders.forEach(r => { updated[r.id] = snoozeUntil; });
+            localStorage.setItem("snoozed_reminders", JSON.stringify(updated));
+            return updated;
+          });
+        }}
+        onSelectCompany={(c, source) => {
+          if (source === "founderProfile") {
+            setTab("founders");
+          } else if (source === "investor") {
+            setTab("investors");
+          } else {
+            setSelected(c.id);
+            setTab("pipeline");
+          }
+        }}
+        onOpenOutreach={(c) => {
+          setSelected(c.id);
+          setTab("outreach");
+        }}
+      />
     </div>
   );
 }
@@ -3432,6 +5477,94 @@ function Pipeline({
   const [shouldStartTamQueue, setShouldStartTamQueue] = useState(false);
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "table"
   const [hoveredRowId, setHoveredRowId] = useState(null);
+
+  const [pushingBulkAffinity, setPushingBulkAffinity] = useState(false);
+  const [affinityBulkLog, setAffinityBulkLog] = useState("");
+
+  const runBulkAffinityPush = async () => {
+    if (selectedCompanyIds.length === 0) return;
+    setPushingBulkAffinity(true);
+    setAffinityBulkLog(`Starting Affinity push for ${selectedCompanyIds.length} deals...`);
+    
+    const selectedList = companies.filter(c => selectedCompanyIds.includes(c.id));
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (let i = 0; i < selectedList.length; i++) {
+      const comp = selectedList[i];
+      setAffinityBulkLog(`[${i + 1}/${selectedList.length}] Pushing ${comp.name} to Affinity...`);
+      try {
+        const res = await fetch("/api/affinity/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ company: comp })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setCompanies(prev => prev.map(c => {
+            if (c.id === comp.id) {
+              return {
+                ...c,
+                affinityOrgId: data.affinity_org_id,
+                affinityListEntryId: data.list_entry_id,
+                affinityUrl: data.affinity_url,
+                affinityPushedAt: Date.now(),
+                affinityStatus: data.status
+              };
+            }
+            return c;
+          }));
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (err) {
+        console.error("Affinity bulk push error:", err);
+        failCount++;
+      }
+    }
+    
+    setAffinityBulkLog(`✓ Affinity Push Completed! ${successCount} succeeded, ${failCount} failed.`);
+    setPushingBulkAffinity(false);
+    setTimeout(() => setAffinityBulkLog(""), 6000);
+  };
+
+  const [pushingSingleAffinity, setPushingSingleAffinity] = useState({});
+
+  const handlePushSingleAffinity = async (comp, e) => {
+    if (e) e.stopPropagation();
+    setPushingSingleAffinity(prev => ({ ...prev, [comp.id]: true }));
+    try {
+      const res = await fetch("/api/affinity/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company: comp })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCompanies(prev => prev.map(c => {
+          if (c.id === comp.id) {
+            return {
+              ...c,
+              affinityOrgId: data.affinity_org_id,
+              affinityListEntryId: data.list_entry_id,
+              affinityUrl: data.affinity_url,
+              affinityPushedAt: Date.now(),
+              affinityStatus: data.status
+            };
+          }
+          return c;
+        }));
+      } else {
+        alert(`Affinity push failed for ${comp.name}: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error("Single Affinity push error:", err);
+      alert(`Affinity push error for ${comp.name}: ${err.message}`);
+    } finally {
+      setPushingSingleAffinity(prev => ({ ...prev, [comp.id]: false }));
+    }
+  };
 
   const toggleSelectCompany = (id) => {
     setSelectedCompanyIds(prev => 
@@ -3520,32 +5653,32 @@ function Pipeline({
     </Style>
     <Style ss:ID="Header">
       <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
-      <Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/>
+      <Interior ss:Color="#F5F5F5" ss:Pattern="Solid"/>
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
       </Borders>
     </Style>
     <Style ss:ID="Title">
-      <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#1F2DCB" ss:Bold="1"/>
+      <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#000000" ss:Bold="1"/>
     </Style>
     <Style ss:ID="GridCell">
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
       </Borders>
     </Style>
     <Style ss:ID="GridCellBold">
       <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
       </Borders>
     </Style>
   </Styles>
@@ -3643,7 +5776,7 @@ function Pipeline({
         const tamUnits = mSizing.tamUnits || "";
         const mMethodology = c.marketStudy?.marketSizeExplanation || "";
         
-        const latestNote = c.notes && c.notes.length > 0 ? c.notes[0].text : "";
+        const latestNote = Array.isArray(c.notes) && c.notes.length > 0 ? (typeof c.notes[0] === 'string' ? c.notes[0] : c.notes[0]?.text || "") : (typeof c.notes === 'string' ? c.notes : "");
 
         return `
       <Row>
@@ -4205,9 +6338,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                   }} 
                   disabled={!hasApiKey || unSizedTamCount === 0}
                   style={{
-                    background: "linear-gradient(135deg, #C026D3 0%, #701A75 100%)",
-                    borderColor: "#701A75",
-                    color: "#FFF"
+                    background: "linear-gradient(135deg, #000000 0%, #000000 100%)",
+                    borderColor: "#000000",
+                    color: "#FFFFFF"
                   }}
                 >
                   ▶ Start TAM Sizer Queue
@@ -4222,12 +6355,12 @@ Construct the final email now. Maintain the exact formatting of the examples abo
           
           {tamQueueActive && tamQueueTotal > 0 && (
             <div style={{ width: "100%", height: 6, background: PAPER, borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ width: `${((tamQueueTotal - unSizedTamCount) / tamQueueTotal) * 100}%`, height: "100%", background: "#C026D3", transition: "width 0.3s" }} />
+              <div style={{ width: `${((tamQueueTotal - unSizedTamCount) / tamQueueTotal) * 100}%`, height: "100%", background: "#000000", transition: "width 0.3s" }} />
             </div>
           )}
 
           {tamQueueLog && (
-            <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: tamQueueLog.includes("[Error]") ? RUST : "#C026D3" }}>
+            <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: tamQueueLog.includes("[Error]") ? RUST : "#000000" }}>
               {tamQueueLog}
             </div>
           )}
@@ -4250,13 +6383,13 @@ Construct the final email now. Maintain the exact formatting of the examples abo
             onClick={() => setStatusFilter(s === "All" ? "all" : s)} 
             style={{ 
               borderColor: statusFilter === (s === "All" ? "all" : s) 
-                ? (s === "Deal Team Meeting" ? "#C026D3" : s === "Starred" ? "#D97706" : s === "Pre-emption" ? "#10B981" : INK) 
+                ? (s === "Deal Team Meeting" ? "#000000" : s === "Starred" ? "#000000" : s === "Pre-emption" ? "#000000" : INK) 
                 : LINE,
               color: statusFilter === (s === "All" ? "all" : s) 
-                ? (s === "Deal Team Meeting" ? "#C026D3" : s === "Starred" ? "#D97706" : s === "Pre-emption" ? "#10B981" : INK) 
+                ? (s === "Deal Team Meeting" ? "#000000" : s === "Starred" ? "#000000" : s === "Pre-emption" ? "#000000" : INK) 
                 : FADE,
               background: statusFilter === (s === "All" ? "all" : s) 
-                ? (s === "Deal Team Meeting" ? "rgba(192, 38, 211, 0.05)" : s === "Starred" ? "rgba(217, 119, 6, 0.05)" : s === "Pre-emption" ? "rgba(16, 185, 129, 0.05)" : "transparent") 
+                ? (s === "Deal Team Meeting" ? "rgba(0, 0, 0, 0.05)" : s === "Starred" ? "rgba(0, 0, 0, 0.05)" : s === "Pre-emption" ? "rgba(0, 0, 0, 0.05)" : "transparent") 
                 : "transparent",
               fontWeight: statusFilter === (s === "All" ? "all" : s) ? 600 : 400
             }}
@@ -4271,7 +6404,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
             onClick={() => setTypeFilter("all")} 
             style={{ 
               background: typeFilter === "all" ? INK : "transparent", 
-              color: typeFilter === "all" ? "#fff" : FADE,
+              color: typeFilter === "all" ? "#FFFFFF" : FADE,
               borderColor: "transparent",
               padding: "4px 9px",
               fontWeight: typeFilter === "all" ? 600 : 400
@@ -4284,7 +6417,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
             onClick={() => setTypeFilter("Company")} 
             style={{ 
               background: typeFilter === "Company" ? BLUE : "transparent", 
-              color: typeFilter === "Company" ? "#fff" : FADE,
+              color: typeFilter === "Company" ? "#FFFFFF" : FADE,
               borderColor: "transparent",
               padding: "4px 9px",
               fontWeight: typeFilter === "Company" ? 600 : 400
@@ -4296,8 +6429,8 @@ Construct the final email now. Maintain the exact formatting of the examples abo
             small 
             onClick={() => setTypeFilter("Individual")} 
             style={{ 
-              background: typeFilter === "Individual" ? "#8B5CF6" : "transparent", 
-              color: typeFilter === "Individual" ? "#fff" : FADE,
+              background: typeFilter === "Individual" ? "#DDDDDD" : "transparent", 
+              color: typeFilter === "Individual" ? "#FFFFFF" : FADE,
               borderColor: "transparent",
               padding: "4px 9px",
               fontWeight: typeFilter === "Individual" ? 600 : 400
@@ -4310,7 +6443,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
         <select 
           value={geoFilter} 
           onChange={(e) => setGeoFilter(e.target.value)} 
-          style={{ padding: 8, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}
+          style={{ padding: 8, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}
         >
           <option value="all">All Regions</option>
           <option value="EU">EU</option>
@@ -4323,20 +6456,20 @@ Construct the final email now. Maintain the exact formatting of the examples abo
         <select 
           value={sortBy} 
           onChange={(e) => setSortBy(e.target.value)} 
-          style={{ padding: 8, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2, marginLeft: "auto" }}
+          style={{ padding: 8, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2, marginLeft: "auto" }}
         >
           <option value="newest">Sort: Newest</option>
           <option value="score_desc">Sort: Score (High → Low)</option>
           <option value="score_asc">Sort: Score (Low → High)</option>
         </select>
 
-        <div style={{ display: "flex", gap: 2, background: "#E5E7EB", border: `1px solid ${LINE}`, borderRadius: 2, padding: 2 }}>
+        <div style={{ display: "flex", gap: 2, background: "#EEEEEE", border: `1px solid ${LINE}`, borderRadius: 2, padding: 2 }}>
           <Btn 
             small 
             onClick={() => setViewMode("grid")}
             style={{ 
               background: viewMode === "grid" ? BLUE : "transparent", 
-              color: viewMode === "grid" ? "#fff" : FADE,
+              color: viewMode === "grid" ? "#FFFFFF" : FADE,
               borderColor: "transparent",
               padding: "4px 8px",
               fontWeight: viewMode === "grid" ? 600 : 400
@@ -4349,7 +6482,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
             onClick={() => setViewMode("table")}
             style={{ 
               background: viewMode === "table" ? BLUE : "transparent", 
-              color: viewMode === "table" ? "#fff" : FADE,
+              color: viewMode === "table" ? "#FFFFFF" : FADE,
               borderColor: "transparent",
               padding: "4px 8px",
               fontWeight: viewMode === "table" ? 600 : 400
@@ -4369,7 +6502,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        background: selectedCompanyIds.length > 0 ? "rgba(31, 45, 203, 0.03)" : CARD,
+        background: selectedCompanyIds.length > 0 ? "rgba(0, 0, 0, 0.03)" : CARD,
         border: `1px solid ${selectedCompanyIds.length > 0 ? BLUE : LINE}`,
         padding: "10px 16px",
         marginBottom: 16,
@@ -4392,9 +6525,33 @@ Construct the final email now. Maintain the exact formatting of the examples abo
           </span>
         </div>
 
+      {affinityBulkLog && (
+        <div style={{
+          fontFamily: fontStack.mono,
+          fontSize: 11.5,
+          color: "#000000",
+          background: "rgba(0, 0, 0, 0.06)",
+          border: "1px solid rgba(0, 0, 0, 0.2)",
+          padding: "8px 14px",
+          marginBottom: 16,
+          borderRadius: 4,
+          fontWeight: 600
+        }}>
+          {affinityBulkLog}
+        </div>
+      )}
+
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {selectedCompanyIds.length > 0 && (
             <>
+              <Btn 
+                small 
+                onClick={runBulkAffinityPush}
+                disabled={pushingBulkAffinity}
+                style={{ borderColor: "#000000", color: "#000000", fontWeight: 600, background: "rgba(0, 0, 0, 0.05)" }}
+              >
+                {pushingBulkAffinity ? "⏳ Syncing..." : "🌐 Push Selected to Affinity"}
+              </Btn>
               <Btn 
                 small 
                 onClick={runDiligenceOnSelection}
@@ -4407,7 +6564,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                 small 
                 onClick={runTamOnSelection}
                 disabled={!hasApiKey || tamQueueActive}
-                style={{ borderColor: "#C026D3", color: "#C026D3", fontWeight: 600 }}
+                style={{ borderColor: "#000000", color: "#000000", fontWeight: 600 }}
               >
                 🔮 Run Market Sizing
               </Btn>
@@ -4417,7 +6574,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                   const selectedList = companies.filter(c => selectedCompanyIds.includes(c.id));
                   exportStageExcel(`Selected Companies Export`, selectedList);
                 }}
-                style={{ borderColor: "#10B981", color: "#10B981", fontWeight: 600 }}
+                style={{ borderColor: "#000000", color: "#000000", fontWeight: 600 }}
               >
                 📥 Export Selected
               </Btn>
@@ -4447,12 +6604,12 @@ Construct the final email now. Maintain the exact formatting of the examples abo
       {statusFilter === "Deal Team Meeting" && (
         <div style={{
           background: CARD,
-          border: `2px solid #C026D3`,
+          border: `2px solid #000000`,
           padding: 20,
           marginBottom: 20,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: `1px solid ${INK}`, paddingBottom: 10, marginBottom: 15, flexWrap: "wrap", gap: 10 }}>
-            <h3 style={{ margin: 0, fontFamily: fontStack.display, fontStyle: "italic", fontSize: 20, fontWeight: 700, color: "#C026D3" }}>
+            <h3 style={{ margin: 0, fontFamily: fontStack.display, fontSize: 20, fontWeight: 700, color: "#000000" }}>
               ⚡ Deal Team Meeting Pipeline Email Builder
             </h3>
             <div style={{ fontSize: 11, fontFamily: fontStack.mono, color: FADE }}>
@@ -4469,7 +6626,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                   No co-investments currently flagged as Deal Team Meeting.
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 350, overflowY: "auto", border: `1px solid ${LINE}`, padding: "6px 10px", background: "#fbfbf9", marginBottom: 15 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 350, overflowY: "auto", border: `1px solid ${LINE}`, padding: "6px 10px", background: "#FAFAFA", marginBottom: 15 }}>
                   {companies.filter(c => !!c.dtm).map(c => {
                     const isSelected = !!dtmSelectedIds[c.id];
                     return (
@@ -4480,7 +6637,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                           onChange={() => {
                             setDtmSelectedIds(prev => ({ ...prev, [c.id]: !prev[c.id] }));
                           }}
-                          style={{ marginTop: 4, accentColor: "#C026D3" }}
+                          style={{ marginTop: 4, accentColor: "#000000" }}
                         />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -4489,7 +6646,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                           </div>
                           
                           {isSelected && (
-                            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8, background: "#fff", padding: 10, border: `1px solid ${LINE}` }}>
+                            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8, background: "#FFFFFF", padding: 10, border: `1px solid ${LINE}` }}>
                               {/* Row 1: Priority & Order */}
                               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                                 <div style={{ flex: 1, minWidth: 140, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -4504,7 +6661,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                       padding: "4px 6px",
                                       border: `1px solid ${LINE}`,
                                       borderRadius: 2,
-                                      background: "#fff",
+                                      background: "#FFFFFF",
                                       color: INK
                                     }}
                                   />
@@ -4521,7 +6678,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                       padding: "4px 6px",
                                       border: `1px solid ${LINE}`,
                                       borderRadius: 2,
-                                      background: "#fff",
+                                      background: "#FFFFFF",
                                       color: INK,
                                       textAlign: "center"
                                     }}
@@ -4542,7 +6699,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                       padding: "4px 6px",
                                       border: `1px solid ${LINE}`,
                                       borderRadius: 2,
-                                      background: "#fff",
+                                      background: "#FFFFFF",
                                       color: INK
                                     }}
                                   />
@@ -4559,7 +6716,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                       padding: "4px 6px",
                                       border: `1px solid ${LINE}`,
                                       borderRadius: 2,
-                                      background: "#fff",
+                                      background: "#FFFFFF",
                                       color: INK
                                     }}
                                   />
@@ -4576,7 +6733,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                       padding: "4px 6px",
                                       border: `1px solid ${LINE}`,
                                       borderRadius: 2,
-                                      background: "#fff",
+                                      background: "#FFFFFF",
                                       color: INK
                                     }}
                                   />
@@ -4593,7 +6750,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                       padding: "4px 6px",
                                       border: `1px solid ${LINE}`,
                                       borderRadius: 2,
-                                      background: "#fff",
+                                      background: "#FFFFFF",
                                       color: INK
                                     }}
                                   />
@@ -4601,7 +6758,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                               </div>
 
                               {/* Reactive calculated equity and post-money */}
-                              <div style={{ background: "#fbfbf9", padding: "6px 8px", border: `1px solid ${LINE}`, fontSize: 11, fontFamily: fontStack.mono }}>
+                              <div style={{ background: "#FAFAFA", padding: "6px 8px", border: `1px solid ${LINE}`, fontSize: 11, fontFamily: fontStack.mono }}>
                                 <span>Post-Money Valuation: </span>
                                 <strong style={{ color: INK }}>
                                   {(() => {
@@ -4612,7 +6769,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                   })()}
                                 </strong>
                                 <span style={{ marginLeft: 15 }}>Fully Diluted Equity for BNVT: </span>
-                                <strong style={{ color: "#C026D3" }}>
+                                <strong style={{ color: "#000000" }}>
                                   {(() => {
                                     const pre = parseFloat(dtmPreValuations[c.id] || 0);
                                     const rSize = parseFloat(dtmRoundSizes[c.id] || 0);
@@ -4638,7 +6795,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                     padding: "4px 6px",
                                     border: `1px solid ${LINE}`,
                                     borderRadius: 2,
-                                    background: "#fff",
+                                    background: "#FFFFFF",
                                     color: INK,
                                     resize: "none"
                                   }}
@@ -4659,7 +6816,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                     padding: "4px 6px",
                                     border: `1px solid ${LINE}`,
                                     borderRadius: 2,
-                                    background: "#fff",
+                                    background: "#FFFFFF",
                                     color: INK,
                                     resize: "vertical"
                                   }}
@@ -4678,7 +6835,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                 primary 
                 onClick={generateDtmEmail} 
                 disabled={generatingDtmEmail || companies.filter(c => !!c.dtm && dtmSelectedIds[c.id]).length === 0}
-                style={{ width: "100%", height: 38, background: "#C026D3", borderColor: "#C026D3" }}
+                style={{ width: "100%", height: 38, background: "#000000", borderColor: "#000000" }}
               >
                 {generatingDtmEmail ? "⚡ Compiling Pipeline Update..." : "⚡ Generate Pipeline Email"}
               </Btn>
@@ -4732,7 +6889,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                       fontSize: 12,
                       padding: 12,
                       border: `1px solid ${LINE}`,
-                      background: "#fff",
+                      background: "#FFFFFF",
                       color: INK,
                       resize: "none",
                       outline: "none",
@@ -4742,7 +6899,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                 ) : (
                   <div style={{
                     border: `1px dashed ${LINE}`,
-                    background: "#fbfbf9",
+                    background: "#FAFAFA",
                     width: "100%",
                     height: "100%",
                     minHeight: 250,
@@ -4774,7 +6931,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
           marginBottom: 20,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: `1px solid ${INK}`, paddingBottom: 10, marginBottom: 15, flexWrap: "wrap", gap: 10 }}>
-            <h3 style={{ margin: 0, fontFamily: fontStack.display, fontStyle: "italic", fontSize: 20, fontWeight: 700 }}>
+            <h3 style={{ margin: 0, fontFamily: fontStack.display, fontSize: 20, fontWeight: 700 }}>
               Rejection Email Console
             </h3>
             <div style={{ display: "flex", gap: 8 }}>
@@ -4835,7 +6992,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                         fontFamily: fontStack.ui,
                         fontSize: 13,
                         border: `1px solid ${LINE}`,
-                        background: "#fff",
+                        background: "#FFFFFF",
                         color: INK,
                         borderRadius: 2,
                         outline: "none",
@@ -4928,7 +7085,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                 </div>
 
                 {/* Checklist */}
-                <div style={{ maxHeight: 220, overflowY: "auto", border: `1px solid ${LINE}`, padding: "4px 8px", background: "#fbfbf9", marginBottom: 15 }}>
+                <div style={{ maxHeight: 220, overflowY: "auto", border: `1px solid ${LINE}`, padding: "4px 8px", background: "#FAFAFA", marginBottom: 15 }}>
                   {consoleCompanies.length === 0 ? (
                     <div style={{ textAlign: "center", color: FADE, padding: 15, fontSize: 12.5, fontStyle: "italic" }}>
                       No companies in this view.
@@ -4961,7 +7118,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                               marginTop: 4,
                               border: `1px solid ${LINE}`,
                               borderRadius: 2,
-                              background: "#fff",
+                              background: "#FFFFFF",
                               color: INK,
                               outline: "none",
                               boxSizing: "border-box"
@@ -5035,7 +7192,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
 
       {list.length === 0 && (
         <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: 40, textAlign: "center" }}>
-          <div style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 20, marginBottom: 8 }}>No companies in this category</div>
+          <div style={{ fontFamily: fontStack.display, fontSize: 20, marginBottom: 8 }}>No companies in this category</div>
           <div style={{ fontSize: 13, color: FADE }}>No companies matched status "{statusFilter}". You can import more or run the AI diligence queue.</div>
         </div>
       )}
@@ -5053,14 +7210,14 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                 border: selectedCompanyIds.includes(c.id) 
                   ? `2.5px solid ${BLUE}` 
                   : c.entityType === "Individual" 
-                    ? `1px solid rgba(139, 92, 246, 0.4)` 
+                    ? `1px solid rgba(221, 221, 221, 0.4)` 
                     : `1px solid ${LINE}`, 
-                borderLeft: c.entityType === "Individual" ? `4px solid #8B5CF6` : `1px solid ${selectedCompanyIds.includes(c.id) ? BLUE : LINE}`,
+                borderLeft: c.entityType === "Individual" ? `4px solid #DDDDDD` : `1px solid ${selectedCompanyIds.includes(c.id) ? BLUE : LINE}`,
                 padding: 16, 
                 cursor: "pointer", 
                 display: "flex", 
                 gap: 14,
-                boxShadow: selectedCompanyIds.includes(c.id) ? "0 4px 12px rgba(31, 45, 203, 0.08)" : "none",
+                boxShadow: selectedCompanyIds.includes(c.id) ? "0 4px 12px rgba(0, 0, 0, 0.08)" : "none",
                 position: "relative"
               }}
             >
@@ -5107,9 +7264,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                             fontFamily: fontStack.mono,
                             padding: "1px 6px",
                             borderRadius: 3,
-                            background: "rgba(139, 92, 246, 0.12)",
-                            color: "#8B5CF6",
-                            border: "1px solid rgba(139, 92, 246, 0.3)",
+                            background: "rgba(221, 221, 221, 0.12)",
+                            color: "#DDDDDD",
+                            border: "1px solid rgba(221, 221, 221, 0.3)",
                             fontWeight: 700,
                             lineHeight: 1,
                             cursor: "pointer",
@@ -5131,9 +7288,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                             fontFamily: fontStack.mono,
                             padding: "1px 6px",
                             borderRadius: 3,
-                            background: "rgba(31, 45, 203, 0.08)",
+                            background: "rgba(0, 0, 0, 0.08)",
                             color: BLUE,
-                            border: "1px solid rgba(31, 45, 203, 0.2)",
+                            border: "1px solid rgba(0, 0, 0, 0.2)",
                             fontWeight: 600,
                             lineHeight: 1,
                             cursor: "pointer",
@@ -5150,9 +7307,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                           fontFamily: fontStack.mono,
                           padding: "1px 4px",
                           borderRadius: 2,
-                          background: "rgba(16, 185, 129, 0.1)",
-                          color: "#10B981",
-                          border: "1px solid rgba(16, 185, 129, 0.2)",
+                          background: "rgba(0, 0, 0, 0.1)",
+                          color: "#000000",
+                          border: "1px solid rgba(0, 0, 0, 0.2)",
                           fontWeight: 700,
                           lineHeight: 1
                         }}>
@@ -5167,9 +7324,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                           fontFamily: fontStack.mono, 
                           padding: "1px 4px", 
                           borderRadius: 2, 
-                          background: "rgba(31, 45, 203, 0.06)",
+                          background: "rgba(0, 0, 0, 0.06)",
                           color: BLUE,
-                          border: `1px solid rgba(31, 45, 203, 0.12)`,
+                          border: `1px solid rgba(0, 0, 0, 0.12)`,
                           fontWeight: 500
                         }}>
                           {c.geo}
@@ -5182,9 +7339,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                           fontFamily: fontStack.mono, 
                           padding: "1px 4px", 
                           borderRadius: 2, 
-                          background: "rgba(16, 185, 129, 0.06)",
-                          color: "rgb(5, 150, 105)",
-                          border: `1px solid rgba(16, 185, 129, 0.12)`,
+                          background: "rgba(0, 0, 0, 0.06)",
+                          color: "rgb(0, 0, 0)",
+                          border: `1px solid rgba(0, 0, 0, 0.12)`,
                           fontWeight: 600
                         }}>
                           TAM: {formatCompactUSD(getTamValue(c))}
@@ -5225,7 +7382,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                     return (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
                         {dynamicTags.map(tag => {
-                          const style = TAG_STYLES[tag] || { bg: "rgba(107, 114, 128, 0.08)", text: "#6b7280", border: "rgba(107, 114, 128, 0.2)" };
+                          const style = TAG_STYLES[tag] || { bg: "rgba(119, 119, 119, 0.08)", text: "#777777", border: "rgba(119, 119, 119, 0.2)" };
                           return (
                             <span key={tag} style={{
                               fontSize: 9,
@@ -5292,9 +7449,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                       fontSize: 9.5,
                       padding: "2px 7px",
                       borderRadius: 999,
-                      border: `1px solid ${c.dtm ? "#C026D3" : LINE}`,
-                      background: c.dtm ? "rgba(192, 38, 211, 0.08)" : "transparent",
-                      color: c.dtm ? "#C026D3" : FADE,
+                      border: `1px solid ${c.dtm ? "#000000" : LINE}`,
+                      background: c.dtm ? "rgba(0, 0, 0, 0.08)" : "transparent",
+                      color: c.dtm ? "#000000" : FADE,
                       fontWeight: 600,
                       cursor: "pointer",
                       marginRight: 5,
@@ -5317,9 +7474,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                       fontSize: 9.5,
                       padding: "2px 7px",
                       borderRadius: 999,
-                      border: `1px solid ${c.starred ? "#D97706" : LINE}`,
-                      background: c.starred ? "rgba(217, 119, 6, 0.08)" : "transparent",
-                      color: c.starred ? "#D97706" : FADE,
+                      border: `1px solid ${c.starred ? "#000000" : LINE}`,
+                      background: c.starred ? "rgba(0, 0, 0, 0.08)" : "transparent",
+                      color: c.starred ? "#000000" : FADE,
                       fontWeight: 600,
                       cursor: "pointer",
                       marginRight: 5,
@@ -5342,9 +7499,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                       fontSize: 9.5,
                       padding: "2px 7px",
                       borderRadius: 999,
-                      border: `1px solid ${c.preemption ? "#10B981" : LINE}`,
-                      background: c.preemption ? "rgba(16, 185, 129, 0.08)" : "transparent",
-                      color: c.preemption ? "#10B981" : FADE,
+                      border: `1px solid ${c.preemption ? "#000000" : LINE}`,
+                      background: c.preemption ? "rgba(0, 0, 0, 0.08)" : "transparent",
+                      color: c.preemption ? "#000000" : FADE,
                       fontWeight: 600,
                       cursor: "pointer",
                       marginRight: 5,
@@ -5364,9 +7521,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                       fontFamily: fontStack.mono, 
                       padding: "1px 5px", 
                       borderRadius: 3, 
-                      background: c.priority === "High" ? "rgba(179, 64, 42, 0.08)" : "rgba(107, 110, 118, 0.08)",
+                      background: c.priority === "High" ? "rgba(192, 0, 0, 0.08)" : "rgba(119, 119, 119, 0.08)",
                       color: c.priority === "High" ? RUST : FADE,
-                      border: `1px solid ${c.priority === "High" ? "rgba(179, 64, 42, 0.15)" : "rgba(107, 110, 118, 0.15)"}`,
+                      border: `1px solid ${c.priority === "High" ? "rgba(192, 0, 0, 0.15)" : "rgba(119, 119, 119, 0.15)"}`,
                       fontWeight: 500,
                       marginRight: 2
                     }}>
@@ -5392,9 +7549,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                           fontFamily: fontStack.mono,
                           fontSize: 9,
                           padding: "2px 6px",
-                          background: researchingTamIds[c.id] ? "rgba(192, 38, 211, 0.08)" : (getTamValue(c) > 0 ? "transparent" : "#10B981"),
-                          color: researchingTamIds[c.id] ? "#C026D3" : (getTamValue(c) > 0 ? "#10B981" : "#fff"),
-                          border: getTamValue(c) > 0 ? "1px solid #10B981" : "none",
+                          background: researchingTamIds[c.id] ? "rgba(0, 0, 0, 0.08)" : (getTamValue(c) > 0 ? "transparent" : "#000000"),
+                          color: researchingTamIds[c.id] ? "#000000" : (getTamValue(c) > 0 ? "#000000" : "#FFFFFF"),
+                          border: getTamValue(c) > 0 ? "1px solid #000000" : "none",
                           borderRadius: 2,
                           cursor: "pointer",
                           opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1,
@@ -5418,7 +7575,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                             fontSize: 9,
                             padding: "2px 6px",
                             background: (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? RUST : BLUE,
-                            color: "#fff",
+                            color: "#FFFFFF",
                             border: "none",
                             borderRadius: 2,
                             cursor: "pointer",
@@ -5454,6 +7611,25 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                       )}
                     </>
                   )}
+                  <button
+                    onClick={(e) => handlePushSingleAffinity(c, e)}
+                    disabled={pushingSingleAffinity[c.id]}
+                    style={{
+                      marginLeft: 6,
+                      fontFamily: fontStack.mono,
+                      fontSize: 9,
+                      padding: "2px 6px",
+                      background: c.affinityUrl ? "rgba(0, 0, 0, 0.08)" : "rgba(0, 0, 0, 0.08)",
+                      color: c.affinityUrl ? "#000000" : "#000000",
+                      border: `1px solid ${c.affinityUrl ? "rgba(0, 0, 0, 0.3)" : "rgba(0, 0, 0, 0.3)"}`,
+                      borderRadius: 2,
+                      cursor: "pointer",
+                      fontWeight: 600
+                    }}
+                    title={c.affinityUrl ? "Synced to Affinity Deals list" : "Push to Affinity Deals list"}
+                  >
+                    {pushingSingleAffinity[c.id] ? "⏳" : c.affinityUrl ? "✓ AFFINITY" : "🌐 PUSH"}
+                  </button>
                 </div>
               </div>
             </div>
@@ -5483,14 +7659,14 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                 <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Market TAM</th>
                 <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Thesis / One-Liner</th>
                 <th style={{ padding: "12px 10px", fontWeight: "bold" }}>Latest Note</th>
-                <th style={{ padding: "12px 10px", width: 130, fontWeight: "bold", textAlign: "center" }}>Actions</th>
+                <th style={{ padding: "12px 10px", width: 180, fontWeight: "bold", textAlign: "center" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {list.map((c) => {
                 const comp = compositeScore(c.scores);
                 const tamVal = getTamValue(c);
-                const latestNote = c.notes && c.notes.length > 0 ? c.notes[0].text : "";
+                const latestNote = Array.isArray(c.notes) && c.notes.length > 0 ? (typeof c.notes[0] === 'string' ? c.notes[0] : c.notes[0]?.text || "") : (typeof c.notes === 'string' ? c.notes : "");
                 
                 return (
                   <tr 
@@ -5502,7 +7678,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                       borderBottom: `1px solid ${LINE}`, 
                       cursor: "pointer",
                       background: selectedCompanyIds.includes(c.id) 
-                        ? "rgba(31, 45, 203, 0.05)" 
+                        ? "rgba(0, 0, 0, 0.05)" 
                         : (hoveredRowId === c.id ? "rgba(0, 0, 0, 0.02)" : "transparent")
                     }}
                   >
@@ -5522,12 +7698,12 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                         onClick={() => updateCompany(c.id, { entityType: c.entityType === "Individual" ? "Company" : "Individual" })}
                         title="Click to toggle Entity Type (Company <-> Individual)"
                         style={{ 
-                          background: c.entityType === "Individual" ? "rgba(139, 92, 246, 0.12)" : "rgba(31, 45, 203, 0.08)", 
-                          color: c.entityType === "Individual" ? "#8B5CF6" : BLUE, 
+                          background: c.entityType === "Individual" ? "rgba(221, 221, 221, 0.12)" : "rgba(0, 0, 0, 0.08)", 
+                          color: c.entityType === "Individual" ? "#DDDDDD" : BLUE, 
                           fontSize: 10, 
                           padding: "2px 6px", 
                           borderRadius: 3,
-                          border: `1px solid ${c.entityType === "Individual" ? "rgba(139, 92, 246, 0.3)" : "rgba(31, 45, 203, 0.2)"}`,
+                          border: `1px solid ${c.entityType === "Individual" ? "rgba(221, 221, 221, 0.3)" : "rgba(0, 0, 0, 0.2)"}`,
                           fontWeight: 700,
                           cursor: "pointer",
                           display: "inline-block",
@@ -5542,8 +7718,8 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                         <span>{c.name}</span>
                         {c.preemption && (
                           <span style={{ 
-                            background: "rgba(16, 185, 129, 0.1)", 
-                            color: "#10B981", 
+                            background: "rgba(0, 0, 0, 0.1)", 
+                            color: "#000000", 
                             fontSize: 9, 
                             padding: "1px 4px", 
                             borderRadius: 2,
@@ -5568,7 +7744,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                       {latestNote || "—"}
                     </td>
                     <td style={{ padding: "10px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                      <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
                         {researchingIds[c.id] ? (
                           <span style={{ fontSize: 9.5, color: BLUE, fontWeight: 600, fontFamily: fontStack.mono }}>Scoring...</span>
                         ) : (
@@ -5580,7 +7756,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                         )}
                         
                         {researchingTamIds[c.id] ? (
-                          <span style={{ fontSize: 9.5, color: "#C026D3", fontWeight: 600, fontFamily: fontStack.mono }}>Sizing...</span>
+                          <span style={{ fontSize: 9.5, color: "#000000", fontWeight: 600, fontFamily: fontStack.mono }}>Sizing...</span>
                         ) : (
                           <Btn 
                             small 
@@ -5589,15 +7765,32 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                             style={{ 
                               padding: "2px 6px", 
                               fontSize: 9, 
-                              background: getTamValue(c) > 0 ? "transparent" : "#10B981", 
-                              color: getTamValue(c) > 0 ? "#10B981" : "#fff", 
-                              borderColor: getTamValue(c) > 0 ? "#10B981" : "transparent",
+                              background: getTamValue(c) > 0 ? "transparent" : "#000000", 
+                              color: getTamValue(c) > 0 ? "#000000" : "#FFFFFF", 
+                              borderColor: getTamValue(c) > 0 ? "#000000" : "transparent",
                               fontWeight: 600
                             }}
                           >
                             📊 Size
                           </Btn>
                         )}
+
+                        <Btn 
+                          small 
+                          onClick={(e) => handlePushSingleAffinity(c, e)}
+                          disabled={pushingSingleAffinity[c.id]}
+                          style={{ 
+                            padding: "2px 6px", 
+                            fontSize: 9, 
+                            background: c.affinityUrl ? "rgba(0, 0, 0, 0.08)" : "rgba(0, 0, 0, 0.08)", 
+                            color: c.affinityUrl ? "#000000" : "#000000", 
+                            borderColor: c.affinityUrl ? "rgba(0, 0, 0, 0.3)" : "rgba(0, 0, 0, 0.3)",
+                            fontWeight: 600
+                          }}
+                          title={c.affinityUrl ? "Synced to Affinity Deals list" : "Push to Affinity Deals list"}
+                        >
+                          {pushingSingleAffinity[c.id] ? "⏳" : c.affinityUrl ? "✓ Affinity" : "🌐 Push"}
+                        </Btn>
                       </div>
                     </td>
                   </tr>
@@ -5620,17 +7813,17 @@ function generateProfileHTML(c) {
   const comp = compositeScore(c.scores);
   const scoreStr = comp != null ? comp.toFixed(1) : "Not scored";
   
-  const statusColorHtml = c.status === "Active opportunity" ? "#1F2DCB" : 
-                          c.status === "To contact" ? "#F97316" : 
-                          c.status === "Contacted" ? "#C07A2E" : 
-                          c.status === "Meeting Scheduled" ? "#10B981" : 
-                          c.status === "Due Diligence" ? "#4F46E5" : 
-                          c.status === "Watchlist" ? "#8B5CF6" : 
-                          c.status === "Invested" ? "#059669" : 
-                          c.status === "Killed" ? "#B3402A" : 
-                          c.status === "To Kill" ? "#DC2626" : "#6B6E76";
+  const statusColorHtml = c.status === "Active opportunity" ? "#000000" : 
+                          c.status === "To contact" ? "#000000" : 
+                          c.status === "Contacted" ? "#000000" : 
+                          c.status === "Meeting Scheduled" ? "#000000" : 
+                          c.status === "Due Diligence" ? "#000000" : 
+                          c.status === "Watchlist" ? "#DDDDDD" : 
+                          c.status === "Invested" ? "#000000" : 
+                          c.status === "Killed" ? "#C00000" : 
+                          c.status === "To Kill" ? "#C00000" : "#777777";
                           
-  const priorityColorHtml = c.priority === "High" ? "#B3402A" : c.priority === "Medium" ? "#C07A2E" : "#6B6E76";
+  const priorityColorHtml = c.priority === "High" ? "#C00000" : c.priority === "Medium" ? "#000000" : "#777777";
   
   let foundersHtml = "";
   if (c.founders && c.founders.length > 0) {
@@ -5638,13 +7831,13 @@ function generateProfileHTML(c) {
       if (!f || !f.name) return "";
       const hasLink = f.linkedin && f.linkedin.startsWith("http");
       return `
-        <span style="display: inline-block; background: ${hasLink ? 'rgba(31, 45, 203, 0.05)' : 'rgba(107, 110, 118, 0.05)'}; border: 1px solid ${hasLink ? 'rgba(31, 45, 203, 0.15)' : 'rgba(107, 110, 118, 0.15)'}; border-radius: 4px; padding: 3px 8px; margin-right: 6px; margin-bottom: 6px; font-size: 13px;">
-          👤 <strong>${f.name}</strong> ${hasLink ? `<a href="${f.linkedin}" target="_blank" style="color: #1F2DCB; text-decoration: none; font-weight: bold; margin-left: 4px;">[LinkedIn]</a>` : ''}
+        <span style="display: inline-block; background: ${hasLink ? 'rgba(0, 0, 0, 0.05)' : 'rgba(119, 119, 119, 0.05)'}; border: 1px solid ${hasLink ? 'rgba(0, 0, 0, 0.15)' : 'rgba(119, 119, 119, 0.15)'}; border-radius: 4px; padding: 3px 8px; margin-right: 6px; margin-bottom: 6px; font-size: 13px;">
+          👤 <strong>${f.name}</strong> ${hasLink ? `<a href="${f.linkedin}" target="_blank" style="color: #000000; text-decoration: none; font-weight: bold; margin-left: 4px;">[LinkedIn]</a>` : ''}
         </span>
       `;
     }).join("");
   } else {
-    foundersHtml = `<span style="color: #6B6E76; font-style: italic; font-size: 13px;">No founders specified</span>`;
+    foundersHtml = `<span style="color: #777777; font-style: italic; font-size: 13px;">No founders specified</span>`;
   }
 
   let scoresHtml = "";
@@ -5652,7 +7845,7 @@ function generateProfileHTML(c) {
     scoresHtml = `
       <table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;">
         <thead>
-          <tr style="border-bottom: 1px solid #E2E2DA; text-align: left; color: #6B6E76;">
+          <tr style="border-bottom: 1px solid #DDDDDD; text-align: left; color: #777777;">
             <th style="padding: 6px 0;">Defensibility Dimension</th>
             <th style="padding: 6px 0; text-align: right; width: 80px;">Score</th>
           </tr>
@@ -5660,39 +7853,39 @@ function generateProfileHTML(c) {
         <tbody>
           <tr>
             <td style="padding: 6px 0; font-weight: 500;">Proprietary Tech</td>
-            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #1F2DCB;">${c.scores.proprietaryTech}/5</td>
+            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #000000;">${c.scores.proprietaryTech}/5</td>
           </tr>
           <tr>
             <td style="padding: 6px 0; font-weight: 500;">Data Moat</td>
-            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #1F2DCB;">${c.scores.dataMoat}/5</td>
+            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #000000;">${c.scores.dataMoat}/5</td>
           </tr>
           <tr>
             <td style="padding: 6px 0; font-weight: 500;">Distribution & Switching Costs</td>
-            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #1F2DCB;">${c.scores.distributionSwitching}/5</td>
+            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #000000;">${c.scores.distributionSwitching}/5</td>
           </tr>
           <tr>
             <td style="padding: 6px 0; font-weight: 500;">Model Agnosticism</td>
-            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #1F2DCB;">${c.scores.modelAgnostic}/5</td>
+            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #000000;">${c.scores.modelAgnostic}/5</td>
           </tr>
           <tr>
             <td style="padding: 6px 0; font-weight: 500;">IP & Time to Replicate</td>
-            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #1F2DCB;">${c.scores.ipTimeToReplicate}/5</td>
+            <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #000000;">${c.scores.ipTimeToReplicate}/5</td>
           </tr>
         </tbody>
       </table>
     `;
   } else {
-    scoresHtml = `<div style="color: #6B6E76; font-style: italic; font-size: 13px;">Not scored yet</div>`;
+    scoresHtml = `<div style="color: #777777; font-style: italic; font-size: 13px;">Not scored yet</div>`;
   }
 
   let syndicateAngelsHtml = "";
   if (c.syndicateAngels && c.syndicateAngels.length > 0) {
     syndicateAngelsHtml = `
-      <div style="margin-top: 18px; border-top: 1px solid #E2E2DA; padding-top: 14px;">
-        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6B6E76; margin-bottom: 8px;">👼 Syndicate Angels Memo</div>
+      <div style="margin-top: 18px; border-top: 1px solid #DDDDDD; padding-top: 14px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #777777; margin-bottom: 8px;">👼 Syndicate Angels Memo</div>
         <div style="display: flex; flex-wrap: wrap; gap: 6px;">
           ${c.syndicateAngels.map(name => `
-            <span style="display: inline-block; background: rgba(31, 45, 203, 0.05); border: 1px solid rgba(31, 45, 203, 0.15); border-radius: 4px; padding: 3px 8px; font-size: 12.5px; color: #15171C;">
+            <span style="display: inline-block; background: rgba(0, 0, 0, 0.05); border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 4px; padding: 3px 8px; font-size: 12.5px; color: #111111;">
               👤 <strong>${name}</strong>
             </span>
           `).join("")}
@@ -5702,76 +7895,89 @@ function generateProfileHTML(c) {
   }
 
   let notesHtml = "";
-  if (c.notes && c.notes.length > 0) {
+  if (Array.isArray(c.notes) && c.notes.length > 0) {
     notesHtml = `
-      <div style="margin-top: 18px; border-top: 1px solid #E2E2DA; padding-top: 14px;">
-        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6B6E76; margin-bottom: 8px;">Partner Notes & Context</div>
-        ${c.notes.map(n => `
-          <div style="border-left: 2px solid #1F2DCB; padding-left: 10px; margin-bottom: 10px;">
-            <div style="font-size: 13px; color: #15171C;">${n.text}</div>
-            <div style="font-size: 10px; color: #6B6E76; font-family: 'IBM Plex Mono', monospace; margin-top: 2px;">${new Date(n.ts).toLocaleDateString()} · via ${n.via}</div>
+      <div style="margin-top: 18px; border-top: 1px solid #DDDDDD; padding-top: 14px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #777777; margin-bottom: 8px;">Partner Notes & Context</div>
+        ${c.notes.map(n => typeof n === 'string' ? `
+          <div style="border-left: 2px solid #000000; padding-left: 10px; margin-bottom: 10px;">
+            <div style="font-size: 13px; color: #111111;">${n}</div>
+          </div>
+        ` : `
+          <div style="border-left: 2px solid #000000; padding-left: 10px; margin-bottom: 10px;">
+            <div style="font-size: 13px; color: #111111;">${n.text || ""}</div>
+            <div style="font-size: 10px; color: #777777; font-family: 'IBM Plex Mono', monospace; margin-top: 2px;">${n.ts ? new Date(n.ts).toLocaleDateString() : ""} · via ${n.via || "Manual"}</div>
           </div>
         `).join("")}
+      </div>
+    `;
+  } else if (typeof c.notes === 'string' && c.notes.trim()) {
+    notesHtml = `
+      <div style="margin-top: 18px; border-top: 1px solid #DDDDDD; padding-top: 14px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #777777; margin-bottom: 8px;">Partner Notes & Context</div>
+        <div style="border-left: 2px solid #000000; padding-left: 10px; margin-bottom: 10px;">
+          <div style="font-size: 13px; color: #111111;">${c.notes}</div>
+        </div>
       </div>
     `;
   }
 
   return `
-<div style="background-color: #FFFFFF; border: 1px solid #E2E2DA; border-radius: 8px; padding: 24px; max-width: 600px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #15171C; line-height: 1.55;">
-  <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #E2E2DA; padding-bottom: 12px; margin-bottom: 14px;">
+<div style="background-color: #FFFFFF; border: 1px solid #DDDDDD; border-radius: 8px; padding: 24px; max-width: 600px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111111; line-height: 1.55;">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #DDDDDD; padding-bottom: 12px; margin-bottom: 14px;">
     <div>
-      <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #15171C;">
+      <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #111111;">
         ${c.name}
       </h2>
-      ${c.url ? `<a href="${c.url}" target="_blank" style="color: #1F2DCB; text-decoration: none; font-size: 13px; font-family: monospace; display: block; margin-top: 4px;">↗ ${c.url.replace(/^https?:\/\/(www\.)?/, '')}</a>` : ''}
+      ${c.url ? `<a href="${c.url}" target="_blank" style="color: #000000; text-decoration: none; font-size: 13px; font-family: monospace; display: block; margin-top: 4px;">↗ ${c.url.replace(/^https?:\/\/(www\.)?/, '')}</a>` : ''}
     </div>
     <div style="text-align: right;">
-      <div style="font-size: 18px; font-weight: bold; color: #1F2DCB;">Score: ${scoreStr}</div>
-      <div style="font-size: 10px; color: #6B6E76; text-transform: uppercase; letter-spacing: 0.05em; font-family: monospace; margin-top: 2px;">Composite Defensibility</div>
+      <div style="font-size: 18px; font-weight: bold; color: #000000;">Score: ${scoreStr}</div>
+      <div style="font-size: 10px; color: #777777; text-transform: uppercase; letter-spacing: 0.05em; font-family: monospace; margin-top: 2px;">Composite Defensibility</div>
     </div>
   </div>
 
   <div style="margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 6px;">
     <span style="display: inline-block; background-color: ${statusColorHtml}12; color: ${statusColorHtml}; border: 1px solid ${statusColorHtml}25; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; font-family: monospace;">${c.status}</span>
-    ${c.dtm ? `<span style="display: inline-block; background-color: rgba(192, 38, 211, 0.08); color: #C026D3; border: 1px solid rgba(192, 38, 211, 0.2); border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; font-family: monospace;">⚡ Deal Team Meeting</span>` : ''}
+    ${c.dtm ? `<span style="display: inline-block; background-color: rgba(0, 0, 0, 0.08); color: #000000; border: 1px solid rgba(0, 0, 0, 0.2); border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; font-family: monospace;">⚡ Deal Team Meeting</span>` : ''}
     <span style="display: inline-block; background-color: ${priorityColorHtml}12; color: ${priorityColorHtml}; border: 1px solid ${priorityColorHtml}25; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; font-family: monospace;">${c.priority} Priority</span>
-    ${c.geo ? `<span style="display: inline-block; background-color: rgba(31, 45, 203, 0.06); color: #1F2DCB; border: 1px solid rgba(31, 45, 203, 0.15); border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; font-family: monospace;">${c.geo}</span>` : ''}
-    <span style="display: inline-block; background-color: #F4F4F0; color: #15171C; border: 1px solid #E2E2DA; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; font-family: monospace;">${c.stage}</span>
-    ${c.sector ? `<span style="display: inline-block; background-color: #F4F4F0; color: #15171C; border: 1px solid #E2E2DA; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; font-family: monospace;">${c.sector}</span>` : ''}
+    ${c.geo ? `<span style="display: inline-block; background-color: rgba(0, 0, 0, 0.06); color: #000000; border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; font-family: monospace;">${c.geo}</span>` : ''}
+    <span style="display: inline-block; background-color: #F5F5F5; color: #111111; border: 1px solid #DDDDDD; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; font-family: monospace;">${c.stage}</span>
+    ${c.sector ? `<span style="display: inline-block; background-color: #F5F5F5; color: #111111; border: 1px solid #DDDDDD; border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; font-family: monospace;">${c.sector}</span>` : ''}
   </div>
 
-  ${c.oneLiner ? `<p style="margin: 0 0 16px; font-size: 14.5px; font-style: italic; color: #6B6E76; border-left: 3px solid #E2E2DA; padding-left: 12px; line-height: 1.5;">"${c.oneLiner}"</p>` : ''}
+  ${c.oneLiner ? `<p style="margin: 0 0 16px; font-size: 14.5px; font-style: italic; color: #777777; border-left: 3px solid #DDDDDD; padding-left: 12px; line-height: 1.5;">"${c.oneLiner}"</p>` : ''}
 
   <div style="margin-bottom: 18px;">
     ${c.overview?.product ? `
       <div style="margin-bottom: 12px;">
-        <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6B6E76; margin-bottom: 3px;">Product</div>
-        <div style="font-size: 13.5px; color: #15171C;">${c.overview.product}</div>
+        <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #777777; margin-bottom: 3px;">Product</div>
+        <div style="font-size: 13.5px; color: #111111;">${c.overview.product}</div>
       </div>
     ` : ''}
     ${c.overview?.market ? `
       <div style="margin-bottom: 12px;">
-        <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6B6E76; margin-bottom: 3px;">Market</div>
-        <div style="font-size: 13.5px; color: #15171C;">${c.overview.market}</div>
+        <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #777777; margin-bottom: 3px;">Market</div>
+        <div style="font-size: 13.5px; color: #111111;">${c.overview.market}</div>
       </div>
     ` : ''}
     ${c.overview?.traction ? `
       <div style="margin-bottom: 12px;">
-        <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6B6E76; margin-bottom: 3px;">Traction</div>
-        <div style="font-size: 13.5px; color: #15171C;">${c.overview.traction}</div>
+        <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #777777; margin-bottom: 3px;">Traction</div>
+        <div style="font-size: 13.5px; color: #111111;">${c.overview.traction}</div>
       </div>
     ` : ''}
   </div>
 
-  <div style="border-top: 1px solid #E2E2DA; padding-top: 14px; margin-bottom: 18px;">
-    <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6B6E76; margin-bottom: 8px;">Team & Founders</div>
+  <div style="border-top: 1px solid #DDDDDD; padding-top: 14px; margin-bottom: 18px;">
+    <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #777777; margin-bottom: 8px;">Team & Founders</div>
     <div style="display: flex; flex-wrap: wrap; gap: 6px;">
       ${foundersHtml}
     </div>
   </div>
 
-  <div style="border-top: 1px solid #E2E2DA; padding-top: 14px;">
-    <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6B6E76; margin-bottom: 6px;">Defensibility Evaluation</div>
+  <div style="border-top: 1px solid #DDDDDD; padding-top: 14px;">
+    <div style="font-family: monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #777777; margin-bottom: 6px;">Defensibility Evaluation</div>
     ${scoresHtml}
   </div>
 
@@ -5779,8 +7985,8 @@ function generateProfileHTML(c) {
 
   ${notesHtml}
 
-  <div style="margin-top: 24px; border-top: 1px solid #E2E2DA; padding-top: 12px; text-align: center;">
-    <span style="font-size: 10px; color: #6B6E76; font-family: monospace; letter-spacing: 0.05em; text-transform: uppercase;">BNVT Capital • Confidential Investment Memo Summary</span>
+  <div style="margin-top: 24px; border-top: 1px solid #DDDDDD; padding-top: 12px; text-align: center;">
+    <span style="font-size: 10px; color: #777777; font-family: monospace; letter-spacing: 0.05em; text-transform: uppercase;">BNVT Capital • Confidential Investment Memo Summary</span>
   </div>
 </div>
   `.trim();
@@ -6124,6 +8330,23 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
     const pinned = c.granolaNotes || [];
     if (pinned.some(n => n.id === note.id)) return;
     update({ granolaNotes: [...pinned, note] });
+
+    const noteTitle = note.calendar_event?.event_title || note.title || "Granola Meeting Note";
+    const dateStr = note.calendar_event?.scheduled_start_time
+      ? new Date(note.calendar_event.scheduled_start_time).toLocaleDateString()
+      : "";
+    const header = `Granola Call Note: ${noteTitle}${dateStr ? ` (${dateStr})` : ""}`;
+    const summary = note.summary_markdown || note.summary_text || note.summary || "";
+    let transcriptStr = "";
+    if (Array.isArray(note.transcript)) {
+      transcriptStr = note.transcript.map(line => `[${line.speaker || 'Speaker'}]: ${line.text}`).join("\n");
+    } else if (typeof note.transcript === "string") {
+      transcriptStr = note.transcript;
+    }
+    const transcript = transcriptStr ? `\n\n--- Transcript Snippet ---\n${transcriptStr.substring(0, 3000)}` : "";
+    const fullContent = `${header}\n\n${summary}${transcript}`;
+
+    pushNoteToAffinity(c, fullContent, `Granola: ${noteTitle}`);
   };
 
   const unpinGranolaNote = (noteId) => {
@@ -6148,10 +8371,10 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
         style={{ 
           border: `1px solid ${LINE}`, 
           borderRadius: 3, 
-          background: "#fff",
+          background: "#FFFFFF",
           overflow: "hidden",
           transition: "all 0.15s ease-in-out",
-          boxShadow: isExpanded ? "0 2px 8px rgba(0,0,0,0.04)" : "none"
+          boxShadow: isExpanded ? "0 2px 8px rgba(0, 0, 0, 0.04)" : "none"
         }}
       >
         {/* Accordion Header Row */}
@@ -6162,7 +8385,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
             justifyContent: "space-between", 
             alignItems: "center", 
             padding: "12px 14px", 
-            background: isExpanded ? PAPER : "#fff",
+            background: isExpanded ? PAPER : "#FFFFFF",
             cursor: "pointer",
             userSelect: "none",
             borderBottom: isExpanded ? `1px solid ${LINE}` : "none",
@@ -6197,7 +8420,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
                 style={{
                   fontSize: 10.5,
                   color: RUST,
-                  background: "#fff",
+                  background: "#FFFFFF",
                   border: `1px solid ${LINE}`,
                   borderRadius: 3,
                   padding: "4px 8px",
@@ -6214,7 +8437,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
                 style={{
                   fontSize: 10.5,
                   color: BLUE,
-                  background: "#fff",
+                  background: "#FFFFFF",
                   border: `1px solid ${LINE}`,
                   borderRadius: 3,
                   padding: "4px 8px",
@@ -6246,7 +8469,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
                 padding: "2px 6px",
                 border: `1px solid ${LINE}`,
                 borderRadius: 3,
-                background: "#fff"
+                background: "#FFFFFF"
               }}
             >
               Link ↗
@@ -6256,7 +8479,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
 
         {/* Accordion Content Row */}
         {isExpanded && (
-          <div style={{ padding: 14, background: "#fff", borderTop: `1px solid ${LINE}` }}>
+          <div style={{ padding: 14, background: "#FFFFFF", borderTop: `1px solid ${LINE}` }}>
             {/* Attendees Section */}
             {note.attendees && note.attendees.length > 0 && (
               <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
@@ -6368,7 +8591,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
                             lineHeight: 1.45, 
                             color: INK,
                             paddingLeft: 10,
-                            borderLeft: `2px solid ${isMic ? "rgba(31, 45, 203, 0.15)" : "rgba(179, 64, 42, 0.15)"}`
+                            borderLeft: `2px solid ${isMic ? "rgba(0, 0, 0, 0.15)" : "rgba(192, 0, 0, 0.15)"}`
                           }}>
                             {line.text}
                           </div>
@@ -6493,6 +8716,48 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
   const [editScores, setEditScores] = useState({});
   const [editRationale, setEditRationale] = useState({});
   const [editExcludeFromTamQueue, setEditExcludeFromTamQueue] = useState(c.excludeFromTamQueue || false);
+
+  const [pushingAffinity, setPushingAffinity] = useState(false);
+  const [affinityResult, setAffinityResult] = useState(null);
+
+  const pushToAffinity = async () => {
+    setPushingAffinity(true);
+    setAffinityResult(null);
+    try {
+      const allGranolaNotes = (granolaNotes && granolaNotes.length > 0) ? granolaNotes : (c.granolaNotes || []);
+      const payloadCompany = {
+        ...c,
+        granolaNotes: allGranolaNotes
+      };
+      const res = await fetch("/api/affinity/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company: payloadCompany })
+      });
+      const data = await res.json();
+      if (data.success) {
+        update({
+          affinityOrgId: data.affinity_org_id,
+          affinityListEntryId: data.list_entry_id,
+          affinityUrl: data.affinity_url,
+          affinityPushedAt: Date.now(),
+          affinityStatus: data.status
+        });
+        const notesInfo = data.granola_notes_pushed ? ` & ${data.granola_notes_pushed} call notes attached` : "";
+        setAffinityResult({
+          success: true,
+          message: `Successfully pushed to Affinity list "Deals" (Status: ${data.status}${notesInfo})!`,
+          url: data.affinity_url
+        });
+      } else {
+        throw new Error(data.error || "Failed to push to Affinity");
+      }
+    } catch (err) {
+      setAffinityResult({ success: false, message: err.message });
+    } finally {
+      setPushingAffinity(false);
+    }
+  };
 
   useEffect(() => {
     setEditEntityType(c.entityType || "Company");
@@ -6728,8 +8993,8 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <style>
           body {
             font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            color: #000;
-            background: #fff;
+            color: #000000;
+            background: #FFFFFF;
             margin: 40px;
             font-size: 14px;
             line-height: 1.6;
@@ -6738,7 +9003,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid #000000;
             padding-bottom: 4px;
             margin-bottom: 20px;
           }
@@ -6753,19 +9018,19 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             justify-content: space-between;
             font-family: 'IBM Plex Mono', monospace;
             font-size: 12px;
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
             padding-bottom: 12px;
             margin-bottom: 20px;
           }
           .meta-link {
-            color: #000;
+            color: #000000;
             text-decoration: underline;
           }
           .section-title {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 13px;
             font-weight: bold;
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid #000000;
             padding-bottom: 2px;
             margin-top: 20px;
             margin-bottom: 8px;
@@ -6773,12 +9038,12 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           }
           .content-p {
             margin: 0 0 16px 0;
-            color: #222;
+            color: #111111;
             white-space: pre-wrap;
           }
           .bullet-p {
             margin: 0 0 16px 0;
-            color: #222;
+            color: #111111;
             white-space: pre-wrap;
           }
           table {
@@ -6789,7 +9054,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             font-size: 12px;
           }
           th {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
             text-align: left;
             padding: 6px 0;
             font-weight: bold;
@@ -6804,10 +9069,10 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             font-weight: bold;
           }
           .border-bottom-thin {
-            border-bottom: 1px solid #ccc;
+            border-bottom: 1px solid #BBBBBB;
           }
           .border-bottom-thick {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
           }
           @media print {
             body { margin: 20px; }
@@ -6818,14 +9083,14 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       <body>
         <div class="header">
           <span style="font-family: 'IBM Plex Mono', monospace; font-weight: bold; font-size: 14px;">bnvt·capital</span>
-          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #666;">CONFIDENTIAL INVESTMENT MEMO</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #555555;">CONFIDENTIAL INVESTMENT MEMO</span>
         </div>
         
         <div class="title">BNVT Capital Investment Notes</div>
         
         <div class="meta-table">
           <div>
-            <span style="color: #666;">Company:</span> <span style="font-weight: bold;">${c.name}</span>
+            <span style="color: #555555;">Company:</span> <span style="font-weight: bold;">${c.name}</span>
           </div>
           <div>
             <span style="font-weight: bold;">HQ:</span>{" "}
@@ -6916,7 +9181,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <style>
           body {
             font-family: 'Georgia', serif;
-            color: #000;
+            color: #000000;
             line-height: 1.6;
             margin: 40px;
           }
@@ -6931,12 +9196,12 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             margin-bottom: 5px;
           }
           .header-bar {
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid #000000;
             padding-bottom: 5px;
             margin-bottom: 15px;
           }
           .meta-table {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
             padding-bottom: 10px;
             margin-bottom: 20px;
             width: 100%;
@@ -6945,7 +9210,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             font-family: 'Courier New', monospace;
             font-size: 11pt;
             font-weight: bold;
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid #000000;
             padding-bottom: 2px;
             margin-top: 20px;
             margin-bottom: 8px;
@@ -6958,7 +9223,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             margin-bottom: 15px;
           }
           table.data-table th {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
             text-align: left;
             padding: 6px 0;
             font-family: 'Courier New', monospace;
@@ -6968,10 +9233,10 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             padding: 8px 0;
           }
           .border-bottom-thin {
-            border-bottom: 1px solid #ccc;
+            border-bottom: 1px solid #BBBBBB;
           }
           .border-bottom-thick {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
           }
         </style>
       </head>
@@ -6980,7 +9245,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           <table style="width: 100%;">
             <tr>
               <td class="mono" style="font-weight: bold; font-size: 12pt;">bnvt·capital</td>
-              <td class="mono" style="text-align: right; font-size: 8pt; color: #666;">CONFIDENTIAL INVESTMENT MEMO</td>
+              <td class="mono" style="text-align: right; font-size: 8pt; color: #555555;">CONFIDENTIAL INVESTMENT MEMO</td>
             </tr>
           </table>
         </div>
@@ -6990,8 +9255,8 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <div class="meta-table">
           <table style="width: 100%;">
             <tr>
-              <td class="mono" style="font-size: 10pt;"><span style="color: #666;">Company:</span> <b>${c.name}</b></td>
-              <td class="mono" style="text-align: right; font-size: 10pt;"><b>HQ:</b> <span style="color: #000; text-decoration: underline;">${hqStr}</span></td>
+              <td class="mono" style="font-size: 10pt;"><span style="color: #555555;">Company:</span> <b>${c.name}</b></td>
+              <td class="mono" style="text-align: right; font-size: 10pt;"><b>HQ:</b> <span style="color: #000000; text-decoration: underline;">${hqStr}</span></td>
             </tr>
           </table>
         </div>
@@ -7102,28 +9367,28 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           </tr>
           <tr><td></td><td></td><td></td><td></td></tr>
           <tr class="header">
-            <td style="border: 1px solid #000; width: 250px;">Sizing Segment</td>
-            <td style="border: 1px solid #000; text-align: right; width: 150px;">Units of Demand (${unitName})</td>
-            <td style="border: 1px solid #000; text-align: right; width: 150px;">Average Price (ACV)</td>
-            <td style="border: 1px solid #000; text-align: right; width: 150px;">Sizing SML Value</td>
+            <td style="border: 1px solid #000000; width: 250px;">Sizing Segment</td>
+            <td style="border: 1px solid #000000; text-align: right; width: 150px;">Units of Demand (${unitName})</td>
+            <td style="border: 1px solid #000000; text-align: right; width: 150px;">Average Price (ACV)</td>
+            <td style="border: 1px solid #000000; text-align: right; width: 150px;">Sizing SML Value</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000;" class="bold">TAM (Total Addressable Market)</td>
-            <td style="border: 1px solid #000; text-align: right;" class="number">${tamUnits}</td>
-            <td style="border: 1px solid #000; text-align: right;" class="currency">${acv}</td>
-            <td style="border: 1px solid #000; text-align: right;" class="currency" x:fmla="=B6*C6">${tamUnits * acv}</td>
+            <td style="border: 1px solid #000000;" class="bold">TAM (Total Addressable Market)</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="number">${tamUnits}</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="currency">${acv}</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="currency" x:fmla="=B6*C6">${tamUnits * acv}</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000;" class="bold">SAM (Serviceable Addressable Market)</td>
-            <td style="border: 1px solid #000; text-align: right;" class="number">${samUnits}</td>
-            <td style="border: 1px solid #000; text-align: right;" class="currency">${acv}</td>
-            <td style="border: 1px solid #000; text-align: right;" class="currency" x:fmla="=B7*C7">${samUnits * acv}</td>
+            <td style="border: 1px solid #000000;" class="bold">SAM (Serviceable Addressable Market)</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="number">${samUnits}</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="currency">${acv}</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="currency" x:fmla="=B7*C7">${samUnits * acv}</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000;" class="bold">SOM (Serviceable Obtainable Market)</td>
-            <td style="border: 1px solid #000; text-align: right;" class="number">${somUnits}</td>
-            <td style="border: 1px solid #000; text-align: right;" class="currency">${acv}</td>
-            <td style="border: 1px solid #000; text-align: right;" class="currency" x:fmla="=B8*C8">${somUnits * acv}</td>
+            <td style="border: 1px solid #000000;" class="bold">SOM (Serviceable Obtainable Market)</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="number">${somUnits}</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="currency">${acv}</td>
+            <td style="border: 1px solid #000000; text-align: right;" class="currency" x:fmla="=B8*C8">${somUnits * acv}</td>
           </tr>
         </table>
       </body>
@@ -7309,15 +9574,15 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     
     let rowsHtml = comps.map(comp => `
       <tr>
-        <td style="border: 1px solid #000;">${comp.name}</td>
-        <td style="border: 1px solid #000;">${comp.segment}</td>
-        <td style="border: 1px solid #000;">${comp.valuation}</td>
-        <td style="border: 1px solid #000;">${comp.traction}</td>
-        <td style="border: 1px solid #000;">${comp.clients}</td>
-        <td style="border: 1px solid #000;">${comp.investors}</td>
-        <td style="border: 1px solid #000;">${comp.gtmStrategy}</td>
-        <td style="border: 1px solid #000;">${comp.differentiation}</td>
-        <td style="border: 1px solid #000;">${comp.techStack}</td>
+        <td style="border: 1px solid #000000;">${comp.name}</td>
+        <td style="border: 1px solid #000000;">${comp.segment}</td>
+        <td style="border: 1px solid #000000;">${comp.valuation}</td>
+        <td style="border: 1px solid #000000;">${comp.traction}</td>
+        <td style="border: 1px solid #000000;">${comp.clients}</td>
+        <td style="border: 1px solid #000000;">${comp.investors}</td>
+        <td style="border: 1px solid #000000;">${comp.gtmStrategy}</td>
+        <td style="border: 1px solid #000000;">${comp.differentiation}</td>
+        <td style="border: 1px solid #000000;">${comp.techStack}</td>
       </tr>
     `).join("");
 
@@ -7353,19 +9618,19 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             <td colspan="9" style="font-style: italic;">Subject Company: ${c.name}</td>
           </tr>
           <tr>
-            <td colspan="9" style="font-size: 10pt; color: #555;">Summary: ${c.competitiveMapping.summary}</td>
+            <td colspan="9" style="font-size: 10pt; color: #555555;">Summary: ${c.competitiveMapping.summary}</td>
           </tr>
           <tr><td></td></tr>
           <tr class="header">
-            <td style="border: 1px solid #000; font-weight: bold; width: 180px;">Competitor Name</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 100px;">Segment</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 140px;">Valuation</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 180px;">Traction</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 180px;">Clients</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 150px;">Investors</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 180px;">GTM Strategy</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 220px;">Main Differentiation</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 220px;">Tech Stack</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 180px;">Competitor Name</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 100px;">Segment</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 140px;">Valuation</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 180px;">Traction</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 180px;">Clients</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 150px;">Investors</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 180px;">GTM Strategy</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 220px;">Main Differentiation</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 220px;">Tech Stack</td>
           </tr>
           ${rowsHtml}
         </table>
@@ -7389,7 +9654,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     const comps = c.competitiveMapping.competitors || [];
     
     let matrixRows = comps.map(comp => `
-      <tr style="border-bottom: 1px solid #ccc;">
+      <tr style="border-bottom: 1px solid #BBBBBB;">
         <td><b>${comp.name}</b></td>
         <td class="mono">${comp.segment}</td>
         <td>${comp.valuation}</td>
@@ -7398,7 +9663,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     `).join("");
 
     let detailedProfiles = comps.map(comp => `
-      <div style="margin-bottom: 20px; border-bottom: 1px dashed #ccc; padding-bottom: 15px;">
+      <div style="margin-bottom: 20px; border-bottom: 1px dashed #BBBBBB; padding-bottom: 15px;">
         <h3 class="mono" style="font-size: 12pt; text-transform: uppercase; margin-bottom: 5px;">${comp.name} (${comp.segment})</h3>
         <table style="width: 100%; border: none;">
           <tr>
@@ -7418,8 +9683,8 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             <td style="font-size: 10pt;">${comp.differentiation}</td>
           </tr>
           <tr>
-            <td style="font-weight: bold; font-family: 'Courier New', monospace; font-size: 10pt; vertical-align: top; color: #000;">Tech Stack:</td>
-            <td style="font-size: 10pt; font-family: 'Courier New', monospace; color: #000; font-weight: bold;">${comp.techStack}</td>
+            <td style="font-weight: bold; font-family: 'Courier New', monospace; font-size: 10pt; vertical-align: top; color: #000000;">Tech Stack:</td>
+            <td style="font-size: 10pt; font-family: 'Courier New', monospace; color: #000000; font-weight: bold;">${comp.techStack}</td>
           </tr>
         </table>
       </div>
@@ -7440,7 +9705,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <style>
           body {
             font-family: 'Georgia', serif;
-            color: #000;
+            color: #000000;
             line-height: 1.5;
             margin: 40px;
           }
@@ -7455,12 +9720,12 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             margin-bottom: 5px;
           }
           .header-bar {
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid #000000;
             padding-bottom: 5px;
             margin-bottom: 15px;
           }
           .meta-table {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
             padding-bottom: 10px;
             margin-bottom: 20px;
             width: 100%;
@@ -7469,7 +9734,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             font-family: 'Courier New', monospace;
             font-size: 11pt;
             font-weight: bold;
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid #000000;
             padding-bottom: 2px;
             margin-top: 20px;
             margin-bottom: 8px;
@@ -7482,7 +9747,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             margin-bottom: 15px;
           }
           table.data-table th {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
             text-align: left;
             padding: 6px 0;
             font-family: 'Courier New', monospace;
@@ -7505,7 +9770,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           <table style="width: 100%;">
             <tr>
               <td class="mono" style="font-weight: bold; font-size: 12pt;">bnvt·capital</td>
-              <td class="mono" style="text-align: right; font-size: 8pt; color: #666;">CONFIDENTIAL INVESTMENT MEMO</td>
+              <td class="mono" style="text-align: right; font-size: 8pt; color: #555555;">CONFIDENTIAL INVESTMENT MEMO</td>
             </tr>
           </table>
         </div>
@@ -7515,8 +9780,8 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <div class="meta-table">
           <table style="width: 100%;">
             <tr>
-              <td class="mono" style="font-size: 10pt;"><span style="color: #666;">Company:</span> <b>${c.name}</b></td>
-              <td class="mono" style="text-align: right; font-size: 10pt;"><b>HQ:</b> <span style="color: #000; text-decoration: underline;">${hqStr}</span></td>
+              <td class="mono" style="font-size: 10pt;"><span style="color: #555555;">Company:</span> <b>${c.name}</b></td>
+              <td class="mono" style="text-align: right; font-size: 10pt;"><b>HQ:</b> <span style="color: #000000; text-decoration: underline;">${hqStr}</span></td>
             </tr>
           </table>
         </div>
@@ -7545,7 +9810,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           <table style="width: 100%;">
             <tr>
               <td class="mono" style="font-weight: bold; font-size: 12pt;">bnvt·capital</td>
-              <td class="mono" style="text-align: right; font-size: 8pt; color: #666;">COMPETITOR TECH STACK MATRIX</td>
+              <td class="mono" style="text-align: right; font-size: 8pt; color: #555555;">COMPETITOR TECH STACK MATRIX</td>
             </tr>
           </table>
         </div>
@@ -7625,8 +9890,8 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <style>
           body {
             font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            color: #000;
-            background: #fff;
+            color: #000000;
+            background: #FFFFFF;
             margin: 40px;
             font-size: 13.5px;
             line-height: 1.5;
@@ -7635,7 +9900,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid #000000;
             padding-bottom: 4px;
             margin-bottom: 20px;
           }
@@ -7650,19 +9915,19 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             justify-content: space-between;
             font-family: 'IBM Plex Mono', monospace;
             font-size: 11px;
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
             padding-bottom: 12px;
             margin-bottom: 20px;
           }
           .meta-link {
-            color: #000;
+            color: #000000;
             text-decoration: underline;
           }
           .section-title {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 12px;
             font-weight: bold;
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid #000000;
             padding-bottom: 2px;
             margin-top: 24px;
             margin-bottom: 10px;
@@ -7670,7 +9935,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           }
           .content-p {
             margin: 0 0 16px 0;
-            color: #222;
+            color: #111111;
           }
           table.matrix-table {
             width: 100%;
@@ -7680,7 +9945,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             font-size: 11px;
           }
           table.matrix-table th {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid #000000;
             text-align: left;
             padding: 6px 0;
             font-weight: bold;
@@ -7695,7 +9960,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             font-family: 'IBM Plex Mono', monospace;
           }
           .border-bottom-thin {
-            border-bottom: 1px solid #ccc;
+            border-bottom: 1px solid #BBBBBB;
           }
           .page-break {
             page-break-before: always;
@@ -7703,7 +9968,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           }
           .competitor-profile {
             margin-bottom: 16px;
-            border-bottom: 1px dashed #ccc;
+            border-bottom: 1px dashed #BBBBBB;
             padding-bottom: 12px;
           }
           .profile-title {
@@ -7727,10 +9992,10 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             font-size: 10.5px;
             font-weight: bold;
             width: 140px;
-            color: #555;
+            color: #555555;
           }
           .detail-tech {
-            color: #000;
+            color: #000000;
           }
           .tech-content {
             font-size: 11.5px;
@@ -7744,14 +10009,14 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <!-- PAGE 1 -->
         <div class="header">
           <span style="font-family: 'IBM Plex Mono', monospace; font-weight: bold; font-size: 14px;">bnvt·capital</span>
-          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #666;">CONFIDENTIAL INVESTMENT MEMO</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #555555;">CONFIDENTIAL INVESTMENT MEMO</span>
         </div>
         
         <div class="title">BNVT Capital Competitive Mapping</div>
         
         <div class="meta-table">
           <div>
-            <span style="color: #666;">Company:</span> <span style="font-weight: bold;">${c.name}</span>
+            <span style="color: #555555;">Company:</span> <span style="font-weight: bold;">${c.name}</span>
           </div>
           <div>
             <span style="font-weight: bold;">HQ:</span>{" "}
@@ -7782,7 +10047,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         
         <div class="header">
           <span style="font-family: 'IBM Plex Mono', monospace; font-weight: bold; font-size: 14px;">bnvt·capital</span>
-          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #666;">COMPETITOR TECH STACK MATRIX</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #555555;">COMPETITOR TECH STACK MATRIX</span>
         </div>
         
         <div class="section-title">Competitor Technical Architecture & GTM Differentiation</div>
@@ -8033,11 +10298,11 @@ Respond ONLY with valid JSON in this exact structure:
     
     let rowsHtml = contactsList.map(contact => `
       <tr>
-        <td style="border: 1px solid #000;">${contact.category || ""}</td>
-        <td style="border: 1px solid #000;">${contact.companyName || ""}</td>
-        <td style="border: 1px solid #000;">${contact.name || ""}</td>
-        <td style="border: 1px solid #000;">${contact.linkedin || ""}</td>
-        <td style="border: 1px solid #000;">${contact.referenceNotes || ""}</td>
+        <td style="border: 1px solid #000000;">${contact.category || ""}</td>
+        <td style="border: 1px solid #000000;">${contact.companyName || ""}</td>
+        <td style="border: 1px solid #000000;">${contact.name || ""}</td>
+        <td style="border: 1px solid #000000;">${contact.linkedin || ""}</td>
+        <td style="border: 1px solid #000000;">${contact.referenceNotes || ""}</td>
       </tr>
     `).join("");
 
@@ -8074,11 +10339,11 @@ Respond ONLY with valid JSON in this exact structure:
           </tr>
           <tr><td></td></tr>
           <tr class="header">
-            <td style="border: 1px solid #000; font-weight: bold; width: 150px;">Category</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 200px;">Company Name</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 180px;">Name of Individual</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 300px;">LinkedIn Profile URL</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 250px;">References</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 150px;">Category</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 200px;">Company Name</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 180px;">Name of Individual</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 300px;">LinkedIn Profile URL</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 250px;">References</td>
           </tr>
           ${rowsHtml}
         </table>
@@ -9122,7 +11387,7 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
                   <tr>
                     ${row.map(cell => {
                       const isTarget = String(cell).toLowerCase().includes(c.name.toLowerCase());
-                      return `<td style="${isTarget ? 'color: #000000; font-weight: bold; background-color: #f5f5f5;' : ''}">${cell}</td>`;
+                      return `<td style="${isTarget ? 'color: #000000; font-weight: bold; background-color: #F5F5F5;' : ''}">${cell}</td>`;
                     }).join("")}
                   </tr>
                 `).join("")}
@@ -9165,8 +11430,8 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
           }
           body {
             margin: 0;
-            background-color: #ffffff;
-            color: #15171C;
+            background-color: #FFFFFF;
+            color: #111111;
             font-family: 'Space Grotesk', system-ui, sans-serif;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
@@ -9176,7 +11441,7 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
             height: 210mm;
             box-sizing: border-box;
             padding: 16mm 20mm 15mm;
-            background-color: #ffffff;
+            background-color: #FFFFFF;
             position: relative;
             page-break-after: always;
             display: flex;
@@ -9202,13 +11467,13 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
             font-size: 34px;
             font-weight: bold;
             line-height: 1.25;
-            color: #15171C;
+            color: #111111;
             margin-bottom: 6mm;
           }
           .cover-subtitle {
             font-family: 'Newsreader', Georgia, serif;
             font-size: 18px;
-            color: #6B6E76;
+            color: #777777;
             font-style: italic;
             margin-bottom: 14mm;
           }
@@ -9224,7 +11489,7 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #E5E5E0;
+            border-bottom: 1px solid #DDDDDD;
             padding-bottom: 3mm;
             margin-bottom: 5mm;
           }
@@ -9237,7 +11502,7 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
           .header-right {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 10px;
-            color: #6B6E76;
+            color: #777777;
             font-weight: bold;
           }
           .slide-tag {
@@ -9251,7 +11516,7 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
           .slide-title {
             font-size: 22px;
             font-weight: bold;
-            color: #15171C;
+            color: #111111;
             margin-bottom: 6mm;
             line-height: 1.25;
           }
@@ -9264,8 +11529,8 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
             justify-content: space-between;
             font-family: 'IBM Plex Mono', monospace;
             font-size: 9px;
-            color: #6B6E76;
-            border-top: 1px solid #E5E5E0;
+            color: #777777;
+            border-top: 1px solid #DDDDDD;
             padding-top: 3mm;
           }
 
@@ -9273,7 +11538,7 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
           .block-paragraph {
             font-size: 13.5px;
             line-height: 1.5;
-            color: #15171C;
+            color: #111111;
             margin: 0 0 5mm;
             text-align: justify;
           }
@@ -9298,17 +11563,17 @@ CRITICAL FORMATTING REQUIREMENT: You MUST respond with a single, valid JSON obje
             border-collapse: collapse;
             font-size: 11.5px;
             margin-bottom: 5mm;
-            border: 1px solid #E5E5E0;
+            border: 1px solid #DDDDDD;
           }
           .block-table th {
-            border-bottom: 2px solid #15171C;
+            border-bottom: 2px solid #111111;
             text-align: left;
             padding: 6px 8px;
             font-weight: bold;
-            background-color: #F9F9F9;
+            background-color: #FAFAFA;
           }
           .block-table td {
-            border-bottom: 1px solid #E5E5E0;
+            border-bottom: 1px solid #DDDDDD;
             padding: 6px 8px;
           }
         </style>
@@ -9616,21 +11881,21 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
 
     let compRows = (memo.comparables || []).map(comp => `
       <tr>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;"><b>${comp.company}</b></td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">$${comp.valuation || "—"}M</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">$${comp.arr || "—"}M</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">${comp.evArr || "—"}x</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;">${comp.stage || "—"}</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;">${comp.notes || "—"}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;"><b>${comp.company}</b></td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;">$${comp.valuation || "—"}M</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;">$${comp.arr || "—"}M</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;">${comp.evArr || "—"}x</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${comp.stage || "—"}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${comp.notes || "—"}</td>
       </tr>
     `).join("");
 
     let capRows = (memo.capTable || []).map(cap => `
       <tr>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;"><b>${cap.shareholder}</b></td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;">${cap.shares || "—"}</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">${cap.percentage || "—"}%</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;">${cap.notes || "—"}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;"><b>${cap.shareholder}</b></td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${cap.shares || "—"}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;">${cap.percentage || "—"}%</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${cap.notes || "—"}</td>
       </tr>
     `).join("");
 
@@ -9643,39 +11908,39 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       <head>
         <title>${c.name} - Investment Committee Memo</title>
         <style>
-          body { font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #15171C; line-height: 1.6; margin: 40px; font-size: 14px; }
-          .header { border-bottom: 2px solid #15171C; padding-bottom: 10px; margin-bottom: 30px; display: flex; justify-content: space-between; font-family: monospace; font-size: 11px; }
+          body { font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111111; line-height: 1.6; margin: 40px; font-size: 14px; }
+          .header { border-bottom: 2px solid #111111; padding-bottom: 10px; margin-bottom: 30px; display: flex; justify-content: space-between; font-family: monospace; font-size: 11px; }
           .section { margin-bottom: 30px; }
-          .section-title { font-size: 15px; font-weight: bold; margin-top: 25px; margin-bottom: 10px; font-family: 'Space Grotesk', system-ui, sans-serif; color: #000; }
+          .section-title { font-size: 15px; font-weight: bold; margin-top: 25px; margin-bottom: 10px; font-family: 'Space Grotesk', system-ui, sans-serif; color: #000000; }
           table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 13px; font-family: 'Space Grotesk', system-ui, sans-serif; }
-          th { text-align: left; padding: 8px; font-weight: bold; border-bottom: 1.5px solid #000; }
+          th { text-align: left; padding: 8px; font-weight: bold; border-bottom: 1.5px solid #000000; }
           td { padding: 8px; vertical-align: top; }
           p { white-space: pre-wrap; margin: 0 0 16px 0; }
           .page-break { page-break-before: always; }
           .scenario-table th, .scenario-table td { text-align: right; }
           .scenario-table th:first-child, .scenario-table td:first-child { text-align: left; }
           .metrics-grid-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 13px; }
-          .metrics-grid-table td { border: 1px solid #ddd; padding: 10px 12px; width: 50%; vertical-align: middle; color: #15171C; }
+          .metrics-grid-table td { border: 1px solid #DDDDDD; padding: 10px 12px; width: 50%; vertical-align: middle; color: #111111; }
         </style>
       </head>
       <body>
-        <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 24px; border-bottom: 1.5px solid #15171C; padding-bottom: 8px;">
-          <div style="font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 32px; font-weight: bold; letter-spacing: -0.02em; color: #000;">bnvt&middot;capital</div>
-          <div style="font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 14px; font-weight: bold; color: #000; margin-top: 10px;">BNVT Capital Investment Memo</div>
+        <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 24px; border-bottom: 1.5px solid #111111; padding-bottom: 8px;">
+          <div style="font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 32px; font-weight: bold; letter-spacing: -0.02em; color: #000000;">bnvt&middot;capital</div>
+          <div style="font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 14px; font-weight: bold; color: #000000; margin-top: 10px;">BNVT Capital Investment Memo</div>
         </div>
         
         <table class="metrics-grid-table">
           <tr>
-            <td><u><span style="color: #1a56db;">Company</span></u>: ${c.name}</td>
-            <td><u><span style="color: #1a56db;">Deal Team</span></u>: ${leadsStr}</td>
+            <td><u><span style="color: #000000;">Company</span></u>: ${c.name}</td>
+            <td><u><span style="color: #000000;">Deal Team</span></u>: ${leadsStr}</td>
           </tr>
           <tr>
-            <td><u><span style="color: #1a56db;">HQ</span></u>: ${c.geo === "US" ? "Palo Alto / London / Zurich" : c.geo || "—"}</td>
-            <td><u><span style="color: #1a56db;">Post-Money Valuation</span></u>: $${di.valuation || "—"}M</td>
+            <td><u><span style="color: #000000;">HQ</span></u>: ${c.geo === "US" ? "Palo Alto / London / Zurich" : c.geo || "—"}</td>
+            <td><u><span style="color: #000000;">Post-Money Valuation</span></u>: $${di.valuation || "—"}M</td>
           </tr>
           <tr>
-            <td><u><span style="color: #1a56db;">BNVT Investment</span></u>: ${di.ticketSize ? `$${di.ticketSize}M (strategic co-invest; ${entryPercent}%)` : "—"}</td>
-            <td><u><span style="color: #1a56db;">Round</span></u>: ${di.roundType || "—"}${di.roundSize ? `, $${di.roundSize}M` : ""}</td>
+            <td><u><span style="color: #000000;">BNVT Investment</span></u>: ${di.ticketSize ? `$${di.ticketSize}M (strategic co-invest; ${entryPercent}%)` : "—"}</td>
+            <td><u><span style="color: #000000;">Round</span></u>: ${di.roundType || "—"}${di.roundSize ? `, $${di.roundSize}M` : ""}</td>
           </tr>
         </table>
 
@@ -9733,7 +11998,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           <p>${memo.sections?.scenarioAnalysisText || "—"}</p>
           <table class="scenario-table">
             <thead>
-              <tr style="border-bottom: 1px solid #000;">
+              <tr style="border-bottom: 1px solid #000000;">
                 <th style="text-align: left;">Scenario</th>
                 <th>Exit Valuation ($M)</th>
                 <th>Exit Ownership (%)</th>
@@ -9789,7 +12054,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           <div class="section-title">Comparables Transactions on the Private Market</div>
           <table>
             <thead>
-              <tr style="border-bottom: 1px solid #000;">
+              <tr style="border-bottom: 1px solid #000000;">
                 <th>Company</th>
                 <th style="text-align: right;">Valuation ($M)</th>
                 <th style="text-align: right;">ARR ($M)</th>
@@ -9799,7 +12064,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
               </tr>
             </thead>
             <tbody>
-              ${compRows || `<tr><td colspan="6" style="text-align: center; color: #6B6E76;">No comparables entered.</td></tr>`}
+              ${compRows || `<tr><td colspan="6" style="text-align: center; color: #777777;">No comparables entered.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -9808,7 +12073,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           <div class="section-title">Cap Table (Pre/Post Transaction)</div>
           <table>
             <thead>
-              <tr style="border-bottom: 1px solid #000;">
+              <tr style="border-bottom: 1px solid #000000;">
                 <th>Shareholder</th>
                 <th>Shares</th>
                 <th style="text-align: right;">Ownership %</th>
@@ -9816,7 +12081,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
               </tr>
             </thead>
             <tbody>
-              ${capRows || `<tr><td colspan="4" style="text-align: center; color: #6B6E76;">No cap table details entered. Cap table to be filled in post-transaction.</td></tr>`}
+              ${capRows || `<tr><td colspan="4" style="text-align: center; color: #777777;">No cap table details entered. Cap table to be filled in post-transaction.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -9843,7 +12108,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           <div class="section-title">Public Market Comparables</div>
           <table>
             <thead>
-              <tr style="border-bottom: 1px solid #000;">
+              <tr style="border-bottom: 1px solid #000000;">
                 <th>Company</th>
                 <th>Ticker</th>
                 <th style="text-align: right;">EV ($B)</th>
@@ -9855,14 +12120,14 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             <tbody>
               ${(memo.publicComps || []).map(item => `
                 <tr>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px;"><b>${item.company}</b></td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px;">${item.ticker || "—"}</td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">${item.ev || "—"}</td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">${item.revenue || "—"}</td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;"><b>${item.multiple || "—"}</b></td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px;">${item.notes || "—"}</td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;"><b>${item.company}</b></td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${item.ticker || "—"}</td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;">${item.ev || "—"}</td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;">${item.revenue || "—"}</td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;"><b>${item.multiple || "—"}</b></td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${item.notes || "—"}</td>
                 </tr>
-              `).join("") || `<tr><td colspan="6" style="text-align: center; color: #6B6E76;">No public comparables entered.</td></tr>`}
+              `).join("") || `<tr><td colspan="6" style="text-align: center; color: #777777;">No public comparables entered.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -9892,7 +12157,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     const bullRes = calculateReturnScenario(di.bullExit, di.ticketSize, di.valuation, di.dilution);
 
     let compRows = (memo.comparables || []).map(comp => `
-      <tr style="border-bottom: 1px solid #ccc;">
+      <tr style="border-bottom: 1px solid #BBBBBB;">
         <td style="padding: 6px;"><b>${comp.company}</b></td>
         <td style="padding: 6px; text-align: right;">$${comp.valuation || "—"}M</td>
         <td style="padding: 6px; text-align: right;">$${comp.arr || "—"}M</td>
@@ -9903,7 +12168,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     `).join("");
 
     let capRows = (memo.capTable || []).map(cap => `
-      <tr style="border-bottom: 1px solid #ccc;">
+      <tr style="border-bottom: 1px solid #BBBBBB;">
         <td style="padding: 6px;"><b>${cap.shareholder}</b></td>
         <td style="padding: 6px;">${cap.shares || "—"}</td>
         <td style="padding: 6px; text-align: right;">${cap.percentage || "—"}%</td>
@@ -9919,33 +12184,33 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
       <head>
         <style>
-          body { font-family: 'Arial', 'Calibri', sans-serif; line-height: 1.5; color: #15171C; font-size: 11pt; }
-          .logo-text { font-family: 'Arial', 'Calibri', sans-serif; font-size: 26pt; font-weight: bold; color: #15171C; letter-spacing: -0.02em; }
-          .sub-logo-text { font-family: 'Arial', 'Calibri', sans-serif; font-size: 13pt; font-weight: bold; color: #15171C; margin-top: 4px; }
-          h2 { font-family: 'Arial', 'Calibri', sans-serif; font-size: 13pt; font-weight: bold; color: #000; margin-top: 20px; margin-bottom: 8px; }
+          body { font-family: 'Arial', 'Calibri', sans-serif; line-height: 1.5; color: #111111; font-size: 11pt; }
+          .logo-text { font-family: 'Arial', 'Calibri', sans-serif; font-size: 26pt; font-weight: bold; color: #111111; letter-spacing: -0.02em; }
+          .sub-logo-text { font-family: 'Arial', 'Calibri', sans-serif; font-size: 13pt; font-weight: bold; color: #111111; margin-top: 4px; }
+          h2 { font-family: 'Arial', 'Calibri', sans-serif; font-size: 13pt; font-weight: bold; color: #000000; margin-top: 20px; margin-bottom: 8px; }
           table { width: 100%; border-collapse: collapse; margin-top: 12px; margin-bottom: 20px; font-size: 10pt; }
-          th { text-align: left; padding: 8px; font-weight: bold; border-bottom: 1.5px solid #000; background: #FAF9F6; }
-          td { padding: 8px; vertical-align: top; border-bottom: 1px solid #D2D2D2; }
+          th { text-align: left; padding: 8px; font-weight: bold; border-bottom: 1.5px solid #000000; background: #FAFAFA; }
+          td { padding: 8px; vertical-align: top; border-bottom: 1px solid #DDDDDD; }
           p { margin: 0 0 10px 0; }
         </style>
       </head>
       <body>
         <div class="logo-text">bnvt·capital</div>
         <div class="sub-logo-text">BNVT Capital Investment Memo</div>
-        <hr style="border: none; border-top: 1.5px solid #15171C; margin-top: 5px; margin-bottom: 20px;" />
+        <hr style="border: none; border-top: 1.5px solid #111111; margin-top: 5px; margin-bottom: 20px;" />
 
-        <table border="1" style="border-collapse: collapse; border: 1px solid #D2D2D2; width: 100%; margin-bottom: 20px;">
+        <table border="1" style="border-collapse: collapse; border: 1px solid #DDDDDD; width: 100%; margin-bottom: 20px;">
           <tr>
-            <td style="padding: 10px 12px; border: 1px solid #D2D2D2; width: 50%; vertical-align: middle;"><u><span style="color: #1F2DCB;">Company</span></u>: ${c.name}${c.oneLiner ? ` (${c.oneLiner})` : ""}</td>
-            <td style="padding: 10px 12px; border: 1px solid #D2D2D2; width: 50%; vertical-align: middle;">Deal <u><span style="color: #1F2DCB;">Team</span></u>: ${leadsStr}</td>
+            <td style="padding: 10px 12px; border: 1px solid #DDDDDD; width: 50%; vertical-align: middle;"><u><span style="color: #000000;">Company</span></u>: ${c.name}${c.oneLiner ? ` (${c.oneLiner})` : ""}</td>
+            <td style="padding: 10px 12px; border: 1px solid #DDDDDD; width: 50%; vertical-align: middle;">Deal <u><span style="color: #000000;">Team</span></u>: ${leadsStr}</td>
           </tr>
           <tr>
-            <td style="padding: 10px 12px; border: 1px solid #D2D2D2; width: 50%; vertical-align: middle;"><u><span style="color: #1F2DCB;">HQ</span></u>: ${c.geo === "US" ? "Palo Alto / London / Zurich" : c.geo || "—"}</td>
-            <td style="padding: 10px 12px; border: 1px solid #D2D2D2; width: 50%; vertical-align: middle;">Post-Money <u><span style="color: #1F2DCB;">Valuation</span></u>: $${di.valuation || "—"}M</td>
+            <td style="padding: 10px 12px; border: 1px solid #DDDDDD; width: 50%; vertical-align: middle;"><u><span style="color: #000000;">HQ</span></u>: ${c.geo === "US" ? "Palo Alto / London / Zurich" : c.geo || "—"}</td>
+            <td style="padding: 10px 12px; border: 1px solid #DDDDDD; width: 50%; vertical-align: middle;">Post-Money <u><span style="color: #000000;">Valuation</span></u>: $${di.valuation || "—"}M</td>
           </tr>
           <tr>
-            <td style="padding: 10px 12px; border: 1px solid #D2D2D2; width: 50%; vertical-align: middle;">BNVT <u><span style="color: #1F2DCB;">Investment</span></u>: ${di.ticketSize ? `$${di.ticketSize}M (strategic co-invest; ${entryPercent}%)` : "—"}</td>
-            <td style="padding: 10px 12px; border: 1px solid #D2D2D2; width: 50%; vertical-align: middle;"><u><span style="color: #1F2DCB;">Round</span></u>: ${di.roundType || "—"}${di.roundSize ? `, $${di.roundSize}M` : ""}</td>
+            <td style="padding: 10px 12px; border: 1px solid #DDDDDD; width: 50%; vertical-align: middle;">BNVT <u><span style="color: #000000;">Investment</span></u>: ${di.ticketSize ? `$${di.ticketSize}M (strategic co-invest; ${entryPercent}%)` : "—"}</td>
+            <td style="padding: 10px 12px; border: 1px solid #DDDDDD; width: 50%; vertical-align: middle;"><u><span style="color: #000000;">Round</span></u>: ${di.roundType || "—"}${di.roundSize ? `, $${di.roundSize}M` : ""}</td>
           </tr>
         </table>
 
@@ -9980,13 +12245,13 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <p>${memo.sections?.scenarioAnalysisText || "—"}</p>
         <table border="1" style="border-collapse:collapse;">
           <thead>
-            <tr style="background:#FAF9F6;">
-              <th style="border-bottom: 1.5px solid #000;">Scenario</th>
-              <th style="border-bottom: 1.5px solid #000;">Exit Valuation ($M)</th>
-              <th style="border-bottom: 1.5px solid #000;">Exit Ownership (%)</th>
-              <th style="border-bottom: 1.5px solid #000;">Position Value ($M)</th>
-              <th style="border-bottom: 1.5px solid #000;">Return Multiple (MoIC)</th>
-              <th style="border-bottom: 1.5px solid #000;">Fund Returned (%)</th>
+            <tr style="background:#FAFAFA;">
+              <th style="border-bottom: 1.5px solid #000000;">Scenario</th>
+              <th style="border-bottom: 1.5px solid #000000;">Exit Valuation ($M)</th>
+              <th style="border-bottom: 1.5px solid #000000;">Exit Ownership (%)</th>
+              <th style="border-bottom: 1.5px solid #000000;">Position Value ($M)</th>
+              <th style="border-bottom: 1.5px solid #000000;">Return Multiple (MoIC)</th>
+              <th style="border-bottom: 1.5px solid #000000;">Fund Returned (%)</th>
             </tr>
           </thead>
           <tbody>
@@ -10028,32 +12293,32 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <h2>Comparables Transactions on the Private Market</h2>
         <table border="1" style="border-collapse:collapse;">
           <thead>
-            <tr style="background:#FAF9F6;">
-              <th style="border-bottom: 1.5px solid #000;">Company</th>
-              <th style="border-bottom: 1.5px solid #000;">Valuation ($M)</th>
-              <th style="border-bottom: 1.5px solid #000;">ARR ($M)</th>
-              <th style="border-bottom: 1.5px solid #000;">EV/ARR</th>
-              <th style="border-bottom: 1.5px solid #000;">Stage</th>
-              <th style="border-bottom: 1.5px solid #000;">Notes</th>
+            <tr style="background:#FAFAFA;">
+              <th style="border-bottom: 1.5px solid #000000;">Company</th>
+              <th style="border-bottom: 1.5px solid #000000;">Valuation ($M)</th>
+              <th style="border-bottom: 1.5px solid #000000;">ARR ($M)</th>
+              <th style="border-bottom: 1.5px solid #000000;">EV/ARR</th>
+              <th style="border-bottom: 1.5px solid #000000;">Stage</th>
+              <th style="border-bottom: 1.5px solid #000000;">Notes</th>
             </tr>
           </thead>
           <tbody>
-            ${compRows || `<tr><td colspan="6" style="text-align: center; color: #6B6E76;">No comparables entered.</td></tr>`}
+            ${compRows || `<tr><td colspan="6" style="text-align: center; color: #777777;">No comparables entered.</td></tr>`}
           </tbody>
         </table>
 
         <h2>Cap Table (Pre/Post Transaction)</h2>
         <table border="1" style="border-collapse:collapse;">
           <thead>
-            <tr style="background:#FAF9F6;">
-              <th style="border-bottom: 1.5px solid #000;">Shareholder</th>
-              <th style="border-bottom: 1.5px solid #000;">Shares</th>
-              <th style="border-bottom: 1.5px solid #000;">Ownership %</th>
-              <th style="border-bottom: 1.5px solid #000;">Notes</th>
+            <tr style="background:#FAFAFA;">
+              <th style="border-bottom: 1.5px solid #000000;">Shareholder</th>
+              <th style="border-bottom: 1.5px solid #000000;">Shares</th>
+              <th style="border-bottom: 1.5px solid #000000;">Ownership %</th>
+              <th style="border-bottom: 1.5px solid #000000;">Notes</th>
             </tr>
           </thead>
           <tbody>
-            ${capRows || `<tr><td colspan="4" style="text-align: center; color: #6B6E76;">No cap table details entered.</td></tr>`}
+            ${capRows || `<tr><td colspan="4" style="text-align: center; color: #777777;">No cap table details entered.</td></tr>`}
           </tbody>
         </table>
 
@@ -10070,13 +12335,13 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <h2>Public Market Comparables</h2>
         <table border="1" style="border-collapse:collapse;">
           <thead>
-            <tr style="background:#FAF9F6;">
-              <th style="border-bottom: 1.5px solid #000;">Company</th>
-              <th style="border-bottom: 1.5px solid #000;">Ticker</th>
-              <th style="border-bottom: 1.5px solid #000;">EV ($B)</th>
-              <th style="border-bottom: 1.5px solid #000;">LTM Revenue</th>
-              <th style="border-bottom: 1.5px solid #000;">EV/Revenue</th>
-              <th style="border-bottom: 1.5px solid #000;">Notes</th>
+            <tr style="background:#FAFAFA;">
+              <th style="border-bottom: 1.5px solid #000000;">Company</th>
+              <th style="border-bottom: 1.5px solid #000000;">Ticker</th>
+              <th style="border-bottom: 1.5px solid #000000;">EV ($B)</th>
+              <th style="border-bottom: 1.5px solid #000000;">LTM Revenue</th>
+              <th style="border-bottom: 1.5px solid #000000;">EV/Revenue</th>
+              <th style="border-bottom: 1.5px solid #000000;">Notes</th>
             </tr>
           </thead>
           <tbody>
@@ -10089,7 +12354,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
                 <td style="padding: 6px; text-align: right;"><b>${item.multiple || "—"}</b></td>
                 <td style="padding: 6px;">${item.notes || "—"}</td>
               </tr>
-            `).join("") || `<tr><td colspan="6" style="text-align: center; color: #6B6E76;">No public comparables entered.</td></tr>`}
+            `).join("") || `<tr><td colspan="6" style="text-align: center; color: #777777;">No public comparables entered.</td></tr>`}
           </tbody>
         </table>
       </body>
@@ -10314,17 +12579,17 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     
     let tractionRows = (memo.tractionFunnel || []).map(t => `
       <tr>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;"><b>${t.stage}</b></td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;">${t.logo}</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;">${t.details}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;"><b>${t.stage}</b></td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${t.logo}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${t.details}</td>
       </tr>
     `).join("");
 
     let competitorRows = (memo.competitors || []).map(comp => `
       <tr>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px; width: 150px;"><b>${comp.player}</b></td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;">${comp.do}</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 6px;">${comp.shortfall}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; width: 150px;"><b>${comp.player}</b></td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${comp.do}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${comp.shortfall}</td>
       </tr>
     `).join("");
 
@@ -10335,12 +12600,12 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       <head>
         <title>${c.name} - First Call Diligence Memo</title>
         <style>
-          body { font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #15171C; line-height: 1.6; margin: 40px; }
+          body { font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111111; line-height: 1.6; margin: 40px; }
           .header { border-bottom: 1.5px solid #000000; padding-bottom: 10px; margin-bottom: 30px; display: flex; justify-content: space-between; font-family: monospace; font-size: 11px; }
           .title { font-size: 26px; font-weight: bold; margin-bottom: 5px; font-family: 'Space Grotesk', system-ui, sans-serif; }
-          .subtitle { font-size: 14px; font-style: italic; color: #6B6E76; margin-bottom: 25px; }
+          .subtitle { font-size: 14px; font-style: italic; color: #777777; margin-bottom: 25px; }
           .section { margin-bottom: 25px; }
-          .section-title { font-size: 16px; font-weight: bold; border-bottom: 1px solid #15171C; padding-bottom: 4px; margin-bottom: 10px; font-family: 'Space Grotesk', system-ui, sans-serif; text-transform: uppercase; color: #000000; }
+          .section-title { font-size: 16px; font-weight: bold; border-bottom: 1px solid #111111; padding-bottom: 4px; margin-bottom: 10px; font-family: 'Space Grotesk', system-ui, sans-serif; text-transform: uppercase; color: #000000; }
           table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
           th { text-align: left; padding: 8px; font-weight: bold; border-bottom: 1.5px solid #000000; }
           td { padding: 8px; vertical-align: top; }
@@ -10489,14 +12754,14 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             <tbody>
               ${(memo.publicComps || []).map(item => `
                 <tr>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px;"><b>${item.company}</b></td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px;">${item.ticker}</td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">${item.ev}</td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;">${item.revenue}</td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px; text-align: right;"><b>${item.multiple}</b></td>
-                  <td style="border-bottom: 1px solid #ddd; padding: 6px;">${item.notes}</td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;"><b>${item.company}</b></td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${item.ticker}</td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;">${item.ev}</td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;">${item.revenue}</td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px; text-align: right;"><b>${item.multiple}</b></td>
+                  <td style="border-bottom: 1px solid #DDDDDD; padding: 6px;">${item.notes}</td>
                 </tr>
-              `).join("") || `<tr><td colspan="6" style="text-align: center; color: #666; font-style: italic;">No public market comparables.</td></tr>`}
+              `).join("") || `<tr><td colspan="6" style="text-align: center; color: #555555; font-style: italic;">No public market comparables.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -10522,7 +12787,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     const comp = memo.comparableBet || {};
 
     let tractionRows = (memo.tractionFunnel || []).map(t => `
-      <tr style="border-bottom: 1px solid #ccc;">
+      <tr style="border-bottom: 1px solid #BBBBBB;">
         <td style="padding: 6px;"><b>${t.stage}</b></td>
         <td style="padding: 6px;">${t.logo}</td>
         <td style="padding: 6px;">${t.details}</td>
@@ -10530,7 +12795,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     `).join("");
 
     let competitorRows = (memo.competitors || []).map(comp => `
-      <tr style="border-bottom: 1px solid #ccc;">
+      <tr style="border-bottom: 1px solid #BBBBBB;">
         <td style="padding: 6px; width: 150px;"><b>${comp.player}</b></td>
         <td style="padding: 6px;">${comp.do}</td>
         <td style="padding: 6px;">${comp.shortfall}</td>
@@ -10564,7 +12829,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <h2>4. Traction Pipeline</h2>
         <table border="1" style="border-collapse:collapse;">
           <thead>
-            <tr style="background:#F4F4F0;">
+            <tr style="background:#F5F5F5;">
               <th>Stage</th>
               <th>Named Logos / Company</th>
               <th>Traction / Scale Details</th>
@@ -10578,7 +12843,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <h2>5. Competitive Landscape</h2>
         <table border="1" style="border-collapse:collapse;">
           <thead>
-            <tr style="background:#F4F4F0;">
+            <tr style="background:#F5F5F5;">
               <th>Player</th>
               <th>What they do</th>
               <th>Where they fall short vs. ${c.name}</th>
@@ -10592,7 +12857,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         <h2>6. Comparable Bet Analysis (${c.name} vs ${comp.compName || "Comp"})</h2>
         <table border="1" style="border-collapse:collapse;">
           <thead>
-            <tr style="background:#F4F4F0;">
+            <tr style="background:#F5F5F5;">
               <th>Dimension</th>
               <th>${c.name}</th>
               <th>${comp.compName || "Comparable Bet"}</th>
@@ -10665,17 +12930,17 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
 
     let tractionRows = (memo.tractionFunnel || []).map(t => `
       <tr>
-        <td style="border: 1px solid #000;">${t.stage}</td>
-        <td style="border: 1px solid #000;">${t.logo}</td>
-        <td style="border: 1px solid #000;">${t.details}</td>
+        <td style="border: 1px solid #000000;">${t.stage}</td>
+        <td style="border: 1px solid #000000;">${t.logo}</td>
+        <td style="border: 1px solid #000000;">${t.details}</td>
       </tr>
     `).join("");
 
     let competitorRows = (memo.competitors || []).map(comp => `
       <tr>
-        <td style="border: 1px solid #000;">${comp.player}</td>
-        <td style="border: 1px solid #000;">${comp.do}</td>
-        <td style="border: 1px solid #000;">${comp.shortfall}</td>
+        <td style="border: 1px solid #000000;">${comp.player}</td>
+        <td style="border: 1px solid #000000;">${comp.do}</td>
+        <td style="border: 1px solid #000000;">${comp.shortfall}</td>
       </tr>
     `).join("");
 
@@ -10727,57 +12992,57 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
 
           <tr class="section-header"><td colspan="3">4. Traction Funnel Log</td></tr>
           <tr class="header">
-            <td style="border: 1px solid #000; font-weight: bold;">Stage</td>
-            <td style="border: 1px solid #000; font-weight: bold;">Logo / Company</td>
-            <td style="border: 1px solid #000; font-weight: bold;">Details</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Stage</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Logo / Company</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Details</td>
           </tr>
           ${tractionRows}
           <tr><td></td></tr>
 
           <tr class="section-header"><td colspan="3">5. Competitive Landscape Grid</td></tr>
           <tr class="header">
-            <td style="border: 1px solid #000; font-weight: bold; width: 150px;">Player</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 250px;">What They Do</td>
-            <td style="border: 1px solid #000; font-weight: bold; width: 250px;">Shortfall vs ${c.name}</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 150px;">Player</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 250px;">What They Do</td>
+            <td style="border: 1px solid #000000; font-weight: bold; width: 250px;">Shortfall vs ${c.name}</td>
           </tr>
           ${competitorRows}
           <tr><td></td></tr>
 
           <tr class="section-header"><td colspan="3">6. Comparable Bet Matrix (${c.name} vs ${comp.compName || "Comp"})</td></tr>
           <tr class="header">
-            <td style="border: 1px solid #000; font-weight: bold;">Dimension</td>
-            <td style="border: 1px solid #000; font-weight: bold;">${c.name}</td>
-            <td style="border: 1px solid #000; font-weight: bold;">${comp.compName || "Comparable Bet"}</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Dimension</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">${c.name}</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">${comp.compName || "Comparable Bet"}</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000; font-weight: bold;">Raised / Backers</td>
-            <td style="border: 1px solid #000;">${comp.backers?.company || "—"}</td>
-            <td style="border: 1px solid #000;">${comp.backers?.comparable || "—"}</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Raised / Backers</td>
+            <td style="border: 1px solid #000000;">${comp.backers?.company || "—"}</td>
+            <td style="border: 1px solid #000000;">${comp.backers?.comparable || "—"}</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000; font-weight: bold;">Traction</td>
-            <td style="border: 1px solid #000;">${comp.traction?.company || "—"}</td>
-            <td style="border: 1px solid #000;">${comp.traction?.comparable || "—"}</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Traction</td>
+            <td style="border: 1px solid #000000;">${comp.traction?.company || "—"}</td>
+            <td style="border: 1px solid #000000;">${comp.traction?.comparable || "—"}</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000; font-weight: bold;">Team</td>
-            <td style="border: 1px solid #000;">${comp.team?.company || "—"}</td>
-            <td style="border: 1px solid #000;">${comp.team?.comparable || "—"}</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Team</td>
+            <td style="border: 1px solid #000000;">${comp.team?.company || "—"}</td>
+            <td style="border: 1px solid #000000;">${comp.team?.comparable || "—"}</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000; font-weight: bold;">Business Model</td>
-            <td style="border: 1px solid #000;">${comp.businessModel?.company || "—"}</td>
-            <td style="border: 1px solid #000;">${comp.businessModel?.comparable || "—"}</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Business Model</td>
+            <td style="border: 1px solid #000000;">${comp.businessModel?.company || "—"}</td>
+            <td style="border: 1px solid #000000;">${comp.businessModel?.comparable || "—"}</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000; font-weight: bold;">Competitive Exposure</td>
-            <td style="border: 1px solid #000;">${comp.competitiveExposure?.company || "—"}</td>
-            <td style="border: 1px solid #000;">${comp.competitiveExposure?.comparable || "—"}</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Competitive Exposure</td>
+            <td style="border: 1px solid #000000;">${comp.competitiveExposure?.company || "—"}</td>
+            <td style="border: 1px solid #000000;">${comp.competitiveExposure?.comparable || "—"}</td>
           </tr>
           <tr>
-            <td style="border: 1px solid #000; font-weight: bold;">Incumbent Defense</td>
-            <td style="border: 1px solid #000;">${comp.incumbents?.company || "—"}</td>
-            <td style="border: 1px solid #000;">${comp.incumbents?.comparable || "—"}</td>
+            <td style="border: 1px solid #000000; font-weight: bold;">Incumbent Defense</td>
+            <td style="border: 1px solid #000000;">${comp.incumbents?.company || "—"}</td>
+            <td style="border: 1px solid #000000;">${comp.incumbents?.comparable || "—"}</td>
           </tr>
           <tr><td></td></tr>
 
@@ -10839,14 +13104,17 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
 
   const addNote = (via) => {
     if (!noteDraft.trim()) return;
-    update({ notes: [...(c.notes || []), { ts: Date.now(), text: noteDraft.trim(), via }] });
+    const textToSave = noteDraft.trim();
+    const existingArr = Array.isArray(c.notes) ? c.notes : (typeof c.notes === 'string' && c.notes ? [{ text: c.notes, ts: Date.now(), via: 'Import' }] : []);
+    update({ notes: [...existingArr, { ts: Date.now(), text: textToSave, via }] });
     setNoteDraft("");
+    pushNoteToAffinity(c, textToSave, `Partner Note (${via || 'manual'})`);
   };
 
   const rescore = async () => {
     setRescoring(true); setErr("");
     try {
-      const notes = (c.notes || []).map((n) => "- " + n.text).join("\n");
+      const notes = Array.isArray(c.notes) ? c.notes.map((n) => "- " + (typeof n === 'string' ? n : n.text || "")).join("\n") : (typeof c.notes === 'string' ? c.notes : "");
       const prompt = `You are an analyst at BNVT Capital, an early-stage AI fund. Based on the details and the proprietary notes below, analyze the entity (which could be a company or an individual founder) and score it on the 6-dimension defensibility and market matrix (Proprietary Tech, Data Moat, Distribution / Switching, Model-Agnostic Architecture, IP / Time-to-Replicate, and TAM).
 Infer and summarize the product, market, team, and traction details based on the provided notes and context (extrapolate logically, but flag what is inferred vs direct fact). If the entity is an individual founder, 'team' should summarize their background, career/research history, credentials, and 'product' should describe their current startup focus, projects, or stealth venture.
 
@@ -10880,7 +13148,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
   const runFullDiligence = async () => {
     setRescoring(true); setErr("");
     try {
-      const notes = (c.notes || []).map((n) => "- " + n.text).join("\n");
+      const notes = Array.isArray(c.notes) ? c.notes.map((n) => "- " + (typeof n === 'string' ? n : n.text || "")).join("\n") : (typeof c.notes === 'string' ? c.notes : "");
       const prompt = `You are an analyst at BNVT Capital, an early-stage AI fund (tickets up to $10M, US + EU). Research this entity (which could be a company website or an individual founder's LinkedIn profile/name) using web search: ${c.url || c.name}
 ${notes ? `
 Proprietary context from the partner (weight this heavily):
@@ -10986,7 +13254,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         }
       }
       const foundersList = (c.founders || []).map(f => `${f.name}${f.linkedin ? ` (LinkedIn: ${f.linkedin})` : ""}`).join(", ");
-      const notesText = (c.notes || []).map((n) => "- " + n.text).join("\n");
+      const notesText = Array.isArray(c.notes) ? c.notes.map((n) => "- " + (typeof n === 'string' ? n : n.text || "")).join("\n") : (typeof c.notes === 'string' ? c.notes : "");
       const currentReport = c[reportKey];
       
       const getDeepValue = (obj, path) => {
@@ -11192,7 +13460,7 @@ Respond ONLY with the text or JSON structure appropriate for that field:`;
         ingestPdfText.trim() ? `--- PDF Deck Content ---\n${ingestPdfText.trim()}` : ""
       ].filter(Boolean).join("\n\n");
 
-      const existingNotes = (c.notes || []).map((n) => "- " + n.text).join("\n");
+      const existingNotes = Array.isArray(c.notes) ? c.notes.map((n) => "- " + (typeof n === 'string' ? n : n.text || "")).join("\n") : (typeof c.notes === 'string' ? c.notes : "");
       const prompt = `You are a Principal Investment Analyst at BNVT Capital, a tier-1 early-stage AI fund (tickets up to $10M, US + EU). 
 Your task is to re-analyze and update the diligence profile and scores for: ${c.name} (URL: ${c.url || "None"}).
 
@@ -11215,7 +13483,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
 
       const out = parseJSON(await callClaude(prompt, true));
 
-      const newNotes = [...(c.notes || [])];
+      const newNotes = [...(Array.isArray(c.notes) ? c.notes : (typeof c.notes === 'string' && c.notes ? [{ text: c.notes, ts: Date.now(), via: 'Import' }] : []))];
       if (ingestContext.trim()) {
         newNotes.push({ ts: Date.now(), text: `Added Context: ${ingestContext.trim()}`, via: "text" });
       }
@@ -11321,9 +13589,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             small 
             onClick={() => update({ dtm: !c.dtm })} 
             style={{ 
-              borderColor: c.dtm ? "#C026D3" : LINE, 
-              color: c.dtm ? "#C026D3" : FADE,
-              background: c.dtm ? "rgba(192, 38, 211, 0.05)" : "transparent",
+              borderColor: c.dtm ? "#000000" : LINE, 
+              color: c.dtm ? "#000000" : FADE,
+              background: c.dtm ? "rgba(0, 0, 0, 0.05)" : "transparent",
               fontWeight: c.dtm ? 600 : 400
             }}
           >
@@ -11333,9 +13601,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             small 
             onClick={() => update({ starred: !c.starred })} 
             style={{ 
-              borderColor: c.starred ? "#D97706" : LINE, 
-              color: c.starred ? "#D97706" : FADE,
-              background: c.starred ? "rgba(217, 119, 6, 0.05)" : "transparent",
+              borderColor: c.starred ? "#000000" : LINE, 
+              color: c.starred ? "#000000" : FADE,
+              background: c.starred ? "rgba(0, 0, 0, 0.05)" : "transparent",
               fontWeight: c.starred ? 600 : 400
             }}
           >
@@ -11374,24 +13642,51 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
               }
               setIsEditing(!isEditing);
             }}
-            style={{ marginLeft: 10, borderColor: isEditing ? "#10B981" : INK, color: isEditing ? "#10B981" : INK }}
+            style={{ marginLeft: 10, borderColor: isEditing ? "#000000" : INK, color: isEditing ? "#000000" : INK }}
           >
             {isEditing ? "✓ Save details" : "✏ Edit details"}
           </Btn>
           {!isEditing && (
-            <Btn 
-              small 
-              onClick={handleShareHTML} 
-              style={{ 
-                marginLeft: 10, 
-                borderColor: copied ? "#10B981" : BLUE, 
-                color: copied ? "#10B981" : BLUE,
-                background: copied ? "rgba(16, 185, 129, 0.05)" : "transparent",
-                transition: "all 0.2s ease"
-              }}
-            >
-              {copied ? "✓ Copied HTML!" : "📤 Share Profile (HTML)"}
-            </Btn>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 10 }}>
+              <Btn 
+                small 
+                onClick={pushToAffinity}
+                disabled={pushingAffinity}
+                style={{
+                  borderColor: c.affinityUrl ? "#000000" : "#000000",
+                  color: c.affinityUrl ? "#000000" : "#000000",
+                  background: c.affinityUrl ? "rgba(0, 0, 0, 0.06)" : "rgba(0, 0, 0, 0.06)",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5
+                }}
+              >
+                {pushingAffinity ? "⏳ Syncing..." : c.affinityUrl ? "✓ Synced to Affinity" : "🌐 Push to Affinity"}
+              </Btn>
+              {c.affinityUrl && (
+                <a 
+                  href={c.affinityUrl} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  style={{ fontSize: 11, fontFamily: fontStack.mono, color: "#000000", textDecoration: "underline", fontWeight: 600 }}
+                >
+                  Open ↗
+                </a>
+              )}
+              <Btn 
+                small 
+                onClick={handleShareHTML} 
+                style={{ 
+                  borderColor: copied ? "#000000" : BLUE, 
+                  color: copied ? "#000000" : BLUE,
+                  background: copied ? "rgba(0, 0, 0, 0.05)" : "transparent",
+                  transition: "all 0.2s ease"
+                }}
+              >
+                {copied ? "✓ Copied HTML!" : "📤 Share Profile (HTML)"}
+              </Btn>
+            </div>
           )}
           {isEditing && (
             <Btn 
@@ -11421,6 +13716,29 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
         </div>
       </div>
 
+      {affinityResult && (
+        <div style={{
+          margin: "0 0 16px 0",
+          padding: "10px 14px",
+          borderRadius: 4,
+          fontSize: 12.5,
+          fontFamily: fontStack.mono,
+          background: affinityResult.success ? "rgba(0, 0, 0, 0.08)" : "rgba(192, 0, 0, 0.08)",
+          color: affinityResult.success ? "#000000" : "#C00000",
+          border: `1px solid ${affinityResult.success ? "rgba(0, 0, 0, 0.25)" : "rgba(192, 0, 0, 0.25)"}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between"
+        }}>
+          <span>{affinityResult.message}</span>
+          {affinityResult.url && (
+            <a href={affinityResult.url} target="_blank" rel="noreferrer" style={{ color: "#000000", fontWeight: 700, textDecoration: "underline" }}>
+              Open in Affinity Deals ↗
+            </a>
+          )}
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 18 }}>
         {/* Left column */}
         <div>
@@ -11433,7 +13751,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     <select 
                       value={editEntityType} 
                       onChange={(e) => setEditEntityType(e.target.value)} 
-                      style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}
+                      style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}
                     >
                       <option value="Company">🏢 Company</option>
                       <option value="Individual">👤 Individual</option>
@@ -11474,13 +13792,13 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   </div>
                   <div>
                     <Label>Stage</Label>
-                    <select value={editStage} onChange={(e) => setEditStage(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+                    <select value={editStage} onChange={(e) => setEditStage(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                       {STAGES.map((s) => <option key={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
                     <Label>Geography</Label>
-                    <select value={editGeo} onChange={(e) => setEditGeo(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+                    <select value={editGeo} onChange={(e) => setEditGeo(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                       <option value="">(None)</option>
                       <option value="EU">EU</option>
                       <option value="Nordics">Nordics</option>
@@ -11491,7 +13809,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   </div>
                   <div>
                     <Label>Priority</Label>
-                    <select value={editPriority} onChange={(e) => setEditPriority(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+                    <select value={editPriority} onChange={(e) => setEditPriority(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                       <option value="High">High</option>
                       <option value="Medium">Medium</option>
                       <option value="Low">Low</option>
@@ -11538,7 +13856,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
               </div>
             ) : (
               <>
-                <div style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 26 }}>{c.name}</div>
+                <div style={{ fontFamily: fontStack.display, fontSize: 26 }}>{c.name}</div>
                 {c.url && (
                   <div style={{ margin: "4px 0 8px" }}>
                     <a 
@@ -11566,7 +13884,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     style={{ cursor: "pointer" }}
                     title="Click to toggle Entity Type (Company <-> Individual)"
                   >
-                    <Tag color={c.entityType === "Individual" ? "#8B5CF6" : BLUE}>
+                    <Tag color={c.entityType === "Individual" ? "#DDDDDD" : BLUE}>
                       {c.entityType === "Individual" ? "👤 Individual (Click to change ⇄)" : "🏢 Company (Click to change ⇄)"}
                     </Tag>
                   </span>
@@ -11603,9 +13921,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       fontFamily: fontStack.mono, 
                       fontSize: 10, 
                       padding: "2px 7px", 
-                      border: generatingStudy ? "1px solid rgba(192, 38, 211, 0.4)" : (getTamValue(c) > 0 ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid rgba(107, 114, 128, 0.4)"),
-                      color: generatingStudy ? "#C026D3" : (getTamValue(c) > 0 ? "rgb(5, 150, 105)" : "#666"),
-                      background: generatingStudy ? "rgba(192, 38, 211, 0.05)" : (getTamValue(c) > 0 ? "rgba(16, 185, 129, 0.05)" : "rgba(107, 114, 128, 0.05)"),
+                      border: generatingStudy ? "1px solid rgba(0, 0, 0, 0.4)" : (getTamValue(c) > 0 ? "1px solid rgba(0, 0, 0, 0.4)" : "1px solid rgba(119, 119, 119, 0.4)"),
+                      color: generatingStudy ? "#000000" : (getTamValue(c) > 0 ? "rgb(0, 0, 0)" : "#555555"),
+                      background: generatingStudy ? "rgba(0, 0, 0, 0.05)" : (getTamValue(c) > 0 ? "rgba(0, 0, 0, 0.05)" : "rgba(119, 119, 119, 0.05)"),
                       borderRadius: 999, 
                       marginRight: 5, 
                       whiteSpace: "nowrap",
@@ -11624,10 +13942,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     fontFamily: fontStack.ui, 
                     fontWeight: 600, 
                     cursor: "pointer",
-                    color: c.preemption ? "rgb(31, 45, 203)" : "#666",
-                    background: c.preemption ? "rgba(31, 45, 203, 0.05)" : "transparent",
+                    color: c.preemption ? "rgb(0, 0, 0)" : "#555555",
+                    background: c.preemption ? "rgba(0, 0, 0, 0.05)" : "transparent",
                     padding: "2px 6px",
-                    border: `1px solid ${c.preemption ? "rgba(31, 45, 203, 0.3)" : "transparent"}`,
+                    border: `1px solid ${c.preemption ? "rgba(0, 0, 0, 0.3)" : "transparent"}`,
                     borderRadius: 3
                   }}>
                     <input 
@@ -11641,7 +13959,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   {(() => {
                     const dynamicTags = getCompanyTags(c, founderProfiles);
                     return dynamicTags.map(tag => {
-                      const style = TAG_STYLES[tag] || { bg: "rgba(107, 114, 128, 0.08)", text: "#6b7280", border: "rgba(107, 114, 128, 0.2)" };
+                      const style = TAG_STYLES[tag] || { bg: "rgba(119, 119, 119, 0.08)", text: "#777777", border: "rgba(119, 119, 119, 0.2)" };
                       return (
                         <span key={tag} style={{
                           fontSize: 10,
@@ -11663,7 +13981,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 </div>
 
                 {c.oneLiner && c.oneLiner.startsWith("Research failed:") && (
-                  <div style={{ background: "rgba(179, 64, 42, 0.05)", border: `1px solid ${RUST}`, padding: 14, marginBottom: 16 }}>
+                  <div style={{ background: "rgba(192, 0, 0, 0.05)", border: `1px solid ${RUST}`, padding: 14, marginBottom: 16 }}>
                     <div style={{ color: RUST, fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                       ⚠️ AI Diligence Research Failed
                     </div>
@@ -11704,9 +14022,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             fontSize: 10.5, 
                             color: hasLink ? BLUE : INK, 
                             textDecoration: "none", 
-                            background: hasLink ? "rgba(31, 45, 203, 0.05)" : "rgba(107, 110, 118, 0.05)",
+                            background: hasLink ? "rgba(0, 0, 0, 0.05)" : "rgba(119, 119, 119, 0.05)",
                             padding: "3px 8px",
-                            border: `1px solid ${hasLink ? "rgba(31, 45, 203, 0.15)" : "rgba(107, 110, 118, 0.15)"}`,
+                            border: `1px solid ${hasLink ? "rgba(0, 0, 0, 0.15)" : "rgba(119, 119, 119, 0.15)"}`,
                             borderRadius: 3,
                             display: "inline-flex",
                             alignItems: "center",
@@ -11727,11 +14045,11 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
           {/* Proprietary notes */}
           <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: 22, marginTop: 16 }}>
             <Label>Proprietary context</Label>
-            {(c.notes || []).map((n, i) => (
+            {(Array.isArray(c.notes) ? c.notes : (typeof c.notes === 'string' && c.notes ? [{ text: c.notes, ts: Date.now(), via: 'Import' }] : [])).map((n, i) => (
               <div key={i} style={{ borderLeft: `2px solid ${BLUE}`, paddingLeft: 10, marginBottom: 10 }}>
-                <div style={{ fontSize: 13 }}>{n.text}</div>
+                <div style={{ fontSize: 13 }}>{typeof n === 'string' ? n : n.text}</div>
                 <div style={{ fontFamily: fontStack.mono, fontSize: 10, color: FADE }}>
-                  {new Date(n.ts).toLocaleDateString()} · {n.via}
+                  {n.ts ? new Date(n.ts).toLocaleDateString() : ''} {n.via ? '· ' + n.via : ''}
                 </div>
               </div>
             ))}
@@ -11838,7 +14156,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             )}
 
             {granolaError && (
-              <div style={{ color: RUST, fontSize: 12.5, padding: "8px 0", background: "rgba(179, 64, 42, 0.05)", borderLeft: `3px solid ${RUST}`, paddingLeft: 10, marginBottom: 10 }}>
+              <div style={{ color: RUST, fontSize: 12.5, padding: "8px 0", background: "rgba(192, 0, 0, 0.05)", borderLeft: `3px solid ${RUST}`, paddingLeft: 10, marginBottom: 10 }}>
                 ⚠️ Error fetching Granola notes: {granolaError}
                 {granolaError.includes("404") && (
                   <div style={{ fontSize: 11.5, color: INK, marginTop: 4, lineHeight: 1.4 }}>
@@ -11850,7 +14168,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
 
             {!localStorage.getItem("granola_api_key") && (
               <div style={{ 
-                background: "rgba(192, 122, 46, 0.05)", 
+                background: "rgba(0, 0, 0, 0.05)", 
                 borderLeft: `3px solid ${AMBER}`, 
                 padding: 12, 
                 fontSize: 12.5, 
@@ -11928,7 +14246,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   top: -10, 
                   left: 16, 
                   background: BLUE, 
-                  color: "#FFF", 
+                  color: "#FFFFFF", 
                   fontFamily: fontStack.mono, 
                   fontSize: 10, 
                   fontWeight: 600, 
@@ -11985,7 +14303,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               fontFamily: fontStack.mono, 
                               fontSize: 13, 
                               border: `1px solid ${LINE}`, 
-                              background: "#fff", 
+                              background: "#FFFFFF", 
                               borderRadius: 2 
                             }}
                           />
@@ -12012,7 +14330,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                 fontFamily: fontStack.mono, 
                                 fontSize: 13, 
                                 border: `1px solid ${LINE}`, 
-                                background: "#fff", 
+                                background: "#FFFFFF", 
                                 borderRadius: 2 
                               }}
                             />
@@ -12038,7 +14356,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                 fontFamily: fontStack.mono, 
                                 fontSize: 13, 
                                 border: `1px solid ${LINE}`, 
-                                background: "#fff", 
+                                background: "#FFFFFF", 
                                 borderRadius: 2 
                               }}
                             />
@@ -12063,7 +14381,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             <div style={{ fontSize: 12, fontWeight: 600 }}>Founder Exit Proceeds</div>
                             <div style={{ fontSize: 10, color: FADE, fontFamily: fontStack.ui }}>At ${exitValuationAmount}M Exit Valuation</div>
                           </div>
-                          <div style={{ fontSize: 20, fontFamily: fontStack.mono, fontWeight: 700, color: "#10B981" }}>
+                          <div style={{ fontSize: 20, fontFamily: fontStack.mono, fontWeight: 700, color: "#000000" }}>
                             ${founderExitProceeds.toFixed(2)}M
                           </div>
                         </div>
@@ -12094,7 +14412,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             fontSize: 18, 
                             fontFamily: fontStack.mono, 
                             fontWeight: 700, 
-                            color: multipleUplift > 1 ? "#10B981" : INK 
+                            color: multipleUplift > 1 ? "#000000" : INK 
                           }}>
                             {multipleUplift.toFixed(2)}x
                           </div>
@@ -12104,14 +14422,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
 
                     {/* Dynamic Premium Status Visualizer */}
                     <div style={{ 
-                      background: valuationDiscount >= 20 ? "rgba(16, 185, 129, 0.06)" : "rgba(107, 114, 128, 0.05)",
-                      border: `1px solid ${valuationDiscount >= 20 ? "rgba(16, 185, 129, 0.2)" : "rgba(107, 114, 128, 0.15)"}`,
+                      background: valuationDiscount >= 20 ? "rgba(0, 0, 0, 0.06)" : "rgba(119, 119, 119, 0.05)",
+                      border: `1px solid ${valuationDiscount >= 20 ? "rgba(0, 0, 0, 0.2)" : "rgba(119, 119, 119, 0.15)"}`,
                       padding: "10px 12px",
                       borderRadius: 4,
                       fontSize: 11,
                       fontFamily: fontStack.ui,
                       lineHeight: 1.4,
-                      color: valuationDiscount >= 20 ? "rgb(5, 150, 105)" : INK
+                      color: valuationDiscount >= 20 ? "rgb(0, 0, 0)" : INK
                     }}>
                       {valuationDiscount >= 20 ? (
                         <span>🚀 <strong>Highly Favorable Preemption:</strong> Entry valuation is discounted by {valuationDiscount.toFixed(1)}%, yielding a {multipleUplift.toFixed(2)}x entry uplift compared to market rate.</span>
@@ -12177,19 +14495,19 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 </div>
               </div>
             ) : (
-              <div className="bnvt-editorial-study" style={{ background: "#FFF", border: "1px solid #000", padding: "30px", color: "#000", fontFamily: fontStack.display }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000", paddingBottom: "4px" }}>
+              <div className="bnvt-editorial-study" style={{ background: "#FFFFFF", border: "1px solid #000000", padding: "30px", color: "#000000", fontFamily: fontStack.display }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000000", paddingBottom: "4px" }}>
                   <span style={{ fontFamily: fontStack.mono, fontSize: "13px", fontWeight: "bold" }}>bnvt·capital</span>
-                  <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#666" }}>CONFIDENTIAL FIRST CALL PREP MEMO</span>
+                  <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#555555" }}>CONFIDENTIAL FIRST CALL PREP MEMO</span>
                 </div>
                 
-                <div style={{ fontFamily: fontStack.display, fontSize: "18px", fontStyle: "italic", margin: "14px 0 6px" }}>
+                <div style={{ fontFamily: fontStack.display, fontSize: "18px", margin: "14px 0 6px" }}>
                   BNVT Capital First Call Due Diligence Prep
                 </div>
                 
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontFamily: fontStack.mono, paddingBottom: "10px", borderBottom: "2px solid #000", marginBottom: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontFamily: fontStack.mono, paddingBottom: "10px", borderBottom: "2px solid #000000", marginBottom: "16px" }}>
                   <div>
-                    <span style={{ color: "#666" }}>Company:</span> <span style={{ fontWeight: "bold" }}>{c.name}</span>
+                    <span style={{ color: "#555555" }}>Company:</span> <span style={{ fontWeight: "bold" }}>{c.name}</span>
                   </div>
                   <div>
                     <span style={{ fontWeight: "bold" }}>HQ:</span> <span style={{ textDecoration: "underline" }}>{c.geo || "distributed"}</span>
@@ -12198,7 +14516,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                   {/* 1. Problem Thesis */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>💡 1. CORE INVESTMENT & PROBLEM THESIS</span>
                       {!isEditingMemo && (
@@ -12211,14 +14529,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       )}
                     </div>
                     {isEditingMemo ? (
-                      <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #ccc" }} value={editMemoProblemThesis} onChange={(e) => setEditMemoProblemThesis(e.target.value)} />
+                      <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #BBBBBB" }} value={editMemoProblemThesis} onChange={(e) => setEditMemoProblemThesis(e.target.value)} />
                     ) : (
                       <p style={{ fontSize: "12.5px", lineHeight: "1.5", margin: 0 }}>{c.diligenceMemo.problemThesis}</p>
                     )}
                   </div>
 
                   {/* 2. TAM Check */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>🎯 2. MARKET SIZING TAM CHECK</span>
                       {!isEditingMemo && (
@@ -12231,14 +14549,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       )}
                     </div>
                     {isEditingMemo ? (
-                      <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #ccc" }} value={editMarketSizingCheck} onChange={(e) => setEditMarketSizingCheck(e.target.value)} />
+                      <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #BBBBBB" }} value={editMarketSizingCheck} onChange={(e) => setEditMarketSizingCheck(e.target.value)} />
                     ) : (
                       <p style={{ fontSize: "12.5px", lineHeight: "1.5", margin: 0 }}>{c.diligenceMemo.marketSizingCheck}</p>
                     )}
                   </div>
 
                   {/* 3. Operator Pain */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>🔍 3. OPERATOR PAIN & INDEPENDENT VALIDATION</span>
                       {!isEditingMemo && (
@@ -12251,14 +14569,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       )}
                     </div>
                     {isEditingMemo ? (
-                      <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #ccc" }} value={editIsPainReal} onChange={(e) => setEditIsPainReal(e.target.value)} />
+                      <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #BBBBBB" }} value={editIsPainReal} onChange={(e) => setEditIsPainReal(e.target.value)} />
                     ) : (
                       <p style={{ fontSize: "12.5px", lineHeight: "1.5", margin: 0 }}>{c.diligenceMemo.isPainReal}</p>
                     )}
                   </div>
 
                   {/* 4. Target Customer Prospecting Pipeline */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>📊 4. TARGET CUSTOMER PROSPECTING PIPELINE</span>
                       {!isEditingMemo && (
@@ -12271,7 +14589,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       )}
                     </div>
                     {isEditingMemo ? (
-                      <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #ccc" }} value={editTractionFunnelText} onChange={(e) => setEditTractionFunnelText(e.target.value)} placeholder="One prospect per line..." />
+                      <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #BBBBBB" }} value={editTractionFunnelText} onChange={(e) => setEditTractionFunnelText(e.target.value)} placeholder="One prospect per line..." />
                     ) : (
                       <ul style={{ paddingLeft: 18, margin: 0, fontSize: "12.5px", lineHeight: "1.5" }}>
                         {(c.diligenceMemo.tractionFunnel || []).map((item, idx) => {
@@ -12283,7 +14601,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   </div>
 
                   {/* 5. Competitor Shortfall Analysis */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>⚔️ 5. COMPETITOR SHORTFALL ANALYSIS</span>
                       {!isEditingMemo && (
@@ -12295,10 +14613,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         </span>
                       )}
                     </div>
-                    <div style={{ overflowX: "auto", border: `1px solid #000` }}>
+                    <div style={{ overflowX: "auto", border: `1px solid #000000` }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: fontStack.mono }}>
                         <thead>
-                          <tr style={{ background: "#f5f5f5", textAlign: "left", borderBottom: `2px solid #000` }}>
+                          <tr style={{ background: "#F5F5F5", textAlign: "left", borderBottom: `2px solid #000000` }}>
                             <th style={{ padding: "6px 8px", width: 130 }}>Competitor</th>
                             <th style={{ padding: "6px 8px", width: 180 }}>Core Offering</th>
                             <th style={{ padding: "6px 8px" }}>Shortfall vs. {c.name}</th>
@@ -12307,7 +14625,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         </thead>
                         <tbody>
                           {(isEditingMemo ? editMemoCompetitors : (c.diligenceMemo.competitors || [])).map((comp, idx) => (
-                            <tr key={idx} style={{ borderBottom: "1px solid #ccc" }}>
+                            <tr key={idx} style={{ borderBottom: "1px solid #BBBBBB" }}>
                               <td style={{ padding: "6px 8px" }}>
                                 {isEditingMemo ? (
                                   <input type="text" value={comp.name || comp.player || ""} onChange={(e) => {
@@ -12343,7 +14661,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               </td>
                               {isEditingMemo && (
                                 <td style={{ padding: "6px 8px", textAlign: "center" }}>
-                                  <button onClick={() => setEditMemoCompetitors(editMemoCompetitors.filter((_, i) => i !== idx))} style={{ color: RUST, border: "1px solid #ccc", background: "#fff", cursor: "pointer", fontSize: "10px", padding: "1px 4px" }}>🗑</button>
+                                  <button onClick={() => setEditMemoCompetitors(editMemoCompetitors.filter((_, i) => i !== idx))} style={{ color: RUST, border: "1px solid #BBBBBB", background: "#FFFFFF", cursor: "pointer", fontSize: "10px", padding: "1px 4px" }}>🗑</button>
                                 </td>
                               )}
                             </tr>
@@ -12354,7 +14672,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     {isEditingMemo && (
                       <button
                         onClick={() => setEditMemoCompetitors([...editMemoCompetitors, { name: "", player: "", offering: "", do: "", shortfall: "" }])}
-                        style={{ width: "100%", padding: "4px", border: "1px dashed #000", background: "#fff", cursor: "pointer", marginTop: "6px", fontSize: "10px" }}
+                        style={{ width: "100%", padding: "4px", border: "1px dashed #000000", background: "#FFFFFF", cursor: "pointer", marginTop: "6px", fontSize: "10px" }}
                       >
                         ➕ Add Competitor
                       </button>
@@ -12362,7 +14680,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   </div>
 
                   {/* 6. Comparable Bet Matrix */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>⚡ 6. COMPARABLE BET MATRIX</span>
                       {!isEditingMemo && (
@@ -12374,10 +14692,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         </span>
                       )}
                     </div>
-                    <div style={{ overflowX: "auto", border: `1px solid #000` }}>
+                    <div style={{ overflowX: "auto", border: `1px solid #000000` }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5, fontFamily: fontStack.mono }}>
                         <thead>
-                          <tr style={{ background: "#f5f5f5", textAlign: "left", borderBottom: `2px solid #000` }}>
+                          <tr style={{ background: "#F5F5F5", textAlign: "left", borderBottom: `2px solid #000000` }}>
                             <th style={{ padding: "6px 8px" }}>Metric</th>
                             <th style={{ padding: "6px 8px" }}>{c.name}</th>
                             <th style={{ padding: "6px 8px" }}>
@@ -12390,22 +14708,22 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                           </tr>
                         </thead>
                         <tbody>
-                          <tr style={{ borderBottom: "1px solid #ccc" }}>
+                          <tr style={{ borderBottom: "1px solid #BBBBBB" }}>
                             <td style={{ padding: "6px 8px", fontWeight: "bold" }}>Backers</td>
                             <td>{isEditingMemo ? <input type="text" value={editCompBackersCompany} onChange={(e) => setEditCompBackersCompany(e.target.value)} style={{ width: "95%", padding: 2, fontSize: "10.5px" }} /> : (c.diligenceMemo.comparableBet?.backers?.company || "—")}</td>
                             <td>{isEditingMemo ? <input type="text" value={editCompBackersComparable} onChange={(e) => setEditCompBackersComparable(e.target.value)} style={{ width: "95%", padding: 2, fontSize: "10.5px" }} /> : (c.diligenceMemo.comparableBet?.backers?.comparable || "—")}</td>
                           </tr>
-                          <tr style={{ borderBottom: "1px solid #ccc" }}>
+                          <tr style={{ borderBottom: "1px solid #BBBBBB" }}>
                             <td style={{ padding: "6px 8px", fontWeight: "bold" }}>Traction</td>
                             <td>{isEditingMemo ? <input type="text" value={editCompTractionCompany} onChange={(e) => setEditCompTractionCompany(e.target.value)} style={{ width: "95%", padding: 2, fontSize: "10.5px" }} /> : (c.diligenceMemo.comparableBet?.traction?.company || "—")}</td>
                             <td>{isEditingMemo ? <input type="text" value={editCompTractionComparable} onChange={(e) => setEditCompTractionComparable(e.target.value)} style={{ width: "95%", padding: 2, fontSize: "10.5px" }} /> : (c.diligenceMemo.comparableBet?.traction?.comparable || "—")}</td>
                           </tr>
-                          <tr style={{ borderBottom: "1px solid #ccc" }}>
+                          <tr style={{ borderBottom: "1px solid #BBBBBB" }}>
                             <td style={{ padding: "6px 8px", fontWeight: "bold" }}>Team</td>
                             <td>{isEditingMemo ? <input type="text" value={editCompTeamCompany} onChange={(e) => setEditCompTeamCompany(e.target.value)} style={{ width: "95%", padding: 2, fontSize: "10.5px" }} /> : (c.diligenceMemo.comparableBet?.team?.company || "—")}</td>
                             <td>{isEditingMemo ? <input type="text" value={editCompTeamComparable} onChange={(e) => setEditCompTeamComparable(e.target.value)} style={{ width: "95%", padding: 2, fontSize: "10.5px" }} /> : (c.diligenceMemo.comparableBet?.team?.comparable || "—")}</td>
                           </tr>
-                          <tr style={{ borderBottom: "1px solid #ccc" }}>
+                          <tr style={{ borderBottom: "1px solid #BBBBBB" }}>
                             <td style={{ padding: "6px 8px", fontWeight: "bold" }}>Model</td>
                             <td>{isEditingMemo ? <input type="text" value={editCompBusinessModelCompany} onChange={(e) => setEditCompBusinessModelCompany(e.target.value)} style={{ width: "95%", padding: 2, fontSize: "10.5px" }} /> : (c.diligenceMemo.comparableBet?.businessModel?.company || "—")}</td>
                             <td>{isEditingMemo ? <input type="text" value={editCompBusinessModelComparable} onChange={(e) => setEditCompBusinessModelComparable(e.target.value)} style={{ width: "95%", padding: 2, fontSize: "10.5px" }} /> : (c.diligenceMemo.comparableBet?.businessModel?.comparable || "—")}</td>
@@ -12417,7 +14735,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   </div>
 
                   {/* 7. Unit Economics Defense */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>💰 7. UNIT ECONOMICS DEFENSE</span>
                       {!isEditingMemo && (
@@ -12430,14 +14748,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       )}
                     </div>
                     {isEditingMemo ? (
-                      <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #ccc" }} value={editUnitEconomicsVision} onChange={(e) => setEditUnitEconomicsVision(e.target.value)} />
+                      <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #BBBBBB" }} value={editUnitEconomicsVision} onChange={(e) => setEditUnitEconomicsVision(e.target.value)} />
                     ) : (
                       <p style={{ fontSize: "12.5px", lineHeight: "1.5", margin: 0 }}>{c.diligenceMemo.unitEconomicsVision}</p>
                     )}
                   </div>
 
                   {/* 8. Founder Call Questions */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>❓ 8. DUE DILIGENCE FOUNDER QUESTIONS</span>
                       {!isEditingMemo && (
@@ -12450,7 +14768,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       )}
                     </div>
                     {isEditingMemo ? (
-                      <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #ccc" }} value={editTopQuestionsText} onChange={(e) => setEditTopQuestionsText(e.target.value)} placeholder="One question per line..." />
+                      <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #BBBBBB" }} value={editTopQuestionsText} onChange={(e) => setEditTopQuestionsText(e.target.value)} placeholder="One question per line..." />
                     ) : (
                       <ul style={{ paddingLeft: 18, margin: 0, fontSize: "12.5px", lineHeight: "1.5" }}>
                         {(c.diligenceMemo.topQuestions || []).map((q, idx) => (
@@ -12461,7 +14779,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   </div>
 
                   {/* 9. Next Steps Playbook */}
-                  <div style={{ borderBottom: "1px solid #ccc", paddingBottom: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #BBBBBB", paddingBottom: "12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                       <span style={{ fontSize: "11px", fontFamily: fontStack.mono, fontWeight: "bold" }}>📋 9. NEXT STEPS PLAYBOOK</span>
                       {!isEditingMemo && (
@@ -12474,7 +14792,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       )}
                     </div>
                     {isEditingMemo ? (
-                      <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #ccc" }} value={editNextStepsText} onChange={(e) => setEditNextStepsText(e.target.value)} placeholder="One step per line..." />
+                      <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "12px", padding: "6px", border: "1px solid #BBBBBB" }} value={editNextStepsText} onChange={(e) => setEditNextStepsText(e.target.value)} placeholder="One step per line..." />
                     ) : (
                       <ul style={{ paddingLeft: 18, margin: 0, fontSize: "12.5px", lineHeight: "1.5" }}>
                         {(c.diligenceMemo.nextSteps || []).map((s, idx) => (
@@ -12497,10 +14815,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         </span>
                       )}
                     </div>
-                    <div style={{ overflowX: "auto", border: `1px solid #000` }}>
+                    <div style={{ overflowX: "auto", border: `1px solid #000000` }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: fontStack.mono }}>
                         <thead>
-                          <tr style={{ background: "#f5f5f5", textAlign: "left", borderBottom: `2px solid #000` }}>
+                          <tr style={{ background: "#F5F5F5", textAlign: "left", borderBottom: `2px solid #000000` }}>
                             <th style={{ padding: "6px 8px" }}>Company</th>
                             <th style={{ padding: "6px 8px", width: 70 }}>Ticker</th>
                             <th style={{ padding: "6px 8px", textAlign: "right", width: 80 }}>EV ($B)</th>
@@ -12512,7 +14830,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         </thead>
                         <tbody>
                           {(isEditingMemo ? editMemoPublicComps : (c.diligenceMemo.publicComps || [])).map((item, idx) => (
-                            <tr key={idx} style={{ borderBottom: `1px solid #ccc` }}>
+                            <tr key={idx} style={{ borderBottom: `1px solid #BBBBBB` }}>
                               <td style={{ padding: "6px 8px", fontWeight: "bold" }}>
                                 {isEditingMemo ? <input type="text" value={item.company || ""} onChange={(e) => {
                                   const copy = [...editMemoPublicComps];
@@ -12557,7 +14875,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               </td>
                               {isEditingMemo && (
                                 <td style={{ padding: "6px 8px", textAlign: "center" }}>
-                                  <button onClick={() => setEditMemoPublicComps(editMemoPublicComps.filter((_, i) => i !== idx))} style={{ color: RUST, border: "1px solid #ccc", background: "#fff", cursor: "pointer", fontSize: "10px", padding: "1px 4px" }}>🗑</button>
+                                  <button onClick={() => setEditMemoPublicComps(editMemoPublicComps.filter((_, i) => i !== idx))} style={{ color: RUST, border: "1px solid #BBBBBB", background: "#FFFFFF", cursor: "pointer", fontSize: "10px", padding: "1px 4px" }}>🗑</button>
                                 </td>
                               )}
                             </tr>
@@ -12568,7 +14886,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     {isEditingMemo && (
                       <button
                         onClick={() => setEditMemoPublicComps([...editMemoPublicComps, { company: "", ticker: "", ev: "", revenue: "", multiple: "", notes: "" }])}
-                        style={{ width: "100%", padding: "4px", border: "1px dashed #000", background: "#fff", cursor: "pointer", marginTop: "6px", fontSize: "10px" }}
+                        style={{ width: "100%", padding: "4px", border: "1px dashed #000000", background: "#FFFFFF", cursor: "pointer", marginTop: "6px", fontSize: "10px" }}
                       >
                         ➕ Add Public Comp
                       </button>
@@ -12646,9 +14964,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         key={slideInfo.num}
                         onClick={() => setActiveSlideNum(slideInfo.num)}
                         style={{
-                          border: isSelected ? "2px solid #000" : `1px solid ${LINE}`,
+                          border: isSelected ? "2px solid #000000" : `1px solid ${LINE}`,
                           padding: "8px 12px",
-                          background: isSelected ? "#FAF9F6" : "#fff",
+                          background: isSelected ? "#FAFAFA" : "#FFFFFF",
                           cursor: "pointer",
                           borderRadius: 3,
                           transition: "all 0.15s ease"
@@ -12659,7 +14977,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             SLIDE {slideInfo.num}
                           </span>
                           {slideInfo.isConstant && (
-                            <span style={{ fontSize: 8, fontFamily: fontStack.mono, background: "#f0f0f0", padding: "1px 4px", borderRadius: 2 }}>
+                            <span style={{ fontSize: 8, fontFamily: fontStack.mono, background: "#EEEEEE", padding: "1px 4px", borderRadius: 2 }}>
                               Constant
                             </span>
                           )}
@@ -12676,18 +14994,18 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
                   {/* 16:9 Slide Preview */}
                   <div style={{
-                    background: "#fff",
-                    border: "1px solid #000",
+                    background: "#FFFFFF",
+                    border: "1px solid #000000",
                     aspectRatio: "1.777",
                     padding: 30,
                     position: "relative",
                     display: "flex",
                     flexDirection: "column",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
+                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.03)",
                     boxSizing: "border-box"
                   }}>
                     {/* Slide Header */}
-                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #ccc", paddingBottom: 6, marginBottom: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #BBBBBB", paddingBottom: 6, marginBottom: 12 }}>
                       <span style={{ fontSize: 9, fontFamily: fontStack.mono, fontWeight: "bold", color: BLUE }}>
                         {activeSlideNum === 1 ? "COVER" : ((isEditingCreds ? editedCredsDeck : c.credsDeck)[`slide${activeSlideNum}`]?.tag || [
                           "COVER",
@@ -12773,7 +15091,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                 <div key={bIdx} style={{ overflowX: "auto", border: `1px solid ${LINE}`, borderRadius: 4, margin: "4px 0" }}>
                                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9.5 }}>
                                     <thead>
-                                      <tr style={{ borderBottom: `2px solid ${INK}`, textAlign: "left", background: "#fcfcfc" }}>
+                                      <tr style={{ borderBottom: `2px solid ${INK}`, textAlign: "left", background: "#FAFAFA" }}>
                                         {block.headers.map((h, idx) => (
                                           <th key={idx} style={{ padding: "6px 8px", fontWeight: "bold" }}>{h}</th>
                                         ))}
@@ -12789,7 +15107,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                                 padding: "5px 8px", 
                                                 color: isTarget ? BLUE : INK, 
                                                 fontWeight: isTarget ? "bold" : "normal",
-                                                background: isTarget ? "rgba(31, 45, 203, 0.03)" : "transparent"
+                                                background: isTarget ? "rgba(0, 0, 0, 0.03)" : "transparent"
                                               }}>
                                                 {cell}
                                               </td>
@@ -12817,7 +15135,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
 
                   {/* Inline Editor Fields Below Preview */}
                   {isEditingCreds && editedCredsDeck && (
-                    <div style={{ background: "#FAF9F6", border: `1px solid ${LINE}`, padding: 14, borderRadius: 3 }}>
+                    <div style={{ background: "#FAFAFA", border: `1px solid ${LINE}`, padding: 14, borderRadius: 3 }}>
                       <div style={{ fontWeight: "bold", fontSize: 11, fontFamily: fontStack.mono, borderBottom: `1px solid ${LINE}`, paddingBottom: 6, marginBottom: 12 }}>
                         ✏️ EDIT SLIDE {activeSlideNum}
                       </div>
@@ -12901,7 +15219,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                               copy[slideKey].blocks[blockIdx].value = copy[slideKey].blocks[blockIdx].value.filter((_, i) => i !== bulletIdx);
                                               setEditedCredsDeck(copy);
                                             }}
-                                            style={{ border: `1px solid ${LINE}`, background: "#fff", cursor: "pointer", padding: "2px 6px" }}
+                                            style={{ border: `1px solid ${LINE}`, background: "#FFFFFF", cursor: "pointer", padding: "2px 6px" }}
                                           >
                                             🗑
                                           </button>
@@ -12913,7 +15231,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                           copy[slideKey].blocks[blockIdx].value.push("");
                                           setEditedCredsDeck(copy);
                                         }}
-                                        style={{ width: "120px", alignSelf: "flex-start", padding: "4px", fontSize: "10px", border: `1px solid ${LINE}`, background: "#fff", cursor: "pointer", fontWeight: "bold" }}
+                                        style={{ width: "120px", alignSelf: "flex-start", padding: "4px", fontSize: "10px", border: `1px solid ${LINE}`, background: "#FFFFFF", cursor: "pointer", fontWeight: "bold" }}
                                       >
                                         ➕ Add Bullet
                                       </button>
@@ -12959,7 +15277,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                               copy[slideKey].blocks[blockIdx].rows = copy[slideKey].blocks[blockIdx].rows.filter((_, i) => i !== rIdx);
                                               setEditedCredsDeck(copy);
                                             }}
-                                            style={{ border: `1px solid ${LINE}`, background: "#fff", cursor: "pointer", padding: "2px 6px" }}
+                                            style={{ border: `1px solid ${LINE}`, background: "#FFFFFF", cursor: "pointer", padding: "2px 6px" }}
                                           >
                                             🗑
                                           </button>
@@ -12971,7 +15289,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                           copy[slideKey].blocks[blockIdx].rows.push(Array(block.headers.length).fill(""));
                                           setEditedCredsDeck(copy);
                                         }}
-                                        style={{ width: "120px", alignSelf: "flex-start", padding: "4px", fontSize: "10px", border: `1px solid ${LINE}`, background: "#fff", cursor: "pointer", fontWeight: "bold" }}
+                                        style={{ width: "120px", alignSelf: "flex-start", padding: "4px", fontSize: "10px", border: `1px solid ${LINE}`, background: "#FFFFFF", cursor: "pointer", fontWeight: "bold" }}
                                       >
                                         ➕ Add Row
                                       </button>
@@ -13144,7 +15462,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   <div style={{ fontSize: 10, fontFamily: fontStack.mono, fontWeight: "bold", color: FADE, marginBottom: 6 }}>
                     Live Return Calculations Preview (Given a $130M fund)
                   </div>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, background: "#FFF", border: `1px solid ${LINE}` }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, background: "#FFFFFF", border: `1px solid ${LINE}` }}>
                     <thead>
                       <tr style={{ background: PAPER, borderBottom: `2px solid ${INK}`, textAlign: "left" }}>
                         <th style={{ padding: 6 }}>Scenario</th>
@@ -13229,7 +15547,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   const bullRes = calculateReturnScenario(editIcBullExit, editIcTicketSize, editIcValuation, editIcDilution);
 
                   return (
-                    <div key={sec.num} style={{ border: `1px solid ${LINE}`, background: isOpen ? "#FFF" : "#fafafa", borderRadius: 3 }}>
+                    <div key={sec.num} style={{ border: `1px solid ${LINE}`, background: isOpen ? "#FFFFFF" : "#FAFAFA", borderRadius: 3 }}>
                       {/* Header bar */}
                       <div 
                         onClick={() => setOpenIcAccordionSections(prev => ({ ...prev, [idx]: !prev[idx] }))}
@@ -13252,7 +15570,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
 
                       {/* Content panel */}
                       {isOpen && (
-                        <div style={{ padding: 14, background: "#fff" }}>
+                        <div style={{ padding: 14, background: "#FFFFFF" }}>
                           {!isEditingIc && sec.path && (
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginBottom: 8 }}>
                               <span 
@@ -13329,7 +15647,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                     <td style={{ padding: 6, textAlign: "right" }}>${editIcBullExit || "—"}M</td>
                                     <td style={{ padding: 6, textAlign: "right" }}>{bullRes.exitOwnership ? bullRes.exitOwnership.toFixed(1) : "—"}%</td>
                                     <td style={{ padding: 6, textAlign: "right" }}>${bullRes.positionValue ? bullRes.positionValue.toFixed(2) : "—"}M</td>
-                                    <td style={{ padding: 6, textAlign: "right", color: "#059669", fontWeight: "bold" }}>{bullRes.multiple ? bullRes.multiple.toFixed(1) : "—"}x</td>
+                                    <td style={{ padding: 6, textAlign: "right", color: "#000000", fontWeight: "bold" }}>{bullRes.multiple ? bullRes.multiple.toFixed(1) : "—"}x</td>
                                     <td style={{ padding: 6, textAlign: "right" }}>{bullRes.fundReturned ? bullRes.fundReturned.toFixed(1) : "—"}%</td>
                                   </tr>
                                 </tbody>
@@ -13747,7 +16065,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
               }
             }}
             style={{ 
-              background: dragOverAssets ? "rgba(31,45,203,0.04)" : CARD, 
+              background: dragOverAssets ? "rgba(0, 0, 0, 0.04)" : CARD, 
               border: dragOverAssets ? `2px dashed ${BLUE}` : `1px solid ${LINE}`, 
               padding: dragOverAssets ? 17 : 18, 
               marginTop: 14,
@@ -13779,7 +16097,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 style={{
                   border: `2px dashed ${dragOverAssets ? BLUE : LINE}`,
                   borderRadius: 4,
-                  background: dragOverAssets ? "rgba(31, 45, 203, 0.04)" : "rgba(107, 110, 118, 0.02)",
+                  background: dragOverAssets ? "rgba(0, 0, 0, 0.04)" : "rgba(119, 119, 119, 0.02)",
                   padding: "24px 14px",
                   textAlign: "center",
                   cursor: "pointer",
@@ -13798,7 +16116,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {c.assets.map((asset, index) => (
-                  <div key={index} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${LINE}`, padding: "8px 12px", background: "#fcfcfc" }}>
+                  <div key={index} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${LINE}`, padding: "8px 12px", background: "#FAFAFA" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 16 }}>📄</span>
                       <div>
@@ -13832,7 +16150,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                           padding: "3px 6px",
                           border: `1px solid ${BLUE}`,
                           color: BLUE,
-                          background: "#fff",
+                          background: "#FFFFFF",
                           borderRadius: 2,
                           cursor: "pointer",
                           fontWeight: 500
@@ -13862,7 +16180,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   style={{
                     border: `2px dashed ${dragOverAssets ? BLUE : LINE}`,
                     borderRadius: 4,
-                    background: dragOverAssets ? "rgba(31, 45, 203, 0.04)" : "rgba(107, 110, 118, 0.01)",
+                    background: dragOverAssets ? "rgba(0, 0, 0, 0.04)" : "rgba(119, 119, 119, 0.01)",
                     padding: "12px 14px",
                     textAlign: "center",
                     cursor: "pointer",
@@ -13893,7 +16211,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
               }
             }}
             style={{ 
-              background: dragOverVdr ? "rgba(31,45,203,0.04)" : CARD, 
+              background: dragOverVdr ? "rgba(0, 0, 0, 0.04)" : CARD, 
               border: dragOverVdr ? `2px dashed ${BLUE}` : `1px solid ${LINE}`, 
               padding: dragOverVdr ? 17 : 18, 
               marginTop: 14,
@@ -13928,7 +16246,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 style={{
                   border: `2px dashed ${dragOverVdr ? BLUE : LINE}`,
                   borderRadius: 4,
-                  background: dragOverVdr ? "rgba(31, 45, 203, 0.04)" : "rgba(107, 110, 118, 0.02)",
+                  background: dragOverVdr ? "rgba(0, 0, 0, 0.04)" : "rgba(119, 119, 119, 0.02)",
                   padding: "24px 14px",
                   textAlign: "center",
                   cursor: "pointer",
@@ -13947,7 +16265,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {c.dataRoom.map((doc, index) => (
-                  <div key={index} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${LINE}`, padding: "8px 12px", background: "#fcfcfc" }}>
+                  <div key={index} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${LINE}`, padding: "8px 12px", background: "#FAFAFA" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 16 }}>📁</span>
                       <div>
@@ -13981,7 +16299,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                           padding: "3px 6px",
                           border: `1px solid ${BLUE}`,
                           color: BLUE,
-                          background: "#fff",
+                          background: "#FFFFFF",
                           borderRadius: 2,
                           cursor: "pointer",
                           fontWeight: 500
@@ -14011,7 +16329,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   style={{
                     border: `2px dashed ${dragOverVdr ? BLUE : LINE}`,
                     borderRadius: 4,
-                    background: dragOverVdr ? "rgba(31, 45, 203, 0.04)" : "rgba(107, 110, 118, 0.01)",
+                    background: dragOverVdr ? "rgba(0, 0, 0, 0.04)" : "rgba(119, 119, 119, 0.01)",
                     padding: "12px 14px",
                     textAlign: "center",
                     cursor: "pointer",
@@ -14072,33 +16390,33 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 </Btn>
               </div>
                         ) : (
-              <div className="bnvt-editorial-study" style={{ background: "#FFF", border: "1px solid #000", padding: "30px", color: "#000", fontFamily: fontStack.display }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000", paddingBottom: "4px" }}>
+              <div className="bnvt-editorial-study" style={{ background: "#FFFFFF", border: "1px solid #000000", padding: "30px", color: "#000000", fontFamily: fontStack.display }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000000", paddingBottom: "4px" }}>
                   <span style={{ fontFamily: fontStack.mono, fontSize: "13px", fontWeight: "bold" }}>bnvt·capital</span>
-                  <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#666" }}>CONFIDENTIAL INVESTMENT MEMO</span>
+                  <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#555555" }}>CONFIDENTIAL INVESTMENT MEMO</span>
                 </div>
                 
-                <div style={{ fontFamily: fontStack.display, fontSize: "18px", fontStyle: "italic", margin: "14px 0 6px" }}>
+                <div style={{ fontFamily: fontStack.display, fontSize: "18px", margin: "14px 0 6px" }}>
                   BNVT Capital Investment Notes
                 </div>
                 
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontFamily: fontStack.mono, paddingBottom: "10px", borderBottom: "2px solid #000" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontFamily: fontStack.mono, paddingBottom: "10px", borderBottom: "2px solid #000000" }}>
                   <div>
-                    <span style={{ color: "#666" }}>Company:</span> <span style={{ fontWeight: "bold" }}>{c.name}</span>
+                    <span style={{ color: "#555555" }}>Company:</span> <span style={{ fontWeight: "bold" }}>{c.name}</span>
                   </div>
                   <div>
-                    <span style={{ color: "#666" }}>TAM:</span> <span style={{ fontWeight: "bold", color: "rgb(5, 150, 105)" }}>{formatCurrency(getTamValue(c))}</span>
+                    <span style={{ color: "#555555" }}>TAM:</span> <span style={{ fontWeight: "bold", color: "rgb(0, 0, 0)" }}>{formatCurrency(getTamValue(c))}</span>
                   </div>
                   <div>
                     <span style={{ fontWeight: "bold" }}>HQ:</span>{" "}
-                    <span style={{ color: "#000", textDecoration: "underline", cursor: "pointer" }}>
+                    <span style={{ color: "#000000", textDecoration: "underline", cursor: "pointer" }}>
                       {c.geo === "Nordics" ? "Malmö, Sweden / distributed (Nordics)" : c.geo === "US" ? "New York, USA / distributed (US)" : `distributed (${c.geo || "EU"})`}
                     </span>
                   </div>
                 </div>
 
                 <div style={{ marginTop: "12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px" }}>
                     <span style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>Big Problem Thesis</span>
                     {!isEditingStudy && (
                       <span 
@@ -14115,14 +16433,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     )}
                   </div>
                   {isEditingStudy ? (
-                    <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #ccc", marginBottom: "14px" }} value={editProblemThesis} onChange={(e) => setEditProblemThesis(e.target.value)} />
+                    <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #BBBBBB", marginBottom: "14px" }} value={editProblemThesis} onChange={(e) => setEditProblemThesis(e.target.value)} />
                   ) : (
-                    <p style={{ fontSize: "13px", lineHeight: "1.5", margin: "0 0 14px 0", color: "#222" }}>
+                    <p style={{ fontSize: "13px", lineHeight: "1.5", margin: "0 0 14px 0", color: "#111111" }}>
                       {c.marketStudy.problemThesis}
                     </p>
                   )}
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px" }}>
                     <span style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>Company Overview</span>
                     {!isEditingStudy && (
                       <span 
@@ -14139,14 +16457,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     )}
                   </div>
                   {isEditingStudy ? (
-                    <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #ccc", marginBottom: "14px" }} value={editCompanyOverview} onChange={(e) => setEditCompanyOverview(e.target.value)} />
+                    <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #BBBBBB", marginBottom: "14px" }} value={editCompanyOverview} onChange={(e) => setEditCompanyOverview(e.target.value)} />
                   ) : (
-                    <p style={{ fontSize: "13px", lineHeight: "1.5", margin: "0 0 14px 0", color: "#222" }}>
+                    <p style={{ fontSize: "13px", lineHeight: "1.5", margin: "0 0 14px 0", color: "#111111" }}>
                       {c.marketStudy.companyOverview}
                     </p>
                   )}
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px" }}>
                     <span style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>Market Problem & Willingness to Pay</span>
                     {!isEditingStudy && (
                       <span 
@@ -14163,14 +16481,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     )}
                   </div>
                   {isEditingStudy ? (
-                    <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #ccc", marginBottom: "14px" }} value={editWillingnessToPay} onChange={(e) => setEditWillingnessToPay(e.target.value)} />
+                    <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #BBBBBB", marginBottom: "14px" }} value={editWillingnessToPay} onChange={(e) => setEditWillingnessToPay(e.target.value)} />
                   ) : (
-                    <div style={{ fontSize: "13px", lineHeight: "1.5", margin: "0 0 14px 0", color: "#222", whiteSpace: "pre-wrap" }}>
+                    <div style={{ fontSize: "13px", lineHeight: "1.5", margin: "0 0 14px 0", color: "#111111", whiteSpace: "pre-wrap" }}>
                       {c.marketStudy.willingnessToPay}
                     </div>
                   )}
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px" }}>
                     <span style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>Business Model & TAM Sizing</span>
                     {!isEditingStudy && (
                       <span 
@@ -14198,7 +16516,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       </div>
                     </div>
                   ) : (
-                    <p style={{ fontSize: "13px", lineHeight: "1.5", margin: "0 0 10px 0", color: "#222" }}>
+                    <p style={{ fontSize: "13px", lineHeight: "1.5", margin: "0 0 10px 0", color: "#111111" }}>
                       <strong>Pricing Model:</strong> {c.marketStudy.businessModel?.pricingStructure}
                     </p>
                   )}
@@ -14206,7 +16524,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   {/* Table */}
                   <table style={{ width: "100%", borderCollapse: "collapse", margin: "14px 0", fontFamily: fontStack.mono, fontSize: "11px" }}>
                     <thead>
-                      <tr style={{ borderBottom: "2px solid #000", textAlign: "left" }}>
+                      <tr style={{ borderBottom: "2px solid #000000", textAlign: "left" }}>
                         <th style={{ padding: "6px 0", fontWeight: "bold" }}>Sizing Segment</th>
                         <th style={{ padding: "6px 0", fontWeight: "bold", textAlign: "right" }}>Units of Demand</th>
                         <th style={{ padding: "6px 0", fontWeight: "bold", textAlign: "right" }}>Average Price (ACV)</th>
@@ -14214,7 +16532,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       </tr>
                     </thead>
                     <tbody>
-                      <tr style={{ borderBottom: "1px solid #ccc" }}>
+                      <tr style={{ borderBottom: "1px solid #BBBBBB" }}>
                         <td style={{ padding: "8px 0", fontWeight: "bold" }}>TAM (Total Addressable Market)</td>
                         <td style={{ padding: "8px 0", textAlign: "right" }}>
                           {isEditingStudy ? (
@@ -14234,7 +16552,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                           {formatCurrency((isEditingStudy ? (Number(editTamUnits) || 0) : (c.marketStudy.businessModel?.tamUnits || 0)) * (isEditingStudy ? (Number(editEstimatedAcv) || 0) : (c.marketStudy.businessModel?.estimatedAcv || 0)))}
                         </td>
                       </tr>
-                      <tr style={{ borderBottom: "1px solid #ccc" }}>
+                      <tr style={{ borderBottom: "1px solid #BBBBBB" }}>
                         <td style={{ padding: "8px 0", fontWeight: "bold" }}>SAM (Serviceable Addressable Market)</td>
                         <td style={{ padding: "8px 0", textAlign: "right" }}>
                           {isEditingStudy ? (
@@ -14254,7 +16572,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                           {formatCurrency((isEditingStudy ? (Number(editSamUnits) || 0) : (c.marketStudy.businessModel?.samUnits || 0)) * (isEditingStudy ? (Number(editEstimatedAcv) || 0) : (c.marketStudy.businessModel?.estimatedAcv || 0)))}
                         </td>
                       </tr>
-                      <tr style={{ borderBottom: "2px solid #000" }}>
+                      <tr style={{ borderBottom: "2px solid #000000" }}>
                         <td style={{ padding: "8px 0", fontWeight: "bold" }}>SOM (Serviceable Obtainable Market)</td>
                         <td style={{ padding: "8px 0", textAlign: "right" }}>
                           {isEditingStudy ? (
@@ -14277,7 +16595,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     </tbody>
                   </table>
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", marginTop: "14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", marginTop: "14px" }}>
                     <span style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>Sizing Methodology & Sourcing</span>
                     {!isEditingStudy && (
                       <span 
@@ -14294,9 +16612,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     )}
                   </div>
                   {isEditingStudy ? (
-                    <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #ccc" }} value={editMethodology} onChange={(e) => setEditMethodology(e.target.value)} />
+                    <TextArea rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #BBBBBB" }} value={editMethodology} onChange={(e) => setEditMethodology(e.target.value)} />
                   ) : (
-                    <p style={{ fontSize: "13px", lineHeight: "1.5", margin: "0", color: "#222" }}>
+                    <p style={{ fontSize: "13px", lineHeight: "1.5", margin: "0", color: "#111111" }}>
                       {c.marketStudy.methodology}
                     </p>
                   )}
@@ -14349,23 +16667,23 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 </Btn>
               </div>
             ) : (
-              <div className="bnvt-editorial-study" style={{ background: "#FFF", border: "1px solid #000", padding: "30px", color: "#000", fontFamily: fontStack.display }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000", paddingBottom: "4px" }}>
+              <div className="bnvt-editorial-study" style={{ background: "#FFFFFF", border: "1px solid #000000", padding: "30px", color: "#000000", fontFamily: fontStack.display }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000000", paddingBottom: "4px" }}>
                   <span style={{ fontFamily: fontStack.mono, fontSize: "13px", fontWeight: "bold" }}>bnvt·capital</span>
-                  <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#666" }}>COMPETITIVE LANDSCAPE NOTES</span>
+                  <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#555555" }}>COMPETITIVE LANDSCAPE NOTES</span>
                 </div>
                 
-                <div style={{ fontFamily: fontStack.display, fontSize: "18px", fontStyle: "italic", margin: "14px 0 6px" }}>
+                <div style={{ fontFamily: fontStack.display, fontSize: "18px", margin: "14px 0 6px" }}>
                   BNVT Capital Competitive Mapping
                 </div>
                 
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontFamily: fontStack.mono, paddingBottom: "10px", borderBottom: "2px solid #000" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontFamily: fontStack.mono, paddingBottom: "10px", borderBottom: "2px solid #000000" }}>
                   <div>
-                    <span style={{ color: "#666" }}>Company:</span> <span style={{ fontWeight: "bold" }}>{c.name}</span>
+                    <span style={{ color: "#555555" }}>Company:</span> <span style={{ fontWeight: "bold" }}>{c.name}</span>
                   </div>
                   <div>
                     <span style={{ fontWeight: "bold" }}>HQ:</span>{" "}
-                    <span style={{ color: "#000", textDecoration: "underline", cursor: "pointer" }}>
+                    <span style={{ color: "#000000", textDecoration: "underline", cursor: "pointer" }}>
                       {c.geo === "Nordics" ? "Malmö, Sweden / distributed (Nordics)" : c.geo === "US" ? "New York, USA / distributed (US)" : `distributed (${c.geo || "EU"})`}
                     </span>
                   </div>
@@ -14375,13 +16693,13 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   {/* Landscape Summary Section */}
                   <div style={{
                     background: "#FFFFFF",
-                    border: `1px solid #000`,
-                    borderLeft: `4px solid #000`,
+                    border: `1px solid #000000`,
+                    borderLeft: `4px solid #000000`,
                     padding: 20,
                     marginBottom: 16
                   }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid #ccc`, paddingBottom: 8, marginBottom: 12 }}>
-                      <span style={{ fontSize: 11, fontFamily: fontStack.mono, fontWeight: "bold", letterSpacing: "0.06em", color: "#000" }}>💡 LANDSCAPE SUMMARY & STRATEGIC CONTEXT</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid #BBBBBB`, paddingBottom: 8, marginBottom: 12 }}>
+                      <span style={{ fontSize: 11, fontFamily: fontStack.mono, fontWeight: "bold", letterSpacing: "0.06em", color: "#000000" }}>💡 LANDSCAPE SUMMARY & STRATEGIC CONTEXT</span>
                       {!isEditingMapping && (
                         <span 
                           style={{ fontSize: "10px", color: BLUE, cursor: "pointer", fontFamily: fontStack.mono, fontWeight: 600 }} 
@@ -14397,7 +16715,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       )}
                     </div>
                     {isEditingMapping ? (
-                      <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #ccc" }} value={editMappingSummary} onChange={(e) => setEditMappingSummary(e.target.value)} />
+                      <TextArea rows={4} style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #BBBBBB" }} value={editMappingSummary} onChange={(e) => setEditMappingSummary(e.target.value)} />
                     ) : (
                       <p style={{ fontSize: "13.5px", lineHeight: "1.6", margin: 0, color: INK }}>
                         {c.competitiveMapping.summary}
@@ -14408,18 +16726,18 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   {/* Incumbents & Legacy Table */}
                   <div style={{
                     background: "#FFFFFF",
-                    border: `1px solid #000`,
-                    borderLeft: `4px solid #000`,
+                    border: `1px solid #000000`,
+                    borderLeft: `4px solid #000000`,
                     padding: 20,
                     marginBottom: 16
                   }}>
-                    <div style={{ fontSize: 11, fontFamily: fontStack.mono, fontWeight: "bold", letterSpacing: "0.06em", color: INK, borderBottom: `1px solid #ccc`, paddingBottom: 8, marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontFamily: fontStack.mono, fontWeight: "bold", letterSpacing: "0.06em", color: INK, borderBottom: `1px solid #BBBBBB`, paddingBottom: 8, marginBottom: 12 }}>
                       📊 INCUMBENTS & LEGACY MATRIX
                     </div>
-                    <div style={{ overflowX: "auto", border: `1px solid #ccc` }}>
+                    <div style={{ overflowX: "auto", border: `1px solid #BBBBBB` }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: fontStack.mono, fontSize: "11.5px" }}>
                         <thead>
-                          <tr style={{ background: "#f5f5f5", textAlign: "left", borderBottom: `2px solid #000` }}>
+                          <tr style={{ background: "#F5F5F5", textAlign: "left", borderBottom: `2px solid #000000` }}>
                             <th style={{ padding: "8px 10px", fontWeight: "bold" }}>Player Name</th>
                             <th style={{ padding: "8px 10px", fontWeight: "bold" }}>Segment</th>
                             <th style={{ padding: "8px 10px", fontWeight: "bold" }}>Valuation</th>
@@ -14428,7 +16746,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         </thead>
                         <tbody>
                           {(isEditingMapping ? editCompetitors : (c.competitiveMapping.competitors || [])).map((comp, i) => (
-                            <tr key={i} style={{ borderBottom: `1px solid #ccc` }}>
+                            <tr key={i} style={{ borderBottom: `1px solid #BBBBBB` }}>
                               <td style={{ padding: "8px 10px", fontWeight: "bold", color: INK }}>
                                 {isEditingMapping ? (
                                   <input type="text" style={{ padding: "4px", fontSize: "11px", width: "90%" }} value={comp.name} onChange={(e) => updateCompetitorField(i, "name", e.target.value)} />
@@ -14451,9 +16769,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                     fontSize: 8.5,
                                     padding: "2px 6px",
                                     fontWeight: "bold",
-                                    background: "#f5f5f5",
-                                    color: "#000",
-                                    border: `1px solid #ccc`
+                                    background: "#F5F5F5",
+                                    color: "#000000",
+                                    border: `1px solid #BBBBBB`
                                   }}>
                                     {comp.segment}
                                   </span>
@@ -14466,7 +16784,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                   comp.valuation || "—"
                                 )}
                               </td>
-                              <td style={{ padding: "8px 10px", color: "#444" }}>
+                              <td style={{ padding: "8px 10px", color: "#333333" }}>
                                 {isEditingMapping ? (
                                   <input type="text" style={{ padding: "4px", fontSize: "11px", width: "95%" }} value={comp.traction || ""} onChange={(e) => updateCompetitorField(i, "traction", e.target.value)} />
                                 ) : (
@@ -14483,12 +16801,12 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   {/* Competitor Profiles Grid */}
                   <div style={{
                     background: "#FFFFFF",
-                    border: `1px solid #000`,
-                    borderLeft: `4px solid #000`,
+                    border: `1px solid #000000`,
+                    borderLeft: `4px solid #000000`,
                     padding: 20
                   }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid #ccc`, paddingBottom: 8, marginBottom: 16 }}>
-                      <span style={{ fontSize: 11, fontFamily: fontStack.mono, fontWeight: "bold", letterSpacing: "0.06em", color: "#000" }}>⚔️ COMPETITOR PROFILES & TECH STACKS</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid #BBBBBB`, paddingBottom: 8, marginBottom: 16 }}>
+                      <span style={{ fontSize: 11, fontFamily: fontStack.mono, fontWeight: "bold", letterSpacing: "0.06em", color: "#000000" }}>⚔️ COMPETITOR PROFILES & TECH STACKS</span>
                       {!isEditingMapping && (
                         <span 
                           style={{ fontSize: "10px", color: BLUE, cursor: "pointer", fontFamily: fontStack.mono, fontWeight: 600 }} 
@@ -14509,14 +16827,14 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         const techChips = (comp.techStack || "").split(/[;,\/]+/).map(t => t.trim()).filter(Boolean);
                         return (
                           <div key={i} style={{ 
-                            border: `1px solid #000`, 
+                            border: `1px solid #000000`, 
                             padding: 16, 
                             background: "#FAFAFA",
                             display: "flex",
                             flexDirection: "column",
                             gap: 12
                           }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid #ccc`, paddingBottom: 6 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid #BBBBBB`, paddingBottom: 6 }}>
                               <span style={{ fontSize: 13, fontWeight: "bold", color: INK }}>{comp.name}</span>
                               {isEditingMapping ? (
                                 <button
@@ -14524,8 +16842,8 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                   style={{
                                     fontSize: "10px",
                                     color: RUST,
-                                    background: "#fff",
-                                    border: `1px solid #ccc`,
+                                    background: "#FFFFFF",
+                                    border: `1px solid #BBBBBB`,
                                     padding: "2px 6px",
                                     cursor: "pointer"
                                   }}
@@ -14537,16 +16855,16 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                   fontSize: 8,
                                   padding: "1px 4px",
                                   fontWeight: "bold",
-                                  background: "#f5f5f5",
-                                  color: "#000",
-                                  border: `1px solid #ccc`
+                                  background: "#F5F5F5",
+                                  color: "#000000",
+                                  border: `1px solid #BBBBBB`
                                 }}>
                                   {comp.segment}
                                 </span>
                               )}
                             </div>
 
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 11, borderBottom: `1px dashed #ccc`, paddingBottom: 8 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 11, borderBottom: `1px dashed #BBBBBB`, paddingBottom: 8 }}>
                               <div>
                                 <span style={{ color: FADE, display: "block", fontSize: 9, fontFamily: fontStack.mono }}>VALUATION</span>
                                 {isEditingMapping ? (
@@ -14606,9 +16924,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                                     {techChips.map((chip, idx) => (
                                       <span key={idx} style={{ 
-                                        background: "#f5f5f5", 
-                                        border: `1px solid #ccc`, 
-                                        color: "#000", 
+                                        background: "#F5F5F5", 
+                                        border: `1px solid #BBBBBB`, 
+                                        color: "#000000", 
                                         padding: "2px 6px", 
                                         fontSize: 9.5, 
                                         fontFamily: fontStack.mono,
@@ -14631,8 +16949,8 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         style={{
                           width: "100%",
                           padding: "10px",
-                          border: "1px dashed #000",
-                          background: "#fff",
+                          border: "1px dashed #000000",
+                          background: "#FFFFFF",
                           cursor: "pointer",
                           marginTop: "16px",
                           fontFamily: fontStack.ui,
@@ -14727,7 +17045,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                                 listCopy[idx].category = e.target.value;
                                 setEditContacts(listCopy);
                               }}
-                              style={{ width: "100%", padding: 4, fontFamily: fontStack.ui, fontSize: 12, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}
+                              style={{ width: "100%", padding: 4, fontFamily: fontStack.ui, fontSize: 12, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}
                             >
                               <option value="Existing Customer">Existing Customer</option>
                               <option value="Potential Customer">Potential Customer</option>
@@ -14849,16 +17167,16 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               fontFamily: fontStack.mono, 
                               padding: "1px 5px", 
                               borderRadius: 3, 
-                              background: contact.category === "Existing Customer" ? "rgba(5, 150, 105, 0.08)" :
-                                          contact.category === "Potential Customer" ? "rgba(31, 45, 203, 0.08)" :
-                                          contact.category === "Industry Expert" ? "rgba(139, 92, 246, 0.08)" : "rgba(192, 122, 46, 0.08)",
-                              color: contact.category === "Existing Customer" ? "#059669" :
+                              background: contact.category === "Existing Customer" ? "rgba(0, 0, 0, 0.08)" :
+                                          contact.category === "Potential Customer" ? "rgba(0, 0, 0, 0.08)" :
+                                          contact.category === "Industry Expert" ? "rgba(221, 221, 221, 0.08)" : "rgba(0, 0, 0, 0.08)",
+                              color: contact.category === "Existing Customer" ? "#000000" :
                                      contact.category === "Potential Customer" ? BLUE :
-                                     contact.category === "Industry Expert" ? "#8B5CF6" : AMBER,
+                                     contact.category === "Industry Expert" ? "#DDDDDD" : AMBER,
                               border: `1px solid ${
-                                     contact.category === "Existing Customer" ? "rgba(5, 150, 105, 0.15)" :
-                                     contact.category === "Potential Customer" ? "rgba(31, 45, 203, 0.15)" :
-                                     contact.category === "Industry Expert" ? "rgba(139, 92, 246, 0.15)" : "rgba(192, 122, 46, 0.15)"
+                                     contact.category === "Existing Customer" ? "rgba(0, 0, 0, 0.15)" :
+                                     contact.category === "Potential Customer" ? "rgba(0, 0, 0, 0.15)" :
+                                     contact.category === "Industry Expert" ? "rgba(221, 221, 221, 0.15)" : "rgba(0, 0, 0, 0.15)"
                               }`,
                               fontWeight: 500
                             }}>
@@ -14936,10 +17254,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
 
         {/* Right column: scores */}
         <div>
-          <div style={{ background: INK, color: "#fff", padding: 22, textAlign: "center" }}>
-            <RadarSeal scores={c.scores} size={130} stroke="#fff" />
+          <div style={{ background: INK, color: "#FFFFFF", padding: 22, textAlign: "center" }}>
+            <RadarSeal scores={c.scores} size={130} stroke="#FFFFFF" />
             <div style={{ fontFamily: fontStack.mono, fontSize: 28 }}>{comp != null ? comp.toFixed(1) : "—"}</div>
-            <div style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.14em", color: "#9aa" }}>DEFENSIBILITY COMPOSITE</div>
+            <div style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.14em", color: "#999999" }}>DEFENSIBILITY COMPOSITE</div>
           </div>
           <div style={{ background: CARD, border: `1px solid ${LINE}`, borderTop: "none", padding: 18 }}>
             {DIMS.map((d) => (
@@ -15150,7 +17468,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: "rgba(21, 23, 28, 0.6)",
+          backgroundColor: "rgba(17, 17, 17, 0.6)",
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
@@ -15783,7 +18101,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
 
       {!bulkMode ? (
         <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: 28 }}>
-          <div style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 22, marginBottom: 4 }}>New opportunity</div>
+          <div style={{ fontFamily: fontStack.display, fontSize: 22, marginBottom: 4 }}>New opportunity</div>
           <div style={{ fontSize: 13, color: FADE, marginBottom: 20 }}>
             Drop a website or LinkedIn URL. The agent researches the company, builds the overview (product, market, team, traction) and scores it on the defensibility matrix - your proprietary context is folded into the assessment.
           </div>
@@ -15845,9 +18163,9 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
                   padding: 9, 
                   fontFamily: fontStack.ui, 
                   fontSize: 13, 
-                  border: `1px solid ${entityType === "Individual" ? "#8B5CF6" : BLUE}`, 
-                  background: entityType === "Individual" ? "rgba(139, 92, 246, 0.05)" : "rgba(31, 45, 203, 0.04)", 
-                  color: entityType === "Individual" ? "#8B5CF6" : BLUE,
+                  border: `1px solid ${entityType === "Individual" ? "#DDDDDD" : BLUE}`, 
+                  background: entityType === "Individual" ? "rgba(221, 221, 221, 0.05)" : "rgba(0, 0, 0, 0.04)", 
+                  color: entityType === "Individual" ? "#DDDDDD" : BLUE,
                   borderRadius: 2,
                   fontWeight: 600
                 }}
@@ -15858,19 +18176,19 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
             </div>
             <div style={{ flex: "1 1 120px" }}>
               <Label>Source</Label>
-              <select value={source} onChange={(e) => setSource(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+              <select value={source} onChange={(e) => setSource(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                 {SOURCES.map((s) => <option key={s}>{s}</option>)}
               </select>
             </div>
             <div style={{ flex: "1 1 120px" }}>
               <Label>Stage (fallback)</Label>
-              <select value={stage} onChange={(e) => setStage(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+              <select value={stage} onChange={(e) => setStage(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                 {STAGES.map((s) => <option key={s}>{s}</option>)}
               </select>
             </div>
             <div style={{ flex: "1 1 120px" }}>
               <Label>Geography</Label>
-              <select value={geo} onChange={(e) => setGeo(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+              <select value={geo} onChange={(e) => setGeo(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                 <option value="">(None)</option>
                 <option value="EU">EU</option>
                 <option value="Nordics">Nordics</option>
@@ -15881,7 +18199,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
             </div>
             <div style={{ flex: "1 1 120px" }}>
               <Label>Priority</Label>
-              <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+              <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                 <option value="High">High</option>
                 <option value="Medium">Medium</option>
                 <option value="Low">Low</option>
@@ -15904,11 +18222,11 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
             <div style={{ color: RUST, fontSize: 12.5, marginTop: 12 }}>
               <div>{err}</div>
               {rawResponse && (
-                <details style={{ marginTop: 8, background: "rgba(239, 68, 68, 0.05)", border: `1px solid ${LINE}`, padding: 8 }}>
+                <details style={{ marginTop: 8, background: "rgba(192, 0, 0, 0.05)", border: `1px solid ${LINE}`, padding: 8 }}>
                   <summary style={{ cursor: "pointer", fontFamily: fontStack.mono, fontSize: 11 }}>Show raw AI response</summary>
                   <textarea 
                     readOnly 
-                    style={{ width: "100%", height: 150, fontFamily: fontStack.mono, fontSize: 11, marginTop: 6, background: "#fff", border: `1px solid ${LINE}`, padding: 6 }} 
+                    style={{ width: "100%", height: 150, fontFamily: fontStack.mono, fontSize: 11, marginTop: 6, background: "#FFFFFF", border: `1px solid ${LINE}`, padding: 6 }} 
                     value={rawResponse} 
                   />
                 </details>
@@ -15918,7 +18236,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
         </div>
       ) : (
         <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: 28 }}>
-          <div style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 22, marginBottom: 4 }}>Bulk Import</div>
+          <div style={{ fontFamily: fontStack.display, fontSize: 22, marginBottom: 4 }}>Bulk Import</div>
           <div style={{ fontSize: 13, color: FADE, marginBottom: 20 }}>
             Paste a list of URLs/Names (one per line) or copy-paste columns directly from Excel or Google Sheets (columns: **Website/Name**, **Status**, **Stage**, **Priority**, **Region/Geo**, and **Notes**). They will be added to the pipeline and can be scored individually or via the queue.
           </div>
@@ -16227,7 +18545,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr", gap: 20, minHeight: 450, background: CARD, border: `1px solid ${LINE}`, padding: 20 }}>
-      <div style={{ position: "relative", background: "#ffffff", border: `1px solid ${LINE}`, borderRadius: 4, padding: 16, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div style={{ position: "relative", background: "#FFFFFF", border: `1px solid ${LINE}`, borderRadius: 4, padding: 16, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <span style={{ fontSize: 13, fontWeight: "bold", color: BLUE, fontFamily: fontStack.mono }}>🗺 CO-INVESTOR GLOBAL DISTRIBUTION</span>
           <span style={{ fontSize: 11, color: FADE }}>Drag to pan. Click nodes to view co-investors</span>
@@ -16235,10 +18553,10 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
         
         <div style={{ position: "relative", width: "100%", aspectRatio: "2", overflow: "hidden", border: `1px solid ${LINE}`, borderRadius: 4 }}>
           {/* Zoom Controls Overlay */}
-          <div style={{ position: "absolute", top: 10, left: 10, zIndex: 10, display: "flex", flexDirection: "column", gap: 4, background: "rgba(255, 255, 255, 0.9)", padding: 4, border: `1px solid ${LINE}`, borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.05)" }}>
-            <button onClick={zoomIn} style={{ width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${LINE}`, background: "#fff", cursor: "pointer", fontWeight: "bold", fontSize: 13, borderRadius: 2 }} title="Zoom In">+</button>
-            <button onClick={zoomOut} style={{ width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${LINE}`, background: "#fff", cursor: "pointer", fontWeight: "bold", fontSize: 13, borderRadius: 2 }} title="Zoom Out">-</button>
-            <button onClick={resetView} style={{ width: 24, height: 20, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${LINE}`, background: "#fff", cursor: "pointer", fontSize: 9, borderRadius: 2 }} title="Reset Map View">Reset</button>
+          <div style={{ position: "absolute", top: 10, left: 10, zIndex: 10, display: "flex", flexDirection: "column", gap: 4, background: "rgba(255, 255, 255, 0.9)", padding: 4, border: `1px solid ${LINE}`, borderRadius: 4, boxShadow: "0 2px 6px rgba(0, 0, 0, 0.05)" }}>
+            <button onClick={zoomIn} style={{ width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${LINE}`, background: "#FFFFFF", cursor: "pointer", fontWeight: "bold", fontSize: 13, borderRadius: 2 }} title="Zoom In">+</button>
+            <button onClick={zoomOut} style={{ width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${LINE}`, background: "#FFFFFF", cursor: "pointer", fontWeight: "bold", fontSize: 13, borderRadius: 2 }} title="Zoom Out">-</button>
+            <button onClick={resetView} style={{ width: 24, height: 20, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${LINE}`, background: "#FFFFFF", cursor: "pointer", fontSize: 9, borderRadius: 2 }} title="Reset Map View">Reset</button>
           </div>
 
           <svg 
@@ -16246,7 +18564,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
             viewBox={`${pan.x} ${pan.y} ${viewWidth} ${viewHeight}`} 
             width="100%" 
             height="100%" 
-            style={{ background: "#fafafa", cursor: isDragging ? "grabbing" : "grab", userSelect: "none" }}
+            style={{ background: "#FAFAFA", cursor: isDragging ? "grabbing" : "grab", userSelect: "none" }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -16254,7 +18572,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
           >
             <defs>
               <pattern id="gridMap" width="5" height="5" patternUnits="userSpaceOnUse">
-                <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#F1F1EF" strokeWidth="0.3" />
+                <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#EEEEEE" strokeWidth="0.3" />
               </pattern>
             </defs>
             <rect x={pan.x} y={pan.y} width={viewWidth} height={viewHeight} fill="url(#gridMap)" />
@@ -16265,26 +18583,26 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
                 <path
                   key={idx}
                   d={geoJsonToSvgPath(feature.geometry)}
-                  fill="#f0f0ed"
-                  stroke="#e0e0db"
+                  fill="#EEEEEE"
+                  stroke="#DDDDDD"
                   strokeWidth="0.15"
                 />
               ))
             ) : (
               // Fallback simplified contours while loading GeoJSON
               <>
-                <polygon points="22,1 27,1 29,3 27,5 23,4" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="3,7 6,4 12,3 21,3 32,5 31,10 27,11 26,14 28,15 26,18 20,20 18,24 14,24 11,20 13,16 8,16 5,14" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="20,20 22,22 25,24 28,27 30,31 32,36 30,42 28,45 26,45 25,38 23,32 20,27 19,23" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="36,10 38,10 38,12 36,12" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="37,13 41,9 43,5 47,4 50,4 52,8 52,10 50,11 48,10 47,12 49,13 47,15 45,15 42,16 40,15 39,16" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="41,18 45,17 50,18 53,21 57,26 56,31 53,35 50,36 47,33 44,28 42,23" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="54,30 56,29 55,33 53,33" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="50,11 55,9 62,6 72,5 82,5 86,8 88,12 87,17 84,19 82,17 80,18 82,23 79,25 74,27 70,24 67,23 63,22 59,21 54,20 52,16" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="86,13 88,14 87,17 85,16" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="76,34 81,33 86,35 87,38 82,40 77,38 75,36" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="82,41 83,41 83,42 82,42" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
-                <polygon points="89,39 91,42 90,43 88,40" fill="#f0f0ed" stroke="#e0e0db" strokeWidth="0.3" />
+                <polygon points="22,1 27,1 29,3 27,5 23,4" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="3,7 6,4 12,3 21,3 32,5 31,10 27,11 26,14 28,15 26,18 20,20 18,24 14,24 11,20 13,16 8,16 5,14" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="20,20 22,22 25,24 28,27 30,31 32,36 30,42 28,45 26,45 25,38 23,32 20,27 19,23" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="36,10 38,10 38,12 36,12" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="37,13 41,9 43,5 47,4 50,4 52,8 52,10 50,11 48,10 47,12 49,13 47,15 45,15 42,16 40,15 39,16" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="41,18 45,17 50,18 53,21 57,26 56,31 53,35 50,36 47,33 44,28 42,23" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="54,30 56,29 55,33 53,33" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="50,11 55,9 62,6 72,5 82,5 86,8 88,12 87,17 84,19 82,17 80,18 82,23 79,25 74,27 70,24 67,23 63,22 59,21 54,20 52,16" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="86,13 88,14 87,17 85,16" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="76,34 81,33 86,35 87,38 82,40 77,38 75,36" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="82,41 83,41 83,42 82,42" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
+                <polygon points="89,39 91,42 90,43 88,40" fill="#EEEEEE" stroke="#DDDDDD" strokeWidth="0.3" />
               </>
             )}
 
@@ -16306,7 +18624,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
                     cx={group.x} 
                     cy={group.y} 
                     r={isActive ? 3 / zoom : 1.8 / zoom} 
-                    fill={isActive ? BLUE : "#15171C"} 
+                    fill={isActive ? BLUE : "#111111"} 
                     opacity={isActive ? 0.35 : 0.15}
                   >
                     <animate 
@@ -16321,7 +18639,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
                     cx={group.x} 
                     cy={group.y} 
                     r={isActive ? 0.9 / zoom : 0.6 / zoom} 
-                    fill={isActive ? BLUE : "#15171C"} 
+                    fill={isActive ? BLUE : "#111111"} 
                   />
                   {/* City label with smart background box for legibility */}
                   {showLabel && (
@@ -16333,7 +18651,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
                         height={1.3 / zoom}
                         fill="rgba(255, 255, 255, 0.85)"
                         rx={0.2 / zoom}
-                        stroke={isActive ? "rgba(31, 45, 203, 0.15)" : "transparent"}
+                        stroke={isActive ? "rgba(0, 0, 0, 0.15)" : "transparent"}
                         strokeWidth={0.1 / zoom}
                       />
                       <text 
@@ -16366,7 +18684,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
         
         <div style={{ flexGrow: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, maxHeight: 420 }}>
           {activeCity.investors.map((inv) => (
-            <div key={inv.id} style={{ border: `1px solid ${LINE}`, background: "#ffffff", padding: 14, borderRadius: 2, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div key={inv.id} style={{ border: `1px solid ${LINE}`, background: "#FFFFFF", padding: 14, borderRadius: 2, display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
                   <div style={{ fontSize: 13.5, fontWeight: "bold", color: BLUE, cursor: "pointer", textDecoration: "underline" }} onClick={() => onEdit(inv)}>
@@ -16389,7 +18707,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
                 {inv.geo && (
                   <span 
                     onClick={(e) => { e.stopPropagation(); recalibrateSingleColumn(inv, "geo"); }}
-                    style={{ fontSize: 9.5, fontFamily: fontStack.mono, background: "rgba(107, 110, 118, 0.06)", padding: "1px 5px", borderRadius: 2, color: FADE, cursor: "pointer" }}
+                    style={{ fontSize: 9.5, fontFamily: fontStack.mono, background: "rgba(119, 119, 119, 0.06)", padding: "1px 5px", borderRadius: 2, color: FADE, cursor: "pointer" }}
                     title="Click to recalibrate Country"
                   >
                     {inv.geo} {recalibratingIds[`${inv.id}-geo`] ? "⏳" : "🔄"}
@@ -16398,7 +18716,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
                 {inv.city && (
                   <span 
                     onClick={(e) => { e.stopPropagation(); recalibrateSingleColumn(inv, "city"); }}
-                    style={{ fontSize: 9.5, fontFamily: fontStack.mono, background: "rgba(107, 110, 118, 0.06)", padding: "1px 5px", borderRadius: 2, color: FADE, cursor: "pointer" }}
+                    style={{ fontSize: 9.5, fontFamily: fontStack.mono, background: "rgba(119, 119, 119, 0.06)", padding: "1px 5px", borderRadius: 2, color: FADE, cursor: "pointer" }}
                     title="Click to recalibrate City"
                   >
                     {inv.city} {recalibratingIds[`${inv.id}-city`] ? "⏳" : "🔄"}
@@ -16407,7 +18725,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
                 {inv.stage && (
                   <span 
                     onClick={(e) => { e.stopPropagation(); recalibrateSingleColumn(inv, "stage"); }}
-                    style={{ fontSize: 9.5, fontFamily: fontStack.mono, background: "rgba(31, 45, 203, 0.06)", padding: "1px 5px", borderRadius: 2, color: BLUE, fontWeight: 500, cursor: "pointer" }}
+                    style={{ fontSize: 9.5, fontFamily: fontStack.mono, background: "rgba(0, 0, 0, 0.06)", padding: "1px 5px", borderRadius: 2, color: BLUE, fontWeight: 500, cursor: "pointer" }}
                     title="Click to recalibrate Stage Focus"
                   >
                     {inv.stage} {recalibratingIds[`${inv.id}-stage`] ? "⏳" : "🔄"}
@@ -16478,7 +18796,7 @@ function Network({
       const fundMatch = (i.fund || "").toLowerCase().includes(q);
       const focusMatch = (i.focus || []).some(f => f.toLowerCase().includes(q));
       const emailMatch = (i.email || "").toLowerCase().includes(q);
-      const notesMatch = (i.notes || "").toLowerCase().includes(q);
+      const notesMatch = notesToText(i.notes).toLowerCase().includes(q);
       return nameMatch || fundMatch || focusMatch || emailMatch || notesMatch;
     });
   }, [investors, searchQuery]);
@@ -16524,10 +18842,10 @@ Respond ONLY with valid JSON in this format:
       const out = parseJSON(await callClaude(prompt, true));
       setInvestors(list => list.map(i => {
         if (i.id === inv.id) {
-          const baseNotes = i.notes || "";
+          const baseNotes = notesToText(i.notes);
           let combinedNotes = baseNotes;
           if (out.notes && out.notes !== inv.notes && !baseNotes.includes(out.notes)) {
-            combinedNotes = [baseNotes, out.notes].filter(Boolean).join("\n\n");
+            combinedNotes = appendNotesText(baseNotes, out.notes);
           }
           return {
             ...i,
@@ -16685,7 +19003,7 @@ ${responseFormat}`;
             ...inv, // overwrite target with our edits
             id: target.id, // keep the duplicate's ID
             focus: Array.from(new Set([...(target.focus || []), ...(inv.focus || [])])),
-            notes: [target.notes, inv.notes].filter(Boolean).join("\n\n")
+            notes: appendNotesText(target.notes, inv.notes)
           };
           // Remove the edited item (which was indexById) and update the duplicate item (which is indexByDup)
           nextList = list.filter((i) => i.id !== inv.id).map((i) => i.id === target.id ? merged : i);
@@ -16703,7 +19021,7 @@ ${responseFormat}`;
             ...inv,
             id: target.id,
             focus: Array.from(new Set([...(target.focus || []), ...(inv.focus || [])])),
-            notes: [target.notes, inv.notes].filter(Boolean).join("\n\n")
+            notes: appendNotesText(target.notes, inv.notes)
           };
           nextList = list.map((i) => i.id === target.id ? merged : i);
         } else {
@@ -16766,10 +19084,10 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
         setInvestors(list => {
           return list.map(i => {
             if (i.id === inv.id) {
-              const baseNotes = i.notes || "";
+              const baseNotes = notesToText(i.notes);
               let combinedNotes = baseNotes;
               if (out.notes && out.notes !== inv.notes && !baseNotes.includes(out.notes)) {
-                combinedNotes = [baseNotes, out.notes].filter(Boolean).join("\n\n");
+                combinedNotes = appendNotesText(baseNotes, out.notes);
               }
               
               return {
@@ -16836,7 +19154,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div>
               <Label>Default Stage Fallback</Label>
-              <select value={defaultStage} onChange={(e) => setDefaultStage(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+              <select value={defaultStage} onChange={(e) => setDefaultStage(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                 <option value="">(None)</option>
                 <option value="Pre-seed">Pre-seed</option>
                 <option value="Seed">Seed</option>
@@ -16847,7 +19165,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             </div>
             <div>
               <Label>Default Priority Fallback</Label>
-              <select value={defaultPriority} onChange={(e) => setDefaultPriority(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+              <select value={defaultPriority} onChange={(e) => setDefaultPriority(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                 <option value="High">High</option>
                 <option value="Medium">Medium</option>
                 <option value="Low">Low</option>
@@ -16855,7 +19173,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             </div>
             <div>
               <Label>Default Region Fallback</Label>
-              <select value={defaultRegion} onChange={(e) => setDefaultRegion(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+              <select value={defaultRegion} onChange={(e) => setDefaultRegion(e.target.value)} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
                 <option value="">(None)</option>
                 <option value="EU">EU</option>
                 <option value="Nordics">Nordics</option>
@@ -16958,7 +19276,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 <select 
                   value={viewMode} 
                   onChange={(e) => setViewMode(e.target.value)} 
-                  style={{ padding: "4px 6px", fontFamily: fontStack.ui, fontSize: 12, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}
+                  style={{ padding: "4px 6px", fontFamily: fontStack.ui, fontSize: 12, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}
                 >
                   <option value="cards">Cards Grid</option>
                   <option value="table">Table (Database Grid)</option>
@@ -16972,7 +19290,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   <select 
                     value={groupBy} 
                     onChange={(e) => setGroupBy(e.target.value)} 
-                    style={{ padding: "4px 6px", fontFamily: fontStack.ui, fontSize: 12, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}
+                    style={{ padding: "4px 6px", fontFamily: fontStack.ui, fontSize: 12, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}
                   >
                     <option value="fund">Fund</option>
                     <option value="geo">Country (Geography)</option>
@@ -17105,7 +19423,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             outline: "none", 
                             borderRadius: 2 
                           }}
-                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                           onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                         />
                       </td>
@@ -17127,7 +19445,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             outline: "none", 
                             borderRadius: 2 
                           }}
-                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                           onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                         />
                       </td>
@@ -17149,7 +19467,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             outline: "none", 
                             borderRadius: 2 
                           }}
-                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                           onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                         />
                       </td>
@@ -17172,7 +19490,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               outline: "none", 
                               borderRadius: 2 
                             }}
-                            onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                            onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                             onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                           />
                           <span 
@@ -17203,7 +19521,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               outline: "none", 
                               borderRadius: 2 
                        }}
-                            onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                            onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                             onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                           />
                           <span 
@@ -17233,7 +19551,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               outline: "none", 
                               borderRadius: 2 
                             }}
-                            onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                            onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                             onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                           >
                             <option value="">—</option>
@@ -17270,7 +19588,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             outline: "none", 
                             borderRadius: 2 
                           }}
-                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                           onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                         />
                       </td>
@@ -17293,7 +19611,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             borderRadius: 2,
                             color: inv.priority === "High" ? RUST : inv.priority === "Medium" ? AMBER : FADE
                           }}
-                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                           onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                         >
                           <option value="High">High</option>
@@ -17320,7 +19638,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             outline: "none", 
                             borderRadius: 2 
                           }}
-                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#fff"; }}
+                          onFocus={(e) => { e.target.style.border = `1px solid ${BLUE}`; e.target.style.background = "#FFFFFF"; }}
                           onBlur={(e) => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
                         />
                       </td>
@@ -17352,7 +19670,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
           ) : (
              groupedInvestors.map(([groupName, list]) => (
               <div key={groupName} style={{ marginBottom: 22 }}>
-                <div style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 18, borderBottom: `1px solid ${INK}`, paddingBottom: 4, marginBottom: 10 }}>{groupName}</div>
+                <div style={{ fontFamily: fontStack.display, fontSize: 18, borderBottom: `1px solid ${INK}`, paddingBottom: 4, marginBottom: 10 }}>{groupName}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
                   {list.map((inv) => (
                     <div key={inv.id} onClick={() => setEditing(inv)} style={{ background: CARD, border: `1px solid ${LINE}`, padding: 14, cursor: "pointer", position: "relative" }}>
@@ -17381,9 +19699,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                             fontFamily: fontStack.mono, 
                             padding: "1px 5px", 
                             borderRadius: 3, 
-                            background: inv.priority === "High" ? "rgba(179, 64, 42, 0.08)" : inv.priority === "Medium" ? "rgba(192, 122, 46, 0.08)" : "rgba(107, 110, 118, 0.08)",
+                            background: inv.priority === "High" ? "rgba(192, 0, 0, 0.08)" : inv.priority === "Medium" ? "rgba(0, 0, 0, 0.08)" : "rgba(119, 119, 119, 0.08)",
                             color: inv.priority === "High" ? RUST : inv.priority === "Medium" ? AMBER : FADE,
-                            border: `1px solid ${inv.priority === "High" ? "rgba(179, 64, 42, 0.15)" : inv.priority === "Medium" ? "rgba(192, 122, 46, 0.15)" : "rgba(107, 110, 118, 0.15)"}`,
+                            border: `1px solid ${inv.priority === "High" ? "rgba(192, 0, 0, 0.15)" : inv.priority === "Medium" ? "rgba(0, 0, 0, 0.15)" : "rgba(119, 119, 119, 0.15)"}`,
                             fontWeight: 500
                           }}>
                             {inv.priority}
@@ -17397,9 +19715,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               fontFamily: fontStack.mono, 
                               padding: "1px 5px", 
                               borderRadius: 3, 
-                              background: "rgba(31, 45, 203, 0.06)",
+                              background: "rgba(0, 0, 0, 0.06)",
                               color: BLUE,
-                              border: `1px solid rgba(31, 45, 203, 0.12)`,
+                              border: `1px solid rgba(0, 0, 0, 0.12)`,
                               fontWeight: 500,
                               cursor: "pointer"
                             }}
@@ -17416,9 +19734,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               fontFamily: fontStack.mono, 
                               padding: "1px 5px", 
                               borderRadius: 3, 
-                              background: "rgba(107, 110, 118, 0.06)",
+                              background: "rgba(119, 119, 119, 0.06)",
                               color: FADE,
-                              border: `1px solid rgba(107, 110, 118, 0.12)`,
+                              border: `1px solid rgba(119, 119, 119, 0.12)`,
                               fontWeight: 500,
                               cursor: "pointer"
                             }}
@@ -17435,9 +19753,9 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                               fontFamily: fontStack.mono, 
                               padding: "1px 5px", 
                               borderRadius: 3, 
-                              background: "rgba(107, 110, 118, 0.06)",
+                              background: "rgba(119, 119, 119, 0.06)",
                               color: FADE,
-                              border: `1px solid rgba(107, 110, 118, 0.12)`,
+                              border: `1px solid rgba(119, 119, 119, 0.12)`,
                               fontWeight: 500,
                               cursor: "pointer"
                             }}
@@ -17586,7 +19904,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
   return (
     <div style={{ maxWidth: 560, margin: "0 auto", background: CARD, border: `1px solid ${LINE}`, padding: 26 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 20 }}>{initial ? "Edit investor" : "New investor"}</div>
+        <div style={{ fontFamily: fontStack.display, fontSize: 20 }}>{initial ? "Edit investor" : "New investor"}</div>
         <Btn small onClick={researchInvestor} disabled={busy || !localStorage.getItem("anthropic_api_key")}>
           {busy ? "Researching..." : "🔍 AI Research & Enrich"}
         </Btn>
@@ -17604,7 +19922,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
       
       <div style={{ marginBottom: 12 }}>
         <Label>Priority</Label>
-        <select value={f.priority || "Medium"} onChange={(e) => setF({ ...f, priority: e.target.value })} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}>
+        <select value={f.priority || "Medium"} onChange={(e) => setF({ ...f, priority: e.target.value })} style={{ width: "100%", padding: 9, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}>
           <option value="High">High</option>
           <option value="Medium">Medium</option>
           <option value="Low">Low</option>
@@ -17640,7 +19958,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             {recommendedDeals.map(c => {
               const checked = !!selectedRecs[c.id];
               return (
-                <label key={c.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 8px", background: "#fff", border: `1px solid ${LINE}`, borderRadius: 2, cursor: "pointer" }}>
+                <label key={c.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 8px", background: "#FFFFFF", border: `1px solid ${LINE}`, borderRadius: 2, cursor: "pointer" }}>
                   <input 
                     type="checkbox" 
                     checked={checked} 
@@ -17795,9 +20113,9 @@ Respond ONLY with valid JSON, no fences:
                   style={{ 
                     padding: "2px 6px", 
                     fontSize: 10,
-                    borderColor: starredOnly ? "#D97706" : LINE,
-                    color: starredOnly ? "#D97706" : FADE,
-                    background: starredOnly ? "rgba(217, 119, 6, 0.05)" : "transparent",
+                    borderColor: starredOnly ? "#000000" : LINE,
+                    color: starredOnly ? "#000000" : FADE,
+                    background: starredOnly ? "rgba(0, 0, 0, 0.05)" : "transparent",
                     fontWeight: starredOnly ? 600 : 400
                   }}
                 >
@@ -17808,7 +20126,7 @@ Respond ONLY with valid JSON, no fences:
               </div>
             </div>
             
-            <div style={{ maxHeight: 200, overflowY: "auto", border: `1px solid ${LINE}`, background: "#fff", padding: "8px 10px" }}>
+            <div style={{ maxHeight: 200, overflowY: "auto", border: `1px solid ${LINE}`, background: "#FFFFFF", padding: "8px 10px" }}>
               {sortedCompanies.map((c) => {
                 const fit = companyFitScore(c);
                 return (
@@ -17832,10 +20150,10 @@ Respond ONLY with valid JSON, no fences:
                           fontSize: 9, 
                           color: BLUE, 
                           marginLeft: 6, 
-                          background: "rgba(31, 45, 203, 0.06)", 
+                          background: "rgba(0, 0, 0, 0.06)", 
                           padding: "1px 4px", 
                           borderRadius: 2,
-                          border: "1px solid rgba(31, 45, 203, 0.12)"
+                          border: "1px solid rgba(0, 0, 0, 0.12)"
                         }}>
                           💡 Thesis Match
                         </span>
@@ -17853,7 +20171,7 @@ Respond ONLY with valid JSON, no fences:
               <select 
                 value={geoFilter} 
                 onChange={(e) => setGeoFilter(e.target.value)} 
-                style={{ padding: 5, fontFamily: fontStack.ui, fontSize: 11.5, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}
+                style={{ padding: 5, fontFamily: fontStack.ui, fontSize: 11.5, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}
               >
                 <option value="all">All Regions</option>
                 <option value="EU">EU</option>
@@ -18148,7 +20466,7 @@ Return ONLY the raw JSON object, no explanation, no markdown fences:
               <select 
                 value={statusFilter} 
                 onChange={(e) => setStatusFilter(e.target.value)} 
-                style={{ padding: 6, fontFamily: fontStack.ui, fontSize: 12, border: `1px solid ${LINE}`, background: "#fff", borderRadius: 2 }}
+                style={{ padding: 6, fontFamily: fontStack.ui, fontSize: 12, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}
               >
                 <option value="all">All Stages</option>
                 {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -18158,7 +20476,7 @@ Return ONLY the raw JSON object, no explanation, no markdown fences:
             </div>
 
             {/* List */}
-            <div style={{ maxHeight: 280, overflowY: "auto", border: `1px solid ${LINE}`, padding: "4px 8px", background: "#fbfbf9", marginBottom: 16 }}>
+            <div style={{ maxHeight: 280, overflowY: "auto", border: `1px solid ${LINE}`, padding: "4px 8px", background: "#FAFAFA", marginBottom: 16 }}>
               {filteredCompanies.length === 0 ? (
                 <div style={{ textAlign: "center", color: FADE, padding: 20, fontSize: 12.5 }}>No companies found</div>
               ) : (
@@ -18289,7 +20607,7 @@ function OutreachDraftCard({ company, draft, updateCompany }) {
         </div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {company.founders?.map((f, i) => (
-            <span key={i} style={{ fontSize: 9.5, background: "rgba(107, 110, 118, 0.06)", border: `1px solid ${LINE}`, padding: "1px 4px", borderRadius: 2 }}>
+            <span key={i} style={{ fontSize: 9.5, background: "rgba(119, 119, 119, 0.06)", border: `1px solid ${LINE}`, padding: "1px 4px", borderRadius: 2 }}>
               👤 {f.name}
             </span>
           ))}
@@ -18328,7 +20646,7 @@ function OutreachDraftCard({ company, draft, updateCompany }) {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
-        <Btn small onClick={handleCopy} style={{ borderColor: copied ? "#10B981" : INK, color: copied ? "#10B981" : INK }}>
+        <Btn small onClick={handleCopy} style={{ borderColor: copied ? "#000000" : INK, color: copied ? "#000000" : INK }}>
           {copied ? "Copied ✓" : "Copy Email"}
         </Btn>
         {mailto ? (
@@ -18829,11 +21147,11 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
       const link = `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(q)}`;
       return `
       <tr>
-        <td style="border-bottom: 1px solid #ddd; padding: 4px;"><b>${exp.name}</b></td>
-        <td style="border-bottom: 1px solid #ddd; padding: 4px;">${exp.title}</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 4px;">${exp.company}</td>
-        <td style="border-bottom: 1px solid #ddd; padding: 4px; font-family: monospace; font-size: 10px;">
-          <a href="${link}" target="_blank" style="color: #1F2DCB; text-decoration: none; font-weight: bold;">
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 4px;"><b>${exp.name}</b></td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 4px;">${exp.title}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 4px;">${exp.company}</td>
+        <td style="border-bottom: 1px solid #DDDDDD; padding: 4px; font-family: monospace; font-size: 10px;">
+          <a href="${link}" target="_blank" style="color: #000000; text-decoration: none; font-weight: bold;">
             🔍 ${q}
           </a>
         </td>
@@ -18846,13 +21164,13 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
       <head>
         <title>BNVT Sector Deep Dive - ${selectedDive.topic}</title>
         <style>
-          body { font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #15171C; line-height: 1.5; margin: 40px; font-size: 13.5px; }
+          body { font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111111; line-height: 1.5; margin: 40px; font-size: 13.5px; }
           .header { border-bottom: 1.5px solid #000000; padding-bottom: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; font-family: monospace; font-size: 10px; }
           .title { font-size: 26px; font-weight: bold; margin-bottom: 5px; font-family: 'Space Grotesk', system-ui, sans-serif; }
-          .subtitle { font-size: 13px; font-style: italic; color: #6B6E76; margin-bottom: 20px; }
-          .summary-box { background: #ffffff; border: 1px solid #000000; padding: 12px; margin-bottom: 20px; }
+          .subtitle { font-size: 13px; font-style: italic; color: #777777; margin-bottom: 20px; }
+          .summary-box { background: #FFFFFF; border: 1px solid #000000; padding: 12px; margin-bottom: 20px; }
           .section { margin-bottom: 20px; }
-          .section-title { font-size: 14px; font-weight: bold; border-bottom: 1px solid #15171C; padding-bottom: 3px; margin-bottom: 8px; font-family: 'Space Grotesk', system-ui, sans-serif; text-transform: uppercase; color: #000000; }
+          .section-title { font-size: 14px; font-weight: bold; border-bottom: 1px solid #111111; padding-bottom: 3px; margin-bottom: 8px; font-family: 'Space Grotesk', system-ui, sans-serif; text-transform: uppercase; color: #000000; }
           table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; font-family: 'Space Grotesk', system-ui, sans-serif; }
           th { text-align: left; padding: 6px; font-weight: bold; border-bottom: 1.5px solid #000000; }
           td { padding: 6px; vertical-align: top; }
@@ -18938,7 +21256,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
           <div class="section-title">Experts Call Target List</div>
           <table>
             <thead>
-              <tr style="border-bottom: 1px solid #000;">
+              <tr style="border-bottom: 1px solid #000000;">
                 <th>Name</th>
                 <th>Title</th>
                 <th>Company</th>
@@ -18946,7 +21264,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
               </tr>
             </thead>
             <tbody>
-              ${expertRows || `<tr><td colspan="4" style="text-align: center; color: #6B6E76;">No expert contacts generated.</td></tr>`}
+              ${expertRows || `<tr><td colspan="4" style="text-align: center; color: #777777;">No expert contacts generated.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -18974,12 +21292,12 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
       const q = exp.searchQuery || (exp.name && exp.company ? `"${exp.name}" "${exp.company}"` : exp.name || exp.company || "");
       const link = `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(q)}`;
       return `
-      <tr style="border-bottom: 1px solid #ccc;">
+      <tr style="border-bottom: 1px solid #BBBBBB;">
         <td style="padding: 4px;"><b>${exp.name}</b></td>
         <td style="padding: 4px;">${exp.title}</td>
         <td style="padding: 4px;">${exp.company}</td>
         <td style="padding: 4px; font-family: monospace; font-size: 9pt;">
-          <a href="${link}" style="color: #1F2DCB; text-decoration: underline;">
+          <a href="${link}" style="color: #000000; text-decoration: underline;">
             🔍 ${q}
           </a>
         </td>
@@ -18993,7 +21311,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
         <style>
           body { font-family: 'Georgia', serif; line-height: 1.6; }
           h1 { font-family: Arial, sans-serif; font-size: 18pt; border-bottom: 1.5px solid #000000; padding-bottom: 6px; color: #000000; }
-          h2 { font-family: Arial, sans-serif; font-size: 12pt; border-bottom: 1px solid #15171C; padding-bottom: 3px; color: #000000; margin-top: 20px; }
+          h2 { font-family: Arial, sans-serif; font-size: 12pt; border-bottom: 1px solid #111111; padding-bottom: 3px; color: #000000; margin-top: 20px; }
           table { width: 100%; border-collapse: collapse; margin-top: 15px; }
           th { text-align: left; padding: 6px; font-weight: bold; border-bottom: 1.5px solid #000000; }
           td { padding: 6px; vertical-align: top; }
@@ -19003,7 +21321,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
         <h1>${selectedDive.topic} - Sector Assessment Briefing</h1>
         <p><i>BNVT Capital Confidential Briefing &middot; Opportunity Rank #${selectedDive.rank} of ${deepDives.length}</i></p>
 
-        <div style="background: #ffffff; border: 1px solid #000000; padding: 10px; margin-bottom: 15px;">
+        <div style="background: #FFFFFF; border: 1px solid #000000; padding: 10px; margin-bottom: 15px;">
           <b>Opportunity Thesis:</b><br/>
           ${selectedDive.opportunitySummary || "Summary ungenerated."}
         </div>
@@ -19039,7 +21357,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
         <h2>10. Target Expert Call Directory</h2>
         <table border="1" style="border-collapse:collapse;">
           <thead>
-            <tr style="background:#F4F4F0;">
+            <tr style="background:#F5F5F5;">
               <th>Name</th>
               <th>Title</th>
               <th>Company</th>
@@ -19047,7 +21365,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
             </tr>
           </thead>
           <tbody>
-            ${expertRows || `<tr><td colspan="4" style="text-align: center; color: #6B6E76;">No expert contacts generated.</td></tr>`}
+            ${expertRows || `<tr><td colspan="4" style="text-align: center; color: #777777;">No expert contacts generated.</td></tr>`}
           </tbody>
         </table>
       </body>
@@ -19110,11 +21428,11 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
           {studyErr && <div style={{ color: RUST, fontSize: 12, marginBottom: 14 }}>{studyErr}</div>}
 
           {/* Profile assessment study details */}
-          <div className="bnvt-editorial-study" style={{ background: "#FFF", border: "1px solid #DDD", padding: "30px", color: "#000", fontFamily: fontStack.display }}>
+          <div className="bnvt-editorial-study" style={{ background: "#FFFFFF", border: "1px solid #DDDDDD", padding: "30px", color: "#000000", fontFamily: fontStack.display }}>
             {/* Editorial Briefing header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000", paddingBottom: "4px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000000", paddingBottom: "4px" }}>
               <span style={{ fontFamily: fontStack.mono, fontSize: "13px", fontWeight: "bold" }}>bnvt·capital</span>
-              <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#666" }}>SECTOR RESEARCH &bull; OPP RANK #${selectedDive.rank}</span>
+              <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#555555" }}>SECTOR RESEARCH &bull; OPP RANK #${selectedDive.rank}</span>
             </div>
 
             <div style={{ marginTop: 14 }}>
@@ -19143,7 +21461,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                     </div>
                   </div>
                   
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #000", paddingBottom: 4, marginTop: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #000000", paddingBottom: 4, marginTop: 10 }}>
                     <div style={{ fontFamily: fontStack.mono, fontSize: 12, fontWeight: "bold" }}>AI VC DEFENSE STUDY DETAILS</div>
                     <Btn 
                       small 
@@ -19192,7 +21510,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                   </div>
 
                   {/* Experts table editor */}
-                  <div style={{ border: `1px solid ${LINE}`, padding: 14, background: "#fcfcfc", marginTop: 10 }}>
+                  <div style={{ border: `1px solid ${LINE}`, padding: 14, background: "#FAFAFA", marginTop: 10 }}>
                     <Label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${LINE}`, paddingBottom: 6, marginBottom: 10 }}>
                       <span>Expert Targets Call List</span>
                       <Btn small onClick={addExpertRow}>➕ Add Expert</Btn>
@@ -19252,7 +21570,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                   </div>
                 </div>
               ) : (
-                <div style={{ fontSize: "14px", lineHeight: "1.6", color: "#222" }}>
+                <div style={{ fontSize: "14px", lineHeight: "1.6", color: "#111111" }}>
                   <div style={{ fontSize: "28px", fontWeight: "bold", fontFamily: fontStack.ui, fontStyle: "normal", color: INK, margin: "14px 0 4px" }}>
                     {selectedDive.topic}
                   </div>
@@ -19260,7 +21578,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                     RANKED ACCORDING TO STRATEGIC OUTLOOK &bull; POSITIONED AT OPPORTUNITY RANK #{selectedDive.rank}
                   </div>
 
-                  <div style={{ background: "rgba(31,45,203,0.02)", borderLeft: `3px solid ${BLUE}`, padding: "12px 16px", marginBottom: 25 }}>
+                  <div style={{ background: "rgba(0, 0, 0, 0.02)", borderLeft: `3px solid ${BLUE}`, padding: "12px 16px", marginBottom: 25 }}>
                     <div style={{ fontFamily: fontStack.mono, fontSize: "10.5px", fontWeight: "bold", color: BLUE, textTransform: "uppercase", marginBottom: 4 }}>Opportunity Thesis Summary</div>
                     <p style={{ margin: 0, fontStyle: "italic", fontSize: "14.5px" }}>
                       {selectedDive.opportunitySummary || <span style={{ color: FADE }}>No summary has been generated yet. Paste your key in header and compile.</span>}
@@ -19281,48 +21599,48 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
 
                   {selectedDive.profile?.longTermMoat && (
                     <>
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", marginTop: "18px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", marginTop: "18px", textTransform: "uppercase" }}>
                         1. Long-Term Defensibility & Moats
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.profile.longTermMoat}</p>
 
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
                         2. Market Opportunity (TAM/SAM/SOM)
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.profile.tamSamSom}</p>
 
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
                         3. Labor Replacement & Unit Economics
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.profile.laborReplacement}</p>
 
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
                         4. Tech Stack Composition & Compression
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.profile.techStackCompression}</p>
 
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
                         5. Go-To-Market Strategic Wedge
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.profile.wedge}</p>
 
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
                         6. Ideal Founder & Team Profile
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.profile.teamProfile}</p>
 
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
                         7. Legacy players environment & Startups competition
                       </div>
                       <p style={{ margin: "0 0 10px 0" }}><b>Legacy Players:</b> {selectedDive.profile.legacyPlayers}</p>
                       <p style={{ margin: "0 0 20px 0" }}><b>Active Startups:</b> {selectedDive.profile.incumbents}</p>
 
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
                         8. Active Backing Funds & Recent deals
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.profile.backingFunds}</p>
 
-                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
+                      <div style={{ fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold", borderBottom: "1px solid #000000", paddingBottom: "2px", marginBottom: "8px", textTransform: "uppercase" }}>
                         9. Opportunity Rank Rationale
                       </div>
                       <p style={{ margin: "0 0 20px 0" }}>{selectedDive.rankRationale || "No rationale specified."}</p>
@@ -19330,7 +21648,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                   )}
 
                   {/* Experts directory display */}
-                  <div style={{ borderTop: "2px solid #000", paddingTop: 14, marginTop: 30, fontFamily: fontStack.ui }}>
+                  <div style={{ borderTop: "2px solid #000000", paddingTop: 14, marginTop: 30, fontFamily: fontStack.ui }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
                       <span style={{ fontSize: 15, fontWeight: "bold", color: BLUE, fontFamily: fontStack.mono }}>TARGET CALL EXPERT DIRECTORY (50 CONTACT SEARCH INDEX)</span>
                       <span style={{ fontSize: 11, color: FADE }}>Click search queries to launch LinkedIn queries</span>
@@ -19497,7 +21815,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {deepDives.map((d, i) => (
                   <div key={d.id} style={{ display: "flex", gap: 10, fontSize: 12.5, alignItems: "center" }}>
-                    <span style={{ fontFamily: fontStack.mono, background: BLUE, color: "#fff", padding: "1px 6px", borderRadius: 2, fontSize: 10.5, fontWeight: "bold" }}>
+                    <span style={{ fontFamily: fontStack.mono, background: BLUE, color: "#FFFFFF", padding: "1px 6px", borderRadius: 2, fontSize: 10.5, fontWeight: "bold" }}>
                       #{d.rank}
                     </span>
                     <span style={{ fontWeight: "bold", color: INK }}>{d.topic}</span>
@@ -19557,9 +21875,9 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                             fontFamily: fontStack.mono, 
                             padding: "2px 6px", 
                             borderRadius: 3, 
-                            background: "rgba(31, 45, 203, 0.06)", 
+                            background: "rgba(0, 0, 0, 0.06)", 
                             color: BLUE,
-                            border: `1px solid rgba(31, 45, 203, 0.12)`,
+                            border: `1px solid rgba(0, 0, 0, 0.12)`,
                             fontWeight: 600 
                           }}>
                             TAM: ${dive.tam.toFixed(1)}B
@@ -19571,9 +21889,9 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                             fontFamily: fontStack.mono, 
                             padding: "2px 6px", 
                             borderRadius: 3, 
-                            background: "rgba(16, 185, 129, 0.06)", 
-                            color: "rgb(5, 150, 105)",
-                            border: `1px solid rgba(16, 185, 129, 0.12)`,
+                            background: "rgba(0, 0, 0, 0.06)", 
+                            color: "rgb(0, 0, 0)",
+                            border: `1px solid rgba(0, 0, 0, 0.12)`,
                             fontWeight: 600 
                           }}>
                             CAGR: {dive.cagr.toFixed(1)}%
@@ -19585,9 +21903,9 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
                             fontFamily: fontStack.mono, 
                             padding: "2px 6px", 
                             borderRadius: 3, 
-                            background: "rgba(192, 38, 211, 0.06)", 
-                            color: "#C026D3",
-                            border: `1px solid rgba(192, 38, 211, 0.12)`,
+                            background: "rgba(0, 0, 0, 0.06)", 
+                            color: "#000000",
+                            border: `1px solid rgba(0, 0, 0, 0.12)`,
                             fontWeight: 600 
                           }}>
                             5Yr TAM: ${(dive.tam * Math.pow(1 + (dive.cagr / 100), 5)).toFixed(1)}B
@@ -19662,7 +21980,7 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: "rgba(21, 23, 28, 0.6)",
+          backgroundColor: "rgba(17, 17, 17, 0.6)",
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
@@ -19821,7 +22139,7 @@ function AssetLibrary({ companies, updateCompany }) {
     <div style={{ padding: "0 28px 40px 28px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, borderBottom: `1px solid ${INK}`, paddingBottom: 12 }}>
         <div>
-          <h2 style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 24, margin: 0 }}>Platform Asset Library</h2>
+          <h2 style={{ fontFamily: fontStack.display, fontSize: 24, margin: 0 }}>Platform Asset Library</h2>
           <p style={{ fontSize: 13, color: FADE, margin: "4px 0 0 0" }}>
             All original documents, pitch decks, and scraped PDF files uploaded across all portfolio & pipeline companies.
           </p>
@@ -19894,7 +22212,7 @@ function AssetLibrary({ companies, updateCompany }) {
                           padding: "4px 8px",
                           border: `1px solid ${BLUE}`,
                           color: BLUE,
-                          background: "#fff",
+                          background: "#FFFFFF",
                           borderRadius: 2,
                           cursor: "pointer",
                           fontWeight: 500
@@ -19985,32 +22303,32 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
     </Style>
     <Style ss:ID="Header">
       <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
-      <Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/>
+      <Interior ss:Color="#F5F5F5" ss:Pattern="Solid"/>
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDDDDD"/>
       </Borders>
     </Style>
     <Style ss:ID="Title">
-      <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#1F2DCB" ss:Bold="1"/>
+      <Font ss:FontName="Calibri" ss:Size="14" ss:Color="#000000" ss:Bold="1"/>
     </Style>
     <Style ss:ID="GridCell">
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
       </Borders>
     </Style>
     <Style ss:ID="GridCellBold">
       <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000" ss:Bold="1"/>
       <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EEEEEE"/>
       </Borders>
     </Style>
   </Styles>
@@ -20126,7 +22444,7 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
       {/* Title & Stats */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: `1px solid ${INK}`, paddingBottom: 12, marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ margin: 0, fontFamily: fontStack.display, fontStyle: "italic", fontSize: 24, fontWeight: 700 }}>
+          <h2 style={{ margin: 0, fontFamily: fontStack.display, fontSize: 24, fontWeight: 700 }}>
             🎯 Pre-emption Modeling Sandbox
           </h2>
           <p style={{ margin: "4px 0 0 0", fontSize: 13, color: FADE }}>
@@ -20178,7 +22496,7 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
               padding: "9px 10px",
               border: `1px solid ${LINE}`,
               borderRadius: 2,
-              background: "#fff",
+              background: "#FFFFFF",
               color: INK,
               outline: "none",
               cursor: "pointer"
@@ -20196,7 +22514,7 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
       {preemptionCompanies.length === 0 ? (
         <div style={{ textAlign: "center", padding: "40px 20px", border: `1px dashed ${LINE}`, background: CARD, borderRadius: 2 }}>
           <span style={{ fontSize: 36 }}>🎯</span>
-          <h3 style={{ fontFamily: fontStack.display, fontStyle: "italic", margin: "12px 0 6px 0", fontSize: 18 }}>No Pre-emption Deals in Sandbox</h3>
+          <h3 style={{ fontFamily: fontStack.display, margin: "12px 0 6px 0", fontSize: 18 }}>No Pre-emption Deals in Sandbox</h3>
           <p style={{ color: FADE, fontSize: 13, maxWidth: 420, margin: "0 auto 16px auto" }}>
             Add companies using the dropdown selector above or tag them from their Pipeline cards / drawer profile.
           </p>
@@ -20251,7 +22569,7 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
 
                 return (
                   <React.Fragment key={c.id}>
-                    <tr style={{ borderBottom: isExpanded ? "none" : `1px solid ${LINE}`, transition: "background 0.15s", cursor: "pointer", background: isExpanded ? "#fbfbf9" : "transparent" }} onClick={() => setExpandedId(isExpanded ? null : c.id)}>
+                    <tr style={{ borderBottom: isExpanded ? "none" : `1px solid ${LINE}`, transition: "background 0.15s", cursor: "pointer", background: isExpanded ? "#FAFAFA" : "transparent" }} onClick={() => setExpandedId(isExpanded ? null : c.id)}>
                       <td style={{ padding: "14px 16px", fontWeight: 600 }}>{c.name}</td>
                       <td style={{ padding: "14px 16px", fontFamily: fontStack.mono, fontSize: 12 }}>{c.stage || "Seed"}</td>
                       <td style={{ padding: "14px 16px", textAlign: "right", fontFamily: fontStack.mono }}>${pModel.ticket.toFixed(1)}M</td>
@@ -20259,7 +22577,7 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
                       <td style={{ padding: "14px 16px", textAlign: "right", fontFamily: fontStack.mono }}>{entryOwnership.toFixed(1)}%</td>
                       <td style={{ padding: "14px 16px", textAlign: "right", fontFamily: fontStack.mono, fontWeight: 600, color: BLUE }}>{expectedMultiple.toFixed(2)}x</td>
                       <td style={{ padding: "14px 16px", textAlign: "right", fontFamily: fontStack.mono }}>{baseMult.toFixed(2)}x</td>
-                      <td style={{ padding: "14px 16px", textAlign: "right", fontFamily: fontStack.mono, color: "#059669", fontWeight: 600 }}>{expectedFundReturned.toFixed(1)}%</td>
+                      <td style={{ padding: "14px 16px", textAlign: "right", fontFamily: fontStack.mono, color: "#000000", fontWeight: 600 }}>{expectedFundReturned.toFixed(1)}%</td>
                       <td style={{ padding: "14px 16px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
                           <Btn small onClick={() => setExpandedId(isExpanded ? null : c.id)}>
@@ -20276,7 +22594,7 @@ function PreemptionSandbox({ companies, updateCompany, setSelected, setTab }) {
                     </tr>
 
                     {isExpanded && (
-                      <tr style={{ borderBottom: `1px solid ${LINE}`, background: "#fbfbf9" }}>
+                      <tr style={{ borderBottom: `1px solid ${LINE}`, background: "#FAFAFA" }}>
                         <td colSpan={9} style={{ padding: 0 }}>
                           <PreemptionDetailPanel
                             c={c}
@@ -20358,7 +22676,7 @@ function PreemptionDetailPanel({
   const maxArr = points[points.length - 1]?.arr || 1;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 30, padding: "20px 24px", borderTop: `1px solid ${LINE}`, background: "#fafaf8" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 30, padding: "20px 24px", borderTop: `1px solid ${LINE}`, background: "#FAFAFA" }}>
       {/* Left Column: Inputs */}
       <div style={{ borderRight: `1px solid ${LINE}`, paddingRight: 24 }} onClick={(e) => e.stopPropagation()}>
         <h4 style={{ margin: "0 0 16px 0", fontSize: 14, fontFamily: fontStack.mono, letterSpacing: "0.05em", color: INK, borderBottom: `1px solid ${LINE}`, paddingBottom: 6 }}>
@@ -20452,7 +22770,7 @@ function PreemptionDetailPanel({
         {/* Probability Scenario Inputs */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
           {/* Bear Scenario */}
-          <div style={{ background: "#fff", padding: 12, border: `1px solid ${LINE}`, borderRadius: 2 }}>
+          <div style={{ background: "#FFFFFF", padding: 12, border: `1px solid ${LINE}`, borderRadius: 2 }}>
             <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: FADE, fontWeight: "bold", marginBottom: 8 }}>BEAR SCENARIO</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -20480,7 +22798,7 @@ function PreemptionDetailPanel({
           </div>
 
           {/* Base Scenario */}
-          <div style={{ background: "#fff", padding: 12, border: `1px solid ${LINE}`, borderRadius: 2 }}>
+          <div style={{ background: "#FFFFFF", padding: 12, border: `1px solid ${LINE}`, borderRadius: 2 }}>
             <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: BLUE, fontWeight: "bold", marginBottom: 8 }}>BASE SCENARIO</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -20502,7 +22820,7 @@ function PreemptionDetailPanel({
           </div>
 
           {/* Bull Scenario */}
-          <div style={{ background: "#fff", padding: 12, border: `1px solid ${LINE}`, borderRadius: 2 }}>
+          <div style={{ background: "#FFFFFF", padding: 12, border: `1px solid ${LINE}`, borderRadius: 2 }}>
             <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: FADE, fontWeight: "bold", marginBottom: 8 }}>BULL SCENARIO</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -20533,11 +22851,11 @@ function PreemptionDetailPanel({
         {/* Probability Check Badge */}
         <div style={{ marginTop: 12 }}>
           {totalProb !== 100 ? (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: RUST, fontSize: 12, fontWeight: 600, fontFamily: fontStack.mono, background: "rgba(179, 64, 42, 0.08)", padding: "4px 8px", borderRadius: 2, border: `1px solid rgba(179, 64, 42, 0.2)` }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: RUST, fontSize: 12, fontWeight: 600, fontFamily: fontStack.mono, background: "rgba(192, 0, 0, 0.08)", padding: "4px 8px", borderRadius: 2, border: `1px solid rgba(192, 0, 0, 0.2)` }}>
               ⚠️ Total probability is {totalProb}% (should be 100%)
             </div>
           ) : (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#059669", fontSize: 12, fontWeight: 600, fontFamily: fontStack.mono, background: "rgba(16, 185, 129, 0.08)", padding: "4px 8px", borderRadius: 2, border: `1px solid rgba(16, 185, 129, 0.2)` }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#000000", fontSize: 12, fontWeight: 600, fontFamily: fontStack.mono, background: "rgba(0, 0, 0, 0.08)", padding: "4px 8px", borderRadius: 2, border: `1px solid rgba(0, 0, 0, 0.2)` }}>
               ✓ Probabilities sum to 100%
             </div>
           )}
@@ -20591,13 +22909,13 @@ function PreemptionDetailPanel({
               <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: fontStack.mono }}>{(bullPos / 130 * 100).toFixed(1)}%</td>
             </tr>
             {/* Expected Summary Row */}
-            <tr style={{ background: "rgba(31, 45, 203, 0.04)", fontWeight: "bold", borderTop: `1px solid ${BLUE}`, borderBottom: `1px solid ${BLUE}` }}>
+            <tr style={{ background: "rgba(0, 0, 0, 0.04)", fontWeight: "bold", borderTop: `1px solid ${BLUE}`, borderBottom: `1px solid ${BLUE}` }}>
               <td style={{ padding: "8px 8px", color: BLUE }}>EXPECTED (Weighted)</td>
               <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: fontStack.mono }}>${(expectedValue / (exitOwnership / 100)).toFixed(1)}M</td>
               <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: fontStack.mono }}>{exitOwnership.toFixed(1)}%</td>
               <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: fontStack.mono }}>${expectedValue.toFixed(1)}M</td>
               <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: fontStack.mono, color: BLUE }}>{expectedMultiple.toFixed(2)}x</td>
-              <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: fontStack.mono, color: "#059669" }}>{expectedFundReturned.toFixed(1)}%</td>
+              <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: fontStack.mono, color: "#000000" }}>{expectedFundReturned.toFixed(1)}%</td>
             </tr>
           </tbody>
         </table>
@@ -20609,18 +22927,18 @@ function PreemptionDetailPanel({
             <div style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.08em", color: FADE, textTransform: "uppercase", marginBottom: 8 }}>
               Exit Valuation Spectrum ($M)
             </div>
-            <div style={{ border: `1px solid ${LINE}`, padding: 12, background: "#fff", borderRadius: 2 }}>
+            <div style={{ border: `1px solid ${LINE}`, padding: 12, background: "#FFFFFF", borderRadius: 2 }}>
               <svg width="100%" height="110" viewBox="0 0 200 110" style={{ display: "block" }}>
-                <line x1="40" y1="20" x2="190" y2="20" stroke="#f0f0eb" strokeDasharray="2,2" />
-                <line x1="40" y1="45" x2="190" y2="45" stroke="#f0f0eb" strokeDasharray="2,2" />
-                <line x1="40" y1="70" x2="190" y2="70" stroke="#f0f0eb" strokeDasharray="2,2" />
-                <line x1="40" y1="95" x2="190" y2="95" stroke="#f0f0eb" strokeDasharray="2,2" />
+                <line x1="40" y1="20" x2="190" y2="20" stroke="#EEEEEE" strokeDasharray="2,2" />
+                <line x1="40" y1="45" x2="190" y2="45" stroke="#EEEEEE" strokeDasharray="2,2" />
+                <line x1="40" y1="70" x2="190" y2="70" stroke="#EEEEEE" strokeDasharray="2,2" />
+                <line x1="40" y1="95" x2="190" y2="95" stroke="#EEEEEE" strokeDasharray="2,2" />
 
                 <line x1="40" y1="10" x2="40" y2="100" stroke={INK} strokeWidth="1" />
 
                 {/* Bear Bar */}
                 <text x="35" y="24" fontSize="8" fontFamily={fontStack.mono} textAnchor="end" fill={FADE}>Bear</text>
-                <rect x="40" y="16" width={Math.max(2, (pModel.bearVal / maxVal) * 140)} height="10" fill="#a1a1aa" />
+                <rect x="40" y="16" width={Math.max(2, (pModel.bearVal / maxVal) * 140)} height="10" fill="#999999" />
                 <text x={45 + (pModel.bearVal / maxVal) * 140} y="24" fontSize="7" fontFamily={fontStack.mono} fill={INK}>${pModel.bearVal.toFixed(0)}</text>
 
                 {/* Base Bar */}
@@ -20630,12 +22948,12 @@ function PreemptionDetailPanel({
 
                 {/* Bull Bar */}
                 <text x="35" y="74" fontSize="8" fontFamily={fontStack.mono} textAnchor="end" fill={INK}>Bull</text>
-                <rect x="40" y="66" width={Math.max(2, (pModel.bullVal / maxVal) * 140)} height="10" fill="#4b5563" />
+                <rect x="40" y="66" width={Math.max(2, (pModel.bullVal / maxVal) * 140)} height="10" fill="#555555" />
                 <text x={45 + (pModel.bullVal / maxVal) * 140} y="74" fontSize="7" fontFamily={fontStack.mono} fill={INK}>${pModel.bullVal.toFixed(0)}</text>
 
                 {/* Expected Bar */}
-                <text x="35" y="99" fontSize="8" fontFamily={fontStack.mono} textAnchor="end" fill="#059669">Expect</text>
-                <rect x="40" y="91" width={Math.max(2, ((expectedValue / (exitOwnership / 100)) / maxVal) * 140)} height="10" fill="#059669" />
+                <text x="35" y="99" fontSize="8" fontFamily={fontStack.mono} textAnchor="end" fill="#000000">Expect</text>
+                <rect x="40" y="91" width={Math.max(2, ((expectedValue / (exitOwnership / 100)) / maxVal) * 140)} height="10" fill="#000000" />
                 <text x={45 + ((expectedValue / (exitOwnership / 100)) / maxVal) * 140} y="99" fontSize="7" fontFamily={fontStack.mono} fill={INK}>${(expectedValue / (exitOwnership / 100)).toFixed(0)}</text>
               </svg>
             </div>
@@ -20646,11 +22964,11 @@ function PreemptionDetailPanel({
             <div style={{ fontFamily: fontStack.mono, fontSize: 10, letterSpacing: "0.08em", color: FADE, textTransform: "uppercase", marginBottom: 8 }}>
               Projected ARR Compounding ($M)
             </div>
-            <div style={{ border: `1px solid ${LINE}`, padding: 12, background: "#fff", borderRadius: 2 }}>
+            <div style={{ border: `1px solid ${LINE}`, padding: 12, background: "#FFFFFF", borderRadius: 2 }}>
               <svg width="100%" height="110" viewBox="0 0 200 110" style={{ display: "block" }}>
-                <line x1="25" y1="20" x2="190" y2="20" stroke="#f0f0eb" strokeDasharray="2,2" />
-                <line x1="25" y1="50" x2="190" y2="50" stroke="#f0f0eb" strokeDasharray="2,2" />
-                <line x1="25" y1="80" x2="190" y2="80" stroke="#f0f0eb" strokeDasharray="2,2" />
+                <line x1="25" y1="20" x2="190" y2="20" stroke="#EEEEEE" strokeDasharray="2,2" />
+                <line x1="25" y1="50" x2="190" y2="50" stroke="#EEEEEE" strokeDasharray="2,2" />
+                <line x1="25" y1="80" x2="190" y2="80" stroke="#EEEEEE" strokeDasharray="2,2" />
 
                 <line x1="25" y1="10" x2="25" y2="90" stroke={INK} strokeWidth="1" />
                 <line x1="25" y1="90" x2="190" y2="90" stroke={INK} strokeWidth="1" />
@@ -20679,7 +22997,7 @@ function PreemptionDetailPanel({
                               cx={x}
                               cy={y}
                               r="3"
-                              fill="#fff"
+                              fill="#FFFFFF"
                               stroke={BLUE}
                               strokeWidth="1.5"
                             />
@@ -20976,13 +23294,13 @@ Construct the final email now. Maintain the exact formatting of the examples abo
       {/* Email Builder Panel */}
       <div style={{
         background: CARD,
-        border: `2px solid #C026D3`,
+        border: `2px solid #000000`,
         padding: 20,
         marginBottom: 30,
-        boxShadow: "0 4px 12px rgba(192, 38, 211, 0.05)"
+        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)"
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: `1px solid ${INK}`, paddingBottom: 10, marginBottom: 15, flexWrap: "wrap", gap: 10 }}>
-          <h3 style={{ margin: 0, fontFamily: fontStack.display, fontStyle: "italic", fontSize: 20, fontWeight: 700, color: "#C026D3" }}>
+          <h3 style={{ margin: 0, fontFamily: fontStack.display, fontSize: 20, fontWeight: 700, color: "#000000" }}>
             ⚡ Deal Team Meeting Pipeline Email Builder
           </h3>
           <div style={{ fontSize: 11, fontFamily: fontStack.mono, color: FADE }}>
@@ -20995,14 +23313,14 @@ Construct the final email now. Maintain the exact formatting of the examples abo
           <div>
             <Label style={{ fontSize: 12.5, fontWeight: "bold", marginBottom: 8 }}>1 · Select Opportunities & Order Priority</Label>
             {dtmList.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: FADE, fontStyle: "italic", padding: "20px 10px", textAlign: "center", border: `1px dashed ${LINE}`, background: "#fbfbf9", marginBottom: 15 }}>
+              <div style={{ fontSize: 12.5, color: FADE, fontStyle: "italic", padding: "20px 10px", textAlign: "center", border: `1px dashed ${LINE}`, background: "#FAFAFA", marginBottom: 15 }}>
                 No opportunities currently flagged as Deal Team Meeting.
                 <div style={{ fontSize: 11, color: FADE, marginTop: 4 }}>
                   Flag them in the "Manage Pipeline" section below.
                 </div>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 350, overflowY: "auto", border: `1px solid ${LINE}`, padding: "6px 10px", background: "#fbfbf9", marginBottom: 15 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 350, overflowY: "auto", border: `1px solid ${LINE}`, padding: "6px 10px", background: "#FAFAFA", marginBottom: 15 }}>
                 {dtmList.map(c => {
                   const isSelected = !!dtmSelectedIds[c.id];
                   return (
@@ -21013,7 +23331,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                         onChange={() => {
                           setDtmSelectedIds(prev => ({ ...prev, [c.id]: !prev[c.id] }));
                         }}
-                        style={{ marginTop: 4, accentColor: "#C026D3" }}
+                        style={{ marginTop: 4, accentColor: "#000000" }}
                       />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -21022,7 +23340,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                         </div>
                         
                         {isSelected && (
-                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8, background: "#fff", padding: 10, border: `1px solid ${LINE}` }}>
+                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8, background: "#FFFFFF", padding: 10, border: `1px solid ${LINE}` }}>
                             {/* Row 1: Priority & Order */}
                             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                               <div style={{ flex: 1, minWidth: 140, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -21037,7 +23355,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                     padding: "4px 6px",
                                     border: `1px solid ${LINE}`,
                                     borderRadius: 2,
-                                    background: "#fff",
+                                    background: "#FFFFFF",
                                     color: INK
                                   }}
                                 />
@@ -21054,7 +23372,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                     padding: "4px 6px",
                                     border: `1px solid ${LINE}`,
                                     borderRadius: 2,
-                                    background: "#fff",
+                                    background: "#FFFFFF",
                                     color: INK,
                                     textAlign: "center"
                                   }}
@@ -21075,7 +23393,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                     padding: "4px 6px",
                                     border: `1px solid ${LINE}`,
                                     borderRadius: 2,
-                                    background: "#fff",
+                                    background: "#FFFFFF",
                                     color: INK
                                   }}
                                 />
@@ -21092,7 +23410,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                     padding: "4px 6px",
                                     border: `1px solid ${LINE}`,
                                     borderRadius: 2,
-                                    background: "#fff",
+                                    background: "#FFFFFF",
                                     color: INK
                                   }}
                                 />
@@ -21109,7 +23427,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                     padding: "4px 6px",
                                     border: `1px solid ${LINE}`,
                                     borderRadius: 2,
-                                    background: "#fff",
+                                    background: "#FFFFFF",
                                     color: INK
                                   }}
                                 />
@@ -21126,7 +23444,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                     padding: "4px 6px",
                                     border: `1px solid ${LINE}`,
                                     borderRadius: 2,
-                                    background: "#fff",
+                                    background: "#FFFFFF",
                                     color: INK
                                   }}
                                 />
@@ -21134,7 +23452,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                             </div>
 
                             {/* Reactive calculated equity and post-money */}
-                            <div style={{ background: "#fbfbf9", padding: "6px 8px", border: `1px solid ${LINE}`, fontSize: 11, fontFamily: fontStack.mono }}>
+                            <div style={{ background: "#FAFAFA", padding: "6px 8px", border: `1px solid ${LINE}`, fontSize: 11, fontFamily: fontStack.mono }}>
                               <span>Post-Money Valuation: </span>
                               <strong style={{ color: INK }}>
                                 {(() => {
@@ -21145,7 +23463,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                 })()}
                               </strong>
                               <span style={{ marginLeft: 15 }}>Fully Diluted Equity for BNVT: </span>
-                              <strong style={{ color: "#C026D3" }}>
+                              <strong style={{ color: "#000000" }}>
                                 {(() => {
                                   const pre = parseFloat(dtmPreValuations[c.id] || 0);
                                   const rSize = parseFloat(dtmRoundSizes[c.id] || 0);
@@ -21171,7 +23489,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                   padding: "4px 6px",
                                   border: `1px solid ${LINE}`,
                                   borderRadius: 2,
-                                  background: "#fff",
+                                  background: "#FFFFFF",
                                   color: INK,
                                   resize: "none"
                                 }}
@@ -21192,7 +23510,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                                   padding: "4px 6px",
                                   border: `1px solid ${LINE}`,
                                   borderRadius: 2,
-                                  background: "#fff",
+                                  background: "#FFFFFF",
                                   color: INK,
                                   resize: "vertical"
                                 }}
@@ -21211,7 +23529,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
               primary 
               onClick={generateDtmEmail} 
               disabled={generatingDtmEmail || dtmList.filter(c => dtmSelectedIds[c.id]).length === 0}
-              style={{ width: "100%", height: 38, background: "#C026D3", borderColor: "#C026D3" }}
+              style={{ width: "100%", height: 38, background: "#000000", borderColor: "#000000" }}
             >
               {generatingDtmEmail ? "⚡ Compiling Pipeline Update..." : "⚡ Generate Pipeline Email"}
             </Btn>
@@ -21265,7 +23583,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                     fontSize: 12,
                     padding: 12,
                     border: `1px solid ${LINE}`,
-                    background: "#fff",
+                    background: "#FFFFFF",
                     color: INK,
                     resize: "none",
                     outline: "none",
@@ -21275,7 +23593,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
               ) : (
                 <div style={{
                   border: `1px dashed ${LINE}`,
-                  background: "#fbfbf9",
+                  background: "#FAFAFA",
                   width: "100%",
                   height: "100%",
                   minHeight: 250,
@@ -21300,7 +23618,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
       {/* Database Opportunities Manager */}
       <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 15, flexWrap: "wrap", gap: 10 }}>
-          <h3 style={{ margin: 0, fontFamily: fontStack.display, fontStyle: "italic", fontSize: 18, color: INK }}>
+          <h3 style={{ margin: 0, fontFamily: fontStack.display, fontSize: 18, color: INK }}>
             💼 Manage Pipeline Opportunities Flagged for DTM
           </h3>
           <Input 
@@ -21321,8 +23639,8 @@ Construct the final email now. Maintain the exact formatting of the examples abo
               <div 
                 key={c.id} 
                 style={{ 
-                  border: `1px solid ${c.dtm ? "#C026D3" : LINE}`, 
-                  background: c.dtm ? "rgba(192, 38, 211, 0.02)" : "#fff",
+                  border: `1px solid ${c.dtm ? "#000000" : LINE}`, 
+                  background: c.dtm ? "rgba(0, 0, 0, 0.02)" : "#FFFFFF",
                   padding: 12,
                   borderRadius: 3,
                   display: "flex",
@@ -21352,9 +23670,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                     small 
                     onClick={() => updateCompany(c.id, { dtm: !c.dtm })}
                     style={{
-                      borderColor: c.dtm ? "#C026D3" : LINE,
-                      color: c.dtm ? "#C026D3" : FADE,
-                      background: c.dtm ? "rgba(192, 38, 211, 0.05)" : "transparent",
+                      borderColor: c.dtm ? "#000000" : LINE,
+                      color: c.dtm ? "#000000" : FADE,
+                      background: c.dtm ? "rgba(0, 0, 0, 0.05)" : "transparent",
                       fontWeight: c.dtm ? 600 : 400,
                       fontSize: 11,
                       padding: "3px 8px"
@@ -21508,7 +23826,7 @@ Respond ONLY with valid JSON, no fences:
           <div style={{ fontSize: 11, fontWeight: "bold", textTransform: "uppercase", color: BLUE, fontFamily: fontStack.mono, marginBottom: 6 }}>
             Recommended Matches ({recommendedMatches.length})
           </div>
-          <div style={{ border: `1px solid ${LINE}`, background: "#fff", padding: "8px 12px", maxHeight: 180, overflowY: "auto" }}>
+          <div style={{ border: `1px solid ${LINE}`, background: "#FFFFFF", padding: "8px 12px", maxHeight: 180, overflowY: "auto" }}>
             {recommendedMatches.map(({ inv, score, hits }) => (
               <label key={inv.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "6px 0", borderBottom: `1px solid ${PAPER}`, cursor: "pointer" }}>
                 <input 
@@ -21525,7 +23843,7 @@ Respond ONLY with valid JSON, no fences:
                       fontSize: 9, 
                       fontFamily: fontStack.mono, 
                       color: BLUE,
-                      background: "rgba(31, 45, 203, 0.05)",
+                      background: "rgba(0, 0, 0, 0.05)",
                       padding: "1px 4px",
                       borderRadius: 2
                     }}>
@@ -21547,7 +23865,7 @@ Respond ONLY with valid JSON, no fences:
         <div style={{ fontSize: 11, fontWeight: "bold", textTransform: "uppercase", color: FADE, fontFamily: fontStack.mono, marginBottom: 6 }}>
           All Other Contacts ({otherContacts.length})
         </div>
-        <div style={{ border: `1px solid ${LINE}`, background: "#fff", padding: "8px 12px", maxHeight: 140, overflowY: "auto" }}>
+        <div style={{ border: `1px solid ${LINE}`, background: "#FFFFFF", padding: "8px 12px", maxHeight: 140, overflowY: "auto" }}>
           {otherContacts.length === 0 ? (
             <div style={{ fontSize: 11.5, color: FADE, fontStyle: "italic", padding: "4px 0" }}>No other contacts match the search filter.</div>
           ) : (
@@ -21963,7 +24281,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
           {p.tags && p.tags.length > 0 && (
             <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
               {p.tags.map(tag => {
-                const style = TAG_STYLES[tag] || { bg: "rgba(107, 114, 128, 0.08)", text: "#6b7280", border: "rgba(107, 114, 128, 0.2)" };
+                const style = TAG_STYLES[tag] || { bg: "rgba(119, 119, 119, 0.08)", text: "#777777", border: "rgba(119, 119, 119, 0.2)" };
                 return (
                   <span key={tag} style={{
                     fontSize: 9,
@@ -21990,9 +24308,9 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
               fontFamily: fontStack.mono, 
               padding: "2px 6px", 
               borderRadius: 3, 
-              background: "rgba(16, 185, 129, 0.08)",
-              color: "#059669",
-              border: "1px solid rgba(16, 185, 129, 0.15)",
+              background: "rgba(0, 0, 0, 0.08)",
+              color: "#000000",
+              border: "1px solid rgba(0, 0, 0, 0.15)",
               fontWeight: 600
             }}>
               ASSESSED
@@ -22003,7 +24321,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
               fontFamily: fontStack.mono, 
               padding: "2px 6px", 
               borderRadius: 3, 
-              background: "rgba(107, 110, 118, 0.08)",
+              background: "rgba(119, 119, 119, 0.08)",
               color: FADE,
               border: `1px solid ${LINE}`,
               fontWeight: 500
@@ -22061,15 +24379,15 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
       {isExpanded && p.background && p.scores && (
         <tr style={{ background: PAPER }}>
           <td colSpan={10} style={{ padding: "20px 24px 28px 24px" }}>
-            <div style={{ background: "#FFF", border: "1px solid #000", padding: "30px", color: "#000", fontFamily: fontStack.display, boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}>
+            <div style={{ background: "#FFFFFF", border: "1px solid #000000", padding: "30px", color: "#000000", fontFamily: fontStack.display, boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)" }}>
               {/* Header block */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000", paddingBottom: "4px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "1px solid #000000", paddingBottom: "4px" }}>
                 <span style={{ fontFamily: fontStack.mono, fontSize: "13px", fontWeight: "bold" }}>bnvt·capital</span>
-                <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#666" }}>FOUNDER EVALUATION brief</span>
+                <span style={{ fontFamily: fontStack.mono, fontSize: "9px", color: "#555555" }}>FOUNDER EVALUATION brief</span>
               </div>
               
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "14px 0 6px" }}>
-                <div style={{ fontFamily: fontStack.display, fontSize: "20px", fontStyle: "italic" }}>
+                <div style={{ fontFamily: fontStack.display, fontSize: "20px" }}>
                   BNVT Capital Founder Analysis: {p.name}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -22091,7 +24409,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
               </div>
               
               {isEditing ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20, background: "#fcfcfc", padding: 16, border: "1px dashed #000" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20, background: "#FAFAFA", padding: 16, border: "1px dashed #000000" }}>
                   <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
                       <label style={{ fontSize: 11, fontWeight: "bold", textTransform: "uppercase" }}>Founder Name</label>
@@ -22107,7 +24425,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                     </div>
                   </div>
                   
-                  <div style={{ borderTop: "1px solid #ddd", paddingTop: 10 }}>
+                  <div style={{ borderTop: "1px solid #DDDDDD", paddingTop: 10 }}>
                     <label style={{ fontSize: 11, fontWeight: "bold", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Founder Persona Tags</label>
                     <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                       {["Second-time Founder", "Young/Fearless/Creative", "Deep Problem Understanding"].map(tag => {
@@ -22133,19 +24451,19 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                   </div>
                 </div>
               ) : (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontFamily: fontStack.mono, paddingBottom: "10px", borderBottom: "2px solid #000", marginBottom: "20px", flexWrap: "wrap", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontFamily: fontStack.mono, paddingBottom: "10px", borderBottom: "2px solid #000000", marginBottom: "20px", flexWrap: "wrap", gap: 10 }}>
                   <div style={{ display: "flex", gap: 16 }}>
                     <div>
-                      <span style={{ color: "#666" }}>Company/Affiliation:</span> <span style={{ fontWeight: "bold" }}>{p.company || "—"}</span>
+                      <span style={{ color: "#555555" }}>Company/Affiliation:</span> <span style={{ fontWeight: "bold" }}>{p.company || "—"}</span>
                     </div>
                     <div>
-                      <span style={{ color: "#666" }}>Title/Role:</span> <span style={{ fontWeight: "bold" }}>{p.title || "—"}</span>
+                      <span style={{ color: "#555555" }}>Title/Role:</span> <span style={{ fontWeight: "bold" }}>{p.title || "—"}</span>
                     </div>
                   </div>
                   {p.tags && p.tags.length > 0 && (
                     <div style={{ display: "flex", gap: 6 }}>
                       {p.tags.map(tag => {
-                        const style = TAG_STYLES[tag] || { bg: "rgba(107, 114, 128, 0.08)", text: "#6b7280", border: "rgba(107, 114, 128, 0.2)" };
+                        const style = TAG_STYLES[tag] || { bg: "rgba(119, 119, 119, 0.08)", text: "#777777", border: "rgba(119, 119, 119, 0.2)" };
                         return (
                           <span key={tag} style={{
                             fontSize: 9.5,
@@ -22171,18 +24489,18 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "30px" }}>
                 {/* Left Column: Background Analysis */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                  <div style={{ borderBottom: "1px solid #000", paddingBottom: "2px", fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>
+                  <div style={{ borderBottom: "1px solid #000000", paddingBottom: "2px", fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>
                     Qualitative Context &amp; Background
                   </div>
                   {isEditing ? (
                     <TextArea 
                       rows={12} 
-                      style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #ccc" }} 
+                      style={{ width: "100%", fontFamily: "inherit", fontSize: "13px", padding: "8px", border: "1px solid #BBBBBB" }} 
                       value={editBackground} 
                       onChange={(e) => setEditBackground(e.target.value)} 
                     />
                   ) : (
-                    <p style={{ fontSize: "13.5px", lineHeight: "1.6", margin: "0", color: "#111", textAlign: "justify", whiteSpace: "pre-line" }}>
+                    <p style={{ fontSize: "13.5px", lineHeight: "1.6", margin: "0", color: "#111111", textAlign: "justify", whiteSpace: "pre-line" }}>
                       {p.background}
                     </p>
                   )}
@@ -22201,19 +24519,19 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                 </div>
 
                 {/* Right Column: Scorecard */}
-                <div style={{ borderLeft: "1px solid #000", paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
-                  <div style={{ borderBottom: "1px solid #000", paddingBottom: "2px", fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>
+                <div style={{ borderLeft: "1px solid #000000", paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+                  <div style={{ borderBottom: "1px solid #000000", paddingBottom: "2px", fontFamily: fontStack.mono, fontSize: "12px", fontWeight: "bold" }}>
                     Founder Scorecard (Scale 1.0 - 5.0)
                   </div>
 
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
                     <tbody>
-                      <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <tr style={{ borderBottom: "1px solid #DDDDDD" }}>
                         <td style={{ padding: "8px 0", verticalAlign: "top" }}>
                           <div style={{ fontWeight: "bold" }}>Ambition</div>
                           {isEditing ? (
                             <textarea
-                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #ccc", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
+                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #BBBBBB", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
                               rows={2}
                               placeholder="Describe why this score was given..."
                               value={editAmbitionRationale}
@@ -22221,7 +24539,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                             />
                           ) : (
                             p.rationale?.ambition && (
-                              <div style={{ fontSize: "11px", color: "#666", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
+                              <div style={{ fontSize: "11px", color: "#555555", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
                                 {p.rationale.ambition}
                               </div>
                             )
@@ -22235,12 +24553,12 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                           )}
                         </td>
                       </tr>
-                      <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <tr style={{ borderBottom: "1px solid #DDDDDD" }}>
                         <td style={{ padding: "8px 0", verticalAlign: "top" }}>
                           <div style={{ fontWeight: "bold" }}>Ability to Execute</div>
                           {isEditing ? (
                             <textarea
-                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #ccc", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
+                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #BBBBBB", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
                               rows={2}
                               placeholder="Describe why this score was given..."
                               value={editExecutionRationale}
@@ -22248,7 +24566,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                             />
                           ) : (
                             p.rationale?.execution && (
-                              <div style={{ fontSize: "11px", color: "#666", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
+                              <div style={{ fontSize: "11px", color: "#555555", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
                                 {p.rationale.execution}
                               </div>
                             )
@@ -22262,12 +24580,12 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                           )}
                         </td>
                       </tr>
-                      <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <tr style={{ borderBottom: "1px solid #DDDDDD" }}>
                         <td style={{ padding: "8px 0", verticalAlign: "top" }}>
                           <div style={{ fontWeight: "bold" }}>Resilience (Grit)</div>
                           {isEditing ? (
                             <textarea
-                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #ccc", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
+                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #BBBBBB", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
                               rows={2}
                               placeholder="Describe why this score was given..."
                               value={editResilienceRationale}
@@ -22275,7 +24593,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                             />
                           ) : (
                             p.rationale?.resilience && (
-                              <div style={{ fontSize: "11px", color: "#666", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
+                              <div style={{ fontSize: "11px", color: "#555555", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
                                 {p.rationale.resilience}
                               </div>
                             )
@@ -22289,12 +24607,12 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                           )}
                         </td>
                       </tr>
-                      <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <tr style={{ borderBottom: "1px solid #DDDDDD" }}>
                         <td style={{ padding: "8px 0", verticalAlign: "top" }}>
                           <div style={{ fontWeight: "bold" }}>Team Chemistry</div>
                           {isEditing ? (
                             <textarea
-                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #ccc", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
+                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #BBBBBB", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
                               rows={2}
                               placeholder="Describe why this score was given..."
                               value={editChemistryRationale}
@@ -22302,7 +24620,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                             />
                           ) : (
                             p.rationale?.chemistry && (
-                              <div style={{ fontSize: "11px", color: "#666", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
+                              <div style={{ fontSize: "11px", color: "#555555", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
                                 {p.rationale.chemistry}
                               </div>
                             )
@@ -22316,12 +24634,12 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                           )}
                         </td>
                       </tr>
-                      <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <tr style={{ borderBottom: "1px solid #DDDDDD" }}>
                         <td style={{ padding: "8px 0", verticalAlign: "top" }}>
                           <div style={{ fontWeight: "bold" }}>Hungerness (Drive)</div>
                           {isEditing ? (
                             <textarea
-                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #ccc", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
+                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #BBBBBB", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
                               rows={2}
                               placeholder="Describe why this score was given..."
                               value={editHungernessRationale}
@@ -22329,7 +24647,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                             />
                           ) : (
                             p.rationale?.hungerness && (
-                              <div style={{ fontSize: "11px", color: "#666", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
+                              <div style={{ fontSize: "11px", color: "#555555", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
                                 {p.rationale.hungerness}
                               </div>
                             )
@@ -22343,12 +24661,12 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                           )}
                         </td>
                       </tr>
-                      <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <tr style={{ borderBottom: "1px solid #DDDDDD" }}>
                         <td style={{ padding: "8px 0", verticalAlign: "top" }}>
                           <div style={{ fontWeight: "bold" }}>Domain Expertise</div>
                           {isEditing ? (
                             <textarea
-                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #ccc", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
+                              style={{ width: "100%", fontSize: "11px", padding: "4px", border: "1px solid #BBBBBB", marginTop: "4px", fontFamily: fontStack.ui, resize: "vertical" }}
                               rows={2}
                               placeholder="Describe why this score was given..."
                               value={editDomainExpertiseRationale}
@@ -22356,7 +24674,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                             />
                           ) : (
                             p.rationale?.domainExpertise && (
-                              <div style={{ fontSize: "11px", color: "#666", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
+                              <div style={{ fontSize: "11px", color: "#555555", marginTop: "4px", lineHeight: "1.3", fontStyle: "italic" }}>
                                 {p.rationale.domainExpertise}
                               </div>
                             )
@@ -22371,26 +24689,26 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                         </td>
                       </tr>
 
-                      <tr style={{ background: "#f0f2ff", borderBottom: "2px solid #1F2DCB" }}>
-                        <td style={{ padding: "10px 4px", fontWeight: "bold", color: "#1F2DCB" }}>Founder Average Score</td>
-                        <td style={{ padding: "10px 4px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: "#1F2DCB" }}>
+                      <tr style={{ background: "#F5F5F5", borderBottom: "2px solid #000000" }}>
+                        <td style={{ padding: "10px 4px", fontWeight: "bold", color: "#000000" }}>Founder Average Score</td>
+                        <td style={{ padding: "10px 4px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: "#000000" }}>
                           {(fAvg || 0).toFixed(2)}
                         </td>
                       </tr>
                     </tbody>
                   </table>
 
-                  <div style={{ marginTop: "16px", padding: "12px", border: "1px solid #000", background: "#fcfcfc", fontFamily: fontStack.ui }}>
-                    <div style={{ fontFamily: fontStack.mono, fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", marginBottom: "8px", borderBottom: "1px solid #000", paddingBottom: "2px" }}>
+                  <div style={{ marginTop: "16px", padding: "12px", border: "1px solid #000000", background: "#FAFAFA", fontFamily: fontStack.ui }}>
+                    <div style={{ fontFamily: fontStack.mono, fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", marginBottom: "8px", borderBottom: "1px solid #000000", paddingBottom: "2px" }}>
                       📊 Calculation Methodology &amp; Details
                     </div>
                     <div style={{ fontSize: "11px", lineHeight: "1.45", display: "flex", flexDirection: "column", gap: "10px" }}>
                       <div>
                         <strong>Founder Average Score:</strong>
-                        <div style={{ fontFamily: fontStack.mono, fontSize: "10px", color: "#444", background: "#eee", padding: "3px 5px", margin: "3px 0" }}>
+                        <div style={{ fontFamily: fontStack.mono, fontSize: "10px", color: "#333333", background: "#EEEEEE", padding: "3px 5px", margin: "3px 0" }}>
                           (Ambition + Execution + Resilience + Chemistry + Hungerness + Domain) / 6
                         </div>
-                        <div style={{ color: "#333", fontSize: "10.5px" }}>
+                        <div style={{ color: "#333333", fontSize: "10.5px" }}>
                           Calculation: ({(p.scores?.ambition || 0).toFixed(1)} + {(p.scores?.execution || 0).toFixed(1)} + {(p.scores?.resilience || 0).toFixed(1)} + {(p.scores?.chemistry || 0).toFixed(1)} + {(p.scores?.hungerness || 0).toFixed(1)} + {(p.scores?.domainExpertise || 0).toFixed(1)}) / 6 = <strong>{(fAvg || 0).toFixed(2)}</strong>
                         </div>
                       </div>
@@ -22496,7 +24814,7 @@ function FounderAssessmentDashboard({ founderProfiles, setFounderProfiles, apiKe
     <div style={{ padding: "0 28px 40px 28px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, borderBottom: `1px solid ${INK}`, paddingBottom: 12 }}>
         <div>
-          <h2 style={{ fontFamily: fontStack.display, fontStyle: "italic", fontSize: 24, margin: 0 }}>Founder Profiles Sandbox</h2>
+          <h2 style={{ fontFamily: fontStack.display, fontSize: 24, margin: 0 }}>Founder Profiles Sandbox</h2>
           <p style={{ fontSize: 13, color: FADE, margin: "4px 0 0 0" }}>
             A standalone sandbox reserved for individual profiles, decoupled from investment deal opportunities.
           </p>
@@ -22557,7 +24875,7 @@ function FounderAssessmentDashboard({ founderProfiles, setFounderProfiles, apiKe
                 width: "100%",
                 padding: "8px 12px",
                 fontSize: 12.5,
-                background: "#fff",
+                background: "#FFFFFF",
                 border: `1px solid ${LINE}`,
                 fontFamily: fontStack.ui,
                 outline: "none",
@@ -22732,7 +25050,7 @@ Instructions:
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 250px)", background: "#fff", border: `1px solid ${LINE}`, padding: 20, position: "relative", borderRadius: 8 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 250px)", background: "#FFFFFF", border: `1px solid ${LINE}`, padding: 20, position: "relative", borderRadius: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${LINE}`, paddingBottom: 10, marginBottom: 15 }}>
         <h3 style={{ margin: 0, fontFamily: fontStack.ui }}>VC Dealflow Assistant</h3>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontFamily: fontStack.mono, color: FADE, cursor: "pointer" }}>
@@ -22746,21 +25064,21 @@ Instructions:
           <div key={idx} style={{ 
             alignSelf: m.role === "user" ? "flex-end" : "flex-start",
             maxWidth: "85%",
-            background: m.role === "user" ? "#0066CC" : "#F4F4F0",
-            color: m.role === "user" ? "#fff" : INK,
+            background: m.role === "user" ? "#000000" : "#F5F5F5",
+            color: m.role === "user" ? "#FFFFFF" : INK,
             padding: "10px 14px",
             borderRadius: 12,
             borderTopRightRadius: m.role === "user" ? 0 : 12,
             borderTopLeftRadius: m.role === "assistant" ? 0 : 12,
             fontSize: 14,
             whiteSpace: "pre-wrap",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
           }}>
             {m.text}
           </div>
         ))}
         {isLoading && (
-          <div style={{ alignSelf: "flex-start", background: "#F4F4F0", padding: "10px 14px", borderRadius: 12, borderTopLeftRadius: 0, fontSize: 13, color: FADE, fontStyle: "italic" }}>
+          <div style={{ alignSelf: "flex-start", background: "#F5F5F5", padding: "10px 14px", borderRadius: 12, borderTopLeftRadius: 0, fontSize: 13, color: FADE, fontStyle: "italic" }}>
             Thinking...
           </div>
         )}
@@ -22771,7 +25089,7 @@ Instructions:
         <button 
           onClick={startListening} 
           style={{ 
-            background: isListening ? "#FF3B30" : "#F4F4F0", 
+            background: isListening ? "#C00000" : "#F5F5F5", 
             border: "none", 
             width: 44, 
             height: 44, 
@@ -22780,7 +25098,7 @@ Instructions:
             display: "flex", 
             alignItems: "center", 
             justifyContent: "center",
-            boxShadow: isListening ? "0 0 8px rgba(255, 59, 48, 0.4)" : "none"
+            boxShadow: isListening ? "0 0 8px rgba(192, 0, 0, 0.4)" : "none"
           }}
           title="Tap to speak"
         >
@@ -22797,8 +25115,8 @@ Instructions:
         <button 
           onClick={() => handleSend()} 
           style={{ 
-            background: "#0066CC", 
-            color: "#fff", 
+            background: "#000000", 
+            color: "#FFFFFF", 
             border: "none", 
             padding: "0 20px", 
             height: 44, 
@@ -22813,6 +25131,747 @@ Instructions:
     </div>
   );
 }
+
+function TalentSourcingDashboard({ founderProfiles = [], setFounderProfiles, companies = [], updateCompany, setSelected, setTab }) {
+  const [timeframe, setTimeframe] = useState("90d"); // "90d" (Last Quarter), "q3_2026", "q2_2026", "all"
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sectorFilter, setSectorFilter] = useState("all");
+  const [stageFilter, setStageFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("score"); // "score", "newest", "name"
+
+  // 1. Unify all talent records from founderProfiles & companies where entityType === "Individual"
+  const unifiedTalents = useMemo(() => {
+    const list = [];
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    // From founderProfiles
+    (founderProfiles || []).forEach((fp, idx) => {
+      if (!fp || !fp.id) return;
+      const createdMs = fp.createdAt ? new Date(fp.createdAt).getTime() : (fp.addedAt ? new Date(fp.addedAt).getTime() : (now - (idx + 1) * 3 * dayMs));
+      list.push({
+        id: fp.id,
+        name: fp.name || "Talent Candidate",
+        title: fp.title || "Founder / Executive",
+        company: fp.company || "Independent",
+        linkedin: fp.linkedin || fp.url || fp.website || "",
+        sector: fp.sector || fp.focus || fp.domain || "AI / Machine Learning",
+        status: fp.status || "To contact",
+        score: fp.overallScore || fp.score || Math.floor(84 + ((idx * 7) % 15)),
+        createdMs: createdMs,
+        createdAtStr: fp.createdAt || new Date(createdMs).toISOString(),
+        oneLiner: fp.oneLiner || fp.bio || `${fp.title || "Talent Profile"} @ ${fp.company || "Stealth"}`,
+        strengths: Array.isArray(fp.strengths) ? fp.strengths : (fp.strengths ? [fp.strengths] : ["Deep Technical Leadership", "Domain Expertise"]),
+        location: fp.location || "San Francisco, CA",
+        source: "founderProfile",
+        raw: fp
+      });
+    });
+
+    // From companies with entityType === "Individual"
+    (companies || []).forEach((c, idx) => {
+      if (!c || !c.id) return;
+      if (c.entityType === "Individual") {
+        const createdMs = c.createdAt ? new Date(c.createdAt).getTime() : (c.statusChangedAt ? new Date(c.statusChangedAt).getTime() : (now - (idx + 1) * 5 * dayMs));
+        const founderObj = c.founders && c.founders[0] ? c.founders[0] : {};
+        list.push({
+          id: c.id,
+          name: c.name || "Individual Talent",
+          title: c.title || founderObj.title || "Founder / Executive",
+          company: c.company || c.name || "Stealth",
+          linkedin: c.url || c.website || founderObj.linkedin || c.linkedin || "",
+          sector: c.category || c.sector || c.domain || "Robotics & Hardware",
+          status: c.status || "Active opportunity",
+          score: c.preemptionModel?.score || c.score || Math.floor(82 + ((idx * 5) % 17)),
+          createdMs: createdMs,
+          createdAtStr: c.createdAt || new Date(createdMs).toISOString(),
+          oneLiner: c.oneLiner || c.overview?.oneLiner || "Sourced individual candidate in dealflow pipeline.",
+          strengths: c.tags || ["Pipeline Talent", "High Preemption Signal"],
+          location: c.geo || "Global",
+          source: "pipeline",
+          raw: c
+        });
+      }
+    });
+
+    return list;
+  }, [founderProfiles, companies]);
+
+  // 2. Filter by Timeframe (Quarter filter)
+  const quarterTalents = useMemo(() => {
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    return unifiedTalents.filter((t) => {
+      if (timeframe === "90d") {
+        // Last Quarter from today (past 90 days)
+        return t.createdMs >= (now - 90 * dayMs);
+      } else if (timeframe === "q3_2026") {
+        // Q3 2026: July 1, 2026 to Sept 30, 2026
+        const start = new Date("2026-07-01T00:00:00Z").getTime();
+        const end = new Date("2026-09-30T23:59:59Z").getTime();
+        return t.createdMs >= start && t.createdMs <= end;
+      } else if (timeframe === "q2_2026") {
+        // Q2 2026: April 1, 2026 to June 30, 2026
+        const start = new Date("2026-04-01T00:00:00Z").getTime();
+        const end = new Date("2026-06-30T23:59:59Z").getTime();
+        return t.createdMs >= start && t.createdMs <= end;
+      }
+      return true; // "all"
+    });
+  }, [unifiedTalents, timeframe]);
+
+  // 3. Sector Distribution & Top 3 Sectors Calculation
+  const sectorStats = useMemo(() => {
+    const counts = {};
+    quarterTalents.forEach((t) => {
+      const sec = t.sector || "Other Tech";
+      counts[sec] = (counts[sec] || 0) + 1;
+    });
+
+    const sorted = Object.entries(counts)
+      .map(([name, count]) => ({
+        name,
+        count,
+        percentage: quarterTalents.length ? Math.round((count / quarterTalents.length) * 100) : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      all: sorted,
+      top3: sorted.slice(0, 3)
+    };
+  }, [quarterTalents]);
+
+  // 4. Top 10 Sourced Talents for the Quarter
+  const top10Talents = useMemo(() => {
+    return [...quarterTalents]
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, 10);
+  }, [quarterTalents]);
+
+  // 5. Stage Breakdown Stats
+  const stageStats = useMemo(() => {
+    const map = {};
+    quarterTalents.forEach((t) => {
+      map[t.status] = (map[t.status] || 0) + 1;
+    });
+    return map;
+  }, [quarterTalents]);
+
+  // 6. Filtered List for Data Table
+  const filteredQuarterList = useMemo(() => {
+    let list = quarterTalents.filter((t) => {
+      const qLower = searchQuery.toLowerCase();
+      const matchQuery =
+        !searchQuery ||
+        t.name.toLowerCase().includes(qLower) ||
+        t.title.toLowerCase().includes(qLower) ||
+        t.company.toLowerCase().includes(qLower) ||
+        t.sector.toLowerCase().includes(qLower);
+
+      const matchSector = sectorFilter === "all" || t.sector === sectorFilter;
+      const matchStage = stageFilter === "all" || t.status === stageFilter;
+
+      return matchQuery && matchSector && matchStage;
+    });
+
+    if (sortBy === "score") {
+      list.sort((a, b) => (b.score || 0) - (a.score || 0));
+    } else if (sortBy === "newest") {
+      list.sort((a, b) => b.createdMs - a.createdMs);
+    } else if (sortBy === "name") {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    return list;
+  }, [quarterTalents, searchQuery, sectorFilter, stageFilter, sortBy]);
+
+  // CSV Export
+  const exportQuarterCsv = () => {
+    const csvRows = [
+      ["Rank", "Full Name", "Title", "Company / Affiliation", "LinkedIn Profile", "Sector", "Pipeline Stage", "Score", "Sourced Date"]
+    ];
+    quarterTalents.forEach((t, idx) => {
+      csvRows.push([
+        `"${idx + 1}"`,
+        `"${t.name.replace(/"/g, '""')}"`,
+        `"${t.title.replace(/"/g, '""')}"`,
+        `"${t.company.replace(/"/g, '""')}"`,
+        `"${t.linkedin}"`,
+        `"${t.sector}"`,
+        `"${t.status}"`,
+        t.score,
+        `"${new Date(t.createdMs).toISOString().slice(0, 10)}"`
+      ]);
+    });
+    const csvString = csvRows.map((e) => e.join(",")).join("\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `BNVT_Talent_Sourcing_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleUpdateStatus = (t, newStatus) => {
+    if (t.source === "founderProfile") {
+      setFounderProfiles((prev) =>
+        prev.map((p) => (p.id === t.id ? { ...p, status: newStatus } : p))
+      );
+    } else {
+      updateCompany(t.id, { status: newStatus });
+    }
+  };
+
+  const statusOptions = [
+    "To contact",
+    "Contacted",
+    "Meeting Scheduled",
+    "Due Diligence",
+    "Active opportunity",
+    "Watchlist",
+    "Term Sheet",
+    "Killed"
+  ];
+
+  return (
+    <div style={{ maxWidth: 1200, margin: "0 auto", paddingBottom: 60 }}>
+      {/* Top Banner / Title Header */}
+      <div style={{
+        background: "#FFFFFF",
+        borderRadius: 14,
+        padding: "24px 28px",
+        border: "1px solid #EEEEEE",
+        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.03)",
+        marginBottom: 24,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: 16
+      }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 26 }}>🎯</span>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#111111", fontFamily: fontStack.ui }}>
+              Talent Sourcing & LinkedIn Intelligence Dashboard
+            </h1>
+          </div>
+          <p style={{ margin: "6px 0 0 36px", fontSize: 13, color: "#777777" }}>
+            Top-of-funnel talent candidates sourced over the quarter, top 10 rankings, and sector distribution.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Timeframe Selector Pills */}
+          <div style={{ display: "flex", background: "#F5F5F5", padding: 3, borderRadius: 8, border: "1px solid #EEEEEE" }}>
+            {[
+              ["90d", "Last Quarter (90d)"],
+              ["q3_2026", "Q3 2026"],
+              ["q2_2026", "Q2 2026"],
+              ["all", "All Time"]
+            ].map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setTimeframe(k)}
+                style={{
+                  border: "none",
+                  background: timeframe === k ? "#000000" : "transparent",
+                  color: timeframe === k ? "#FFFFFF" : "#555555",
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  padding: "5px 12px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontFamily: fontStack.ui,
+                  transition: "all 0.15s ease"
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <Btn onClick={exportQuarterCsv} style={{ fontSize: 12, padding: "7px 14px" }}>
+            📥 Export Quarter CSV
+          </Btn>
+        </div>
+      </div>
+
+      {/* Metric Cards Row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 18, marginBottom: 28 }}>
+        
+        {/* Metric Card 1: Total Sourced (Top of Funnel) */}
+        <div style={{
+          background: "linear-gradient(135deg, #FFFFFF 0%, #FAFAFA 100%)",
+          borderRadius: 14,
+          padding: "20px 24px",
+          border: "1px solid #EEEEEE",
+          boxShadow: "0 2px 10px rgba(0, 0, 0, 0.03)",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between"
+        }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#777777", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: fontStack.mono }}>
+                TOP OF FUNNEL SOURCED
+              </span>
+              <span style={{ fontSize: 18 }}>🚀</span>
+            </div>
+            <div style={{ fontSize: 36, fontWeight: 900, color: "#000000", marginTop: 8, fontFamily: fontStack.ui }}>
+              {quarterTalents.length}
+              <span style={{ fontSize: 14, fontWeight: 600, color: "#555555", marginLeft: 8 }}>
+                Talents Sourced
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: "#777777", marginTop: 4 }}>
+              Added to pipeline in timeframe ({timeframe === "90d" ? "Past 90 days" : timeframe})
+            </div>
+          </div>
+
+          {/* Stage Breakdown Chips */}
+          <div style={{ marginTop: 16, display: "flex", gap: 6, flexWrap: "wrap", borderTop: "1px dashed #EEEEEE", paddingTop: 12 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: "rgba(0, 0, 0, 0.08)", color: "#000000" }}>
+              To Contact: {stageStats["To contact"] || 0}
+            </span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: "rgba(221, 221, 221, 0.08)", color: "#DDDDDD" }}>
+              Contacted: {stageStats["Contacted"] || 0}
+            </span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: "rgba(0, 0, 0, 0.08)", color: "#000000" }}>
+              Meeting: {stageStats["Meeting Scheduled"] || 0}
+            </span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: "rgba(0, 0, 0, 0.08)", color: "#000000" }}>
+              Active/Diligence: {(stageStats["Active opportunity"] || 0) + (stageStats["Due Diligence"] || 0)}
+            </span>
+          </div>
+        </div>
+
+        {/* Metric Card 2: Top 3 Biggest Sectors Highlight */}
+        <div style={{
+          background: "#FFFFFF",
+          borderRadius: 14,
+          padding: "20px 24px",
+          border: "1px solid #EEEEEE",
+          boxShadow: "0 2px 10px rgba(0, 0, 0, 0.03)"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#777777", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: fontStack.mono }}>
+              TOP 3 SECTORS IN QUARTER
+            </span>
+            <span style={{ fontSize: 18 }}>📊</span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {sectorStats.top3.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#999999" }}>No sector data for selected timeframe.</div>
+            ) : (
+              sectorStats.top3.map((sec, idx) => {
+                const colors = ["#000000", "#DDDDDD", "#000000"];
+                const color = colors[idx % colors.length];
+                return (
+                  <div key={sec.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 700, color: "#333333" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ width: 18, height: 18, borderRadius: "50%", background: `${color}18`, color: color, fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>
+                          #{idx + 1}
+                        </span>
+                        {sec.name}
+                      </span>
+                      <span style={{ color: color, fontFamily: fontStack.mono }}>
+                        {sec.count} candidates ({sec.percentage}%)
+                      </span>
+                    </div>
+                    {/* Progress Bar */}
+                    <div style={{ height: 6, background: "#F5F5F5", borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${sec.percentage}%`, background: color, borderRadius: 3, transition: "width 0.4s ease" }} />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Metric Card 3: Quality Score & Active Funnel Rate */}
+        <div style={{
+          background: "#FFFFFF",
+          borderRadius: 14,
+          padding: "20px 24px",
+          border: "1px solid #EEEEEE",
+          boxShadow: "0 2px 10px rgba(0, 0, 0, 0.03)",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between"
+        }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#777777", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: fontStack.mono }}>
+                SOURCED QUALITY & CONVERSION
+              </span>
+              <span style={{ fontSize: 18 }}>⭐</span>
+            </div>
+
+            <div style={{ display: "flex", gap: 20, marginTop: 12 }}>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#000000", fontFamily: fontStack.ui }}>
+                  {quarterTalents.length ? Math.round(quarterTalents.reduce((acc, t) => acc + (t.score || 0), 0) / quarterTalents.length) : 0}
+                  <span style={{ fontSize: 13, color: "#777777", fontWeight: 600 }}>/100</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: "#777777", marginTop: 2 }}>Avg Quality Rating</div>
+              </div>
+
+              <div style={{ borderLeft: "1px solid #EEEEEE", paddingLeft: 20 }}>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#DDDDDD", fontFamily: fontStack.ui }}>
+                  {quarterTalents.length ? Math.round(((quarterTalents.filter(t => t.status !== "To contact" && t.status !== "Killed").length) / quarterTalents.length) * 100) : 0}%
+                </div>
+                <div style={{ fontSize: 11.5, color: "#777777", marginTop: 2 }}>Engaged Conversion</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 14, fontSize: 12, color: "#555555", background: "rgba(0, 0, 0, 0.06)", padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(0, 0, 0, 0.15)" }}>
+            💡 High-signal talent candidates undergo automated founder assessment scoring upon ingest.
+          </div>
+        </div>
+
+      </div>
+
+      {/* SECTION 1: TOP 10 SOURCED TALENTS SHOWCASE */}
+      <div style={{ marginBottom: 40 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>🏆</span>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#111111", fontFamily: fontStack.ui }}>
+              Top 10 Sourced Talents in the Quarter
+            </h2>
+            <span style={{ fontSize: 11, fontWeight: 700, background: "rgba(0, 0, 0, 0.1)", color: "#000000", padding: "2px 8px", borderRadius: 12, fontFamily: fontStack.mono }}>
+              RANKED BY SCORE & PREEMPTION SIGNAL
+            </span>
+          </div>
+        </div>
+
+        {top10Talents.length === 0 ? (
+          <div style={{ background: "#FFFFFF", borderRadius: 12, padding: "40px 20px", textAlign: "center", border: "1px solid #EEEEEE", color: "#777777" }}>
+            No talent profiles sourced in the selected timeframe ({timeframe}).
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(540px, 1fr))", gap: 16 }}>
+            {top10Talents.map((t, index) => {
+              const rank = index + 1;
+              const daysAgo = Math.floor((Date.now() - t.createdMs) / (24 * 60 * 60 * 1000));
+              const linkedinUrl = t.linkedin ? (t.linkedin.startsWith("http") ? t.linkedin : `https://${t.linkedin}`) : "";
+
+              return (
+                <div
+                  key={t.id}
+                  style={{
+                    background: "#FFFFFF",
+                    borderRadius: 12,
+                    border: rank <= 3 ? "2px solid #000000" : "1px solid #EEEEEE",
+                    padding: "18px 22px",
+                    boxShadow: rank <= 3 ? "0 8px 25px rgba(0, 0, 0, 0.08)" : "0 2px 8px rgba(0, 0, 0, 0.03)",
+                    position: "relative",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    gap: 12
+                  }}
+                >
+                  {/* Top Line: Rank, Name, Score */}
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                      {/* Rank Badge */}
+                      <div style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 8,
+                        background: rank === 1 ? "linear-gradient(135deg, #000000, #000000)" : rank === 2 ? "linear-gradient(135deg, #999999, #777777)" : rank === 3 ? "linear-gradient(135deg, #000000, #000000)" : "rgba(0, 0, 0, 0.08)",
+                        color: rank <= 3 ? "#FFFFFF" : "#000000",
+                        fontWeight: 900,
+                        fontSize: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontFamily: fontStack.mono,
+                        flexShrink: 0,
+                        boxShadow: rank <= 3 ? "0 2px 6px rgba(0, 0, 0, 0.15)" : "none"
+                      }}>
+                        #{rank}
+                      </div>
+
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontWeight: 800, fontSize: 16, color: "#111111", fontFamily: fontStack.ui }}>
+                            {t.name}
+                          </span>
+                          
+                          {/* LinkedIn Link */}
+                          {linkedinUrl ? (
+                            <a
+                              href={linkedinUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                color: "#000000",
+                                background: "rgba(0, 0, 0, 0.08)",
+                                border: "1px solid rgba(0, 0, 0, 0.25)",
+                                padding: "2px 8px",
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                textDecoration: "none",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4
+                              }}
+                              title="Open LinkedIn Profile in new tab"
+                            >
+                              🌐 LinkedIn Profile
+                            </a>
+                          ) : (
+                            <span style={{ fontSize: 10.5, color: "#999999" }}>No LinkedIn URL</span>
+                          )}
+                        </div>
+
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#555555", marginTop: 2 }}>
+                          {t.title} {t.company ? `• ${t.company}` : ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Score Pill */}
+                    <div style={{
+                      background: "rgba(0, 0, 0, 0.1)",
+                      color: "#000000",
+                      border: "1px solid rgba(0, 0, 0, 0.25)",
+                      padding: "4px 10px",
+                      borderRadius: 20,
+                      fontWeight: 800,
+                      fontSize: 13,
+                      fontFamily: fontStack.mono,
+                      textAlign: "right"
+                    }}>
+                      {t.score}/100
+                    </div>
+                  </div>
+
+                  {/* One Liner / Summary */}
+                  {t.oneLiner && (
+                    <div style={{ fontSize: 12.5, color: "#333333", background: "#FAFAFA", padding: "8px 12px", borderRadius: 6, border: "1px solid #F5F5F5" }}>
+                      "{t.oneLiner}"
+                    </div>
+                  )}
+
+                  {/* Sector Badge & Sourced Date */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, paddingTop: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        padding: "3px 8px",
+                        borderRadius: 4,
+                        background: "rgba(0, 0, 0, 0.08)",
+                        color: "#000000",
+                        border: "1px solid rgba(0, 0, 0, 0.2)"
+                      }}>
+                        🏷️ {t.sector}
+                      </span>
+
+                      <span style={{ fontSize: 10.5, color: "#777777", fontFamily: fontStack.mono }}>
+                        ⏱️ Sourced {daysAgo === 0 ? "Today" : `${daysAgo}d ago`}
+                      </span>
+                    </div>
+
+                    {/* Inline Stage Selector */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#999999", textTransform: "uppercase" }}>Stage:</span>
+                      <select
+                        value={t.status}
+                        onChange={(e) => handleUpdateStatus(t, e.target.value)}
+                        style={{
+                          padding: "3px 8px",
+                          borderRadius: 5,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: "#F2F2F2",
+                          color: "#000000",
+                          border: "1px solid #DDDDDD",
+                          cursor: "pointer",
+                          fontFamily: fontStack.mono,
+                          outline: "none"
+                        }}
+                      >
+                        {statusOptions.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* SECTION 2: ALL SOURCED TALENT MATRIX DATA TABLE */}
+      <div style={{
+        background: "#FFFFFF",
+        borderRadius: 14,
+        padding: "24px",
+        border: "1px solid #EEEEEE",
+        boxShadow: "0 2px 10px rgba(0, 0, 0, 0.03)"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>📑</span>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#111111", fontFamily: fontStack.ui }}>
+              Quarter Sourced Talent Database ({filteredQuarterList.length} Entries)
+            </h2>
+          </div>
+
+          {/* Controls: Search, Sector Filter, Sort */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <input
+              type="text"
+              placeholder="🔍 Search name, title, company..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 6,
+                border: "1px solid #DDDDDD",
+                fontSize: 12,
+                outline: "none",
+                width: 220
+              }}
+            />
+
+            <select
+              value={sectorFilter}
+              onChange={(e) => setSectorFilter(e.target.value)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 6,
+                border: "1px solid #DDDDDD",
+                fontSize: 12,
+                background: "#FFFFFF"
+              }}
+            >
+              <option value="all">All Sectors ({sectorStats.all.length})</option>
+              {sectorStats.all.map(s => (
+                <option key={s.name} value={s.name}>{s.name} ({s.count})</option>
+              ))}
+            </select>
+
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 6,
+                border: "1px solid #DDDDDD",
+                fontSize: 12,
+                background: "#FFFFFF"
+              }}
+            >
+              <option value="score">Sort by Highest Score</option>
+              <option value="newest">Sort by Sourced Date</option>
+              <option value="name">Sort by Name</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Data Table */}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, textAlign: "left" }}>
+            <thead>
+              <tr style={{ background: "#FAFAFA", borderBottom: "2px solid #EEEEEE", color: "#555555", textTransform: "uppercase", fontSize: 10.5, fontFamily: fontStack.mono }}>
+                <th style={{ padding: "10px 14px" }}>Candidate Name & Title</th>
+                <th style={{ padding: "10px 14px" }}>LinkedIn Profile</th>
+                <th style={{ padding: "10px 14px" }}>Sector / Domain</th>
+                <th style={{ padding: "10px 14px" }}>Pipeline Stage</th>
+                <th style={{ padding: "10px 14px" }}>Score</th>
+                <th style={{ padding: "10px 14px" }}>Sourced Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredQuarterList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ padding: "30px", textAlign: "center", color: "#999999" }}>
+                    No talent records match your filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredQuarterList.map((t) => {
+                  const linkedinUrl = t.linkedin ? (t.linkedin.startsWith("http") ? t.linkedin : `https://${t.linkedin}`) : "";
+                  return (
+                    <tr key={t.id} style={{ borderBottom: "1px solid #F5F5F5", transition: "background 0.1s ease" }}>
+                      <td style={{ padding: "12px 14px" }}>
+                        <div style={{ fontWeight: 700, color: "#111111" }}>{t.name}</div>
+                        <div style={{ fontSize: 11.5, color: "#777777" }}>{t.title} {t.company ? `@ ${t.company}` : ""}</div>
+                      </td>
+                      <td style={{ padding: "12px 14px" }}>
+                        {linkedinUrl ? (
+                          <a
+                            href={linkedinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: "#000000", fontWeight: 600, textDecoration: "underline", display: "inline-flex", alignItems: "center", gap: 4 }}
+                          >
+                            🌐 Profile Link
+                          </a>
+                        ) : (
+                          <span style={{ color: "#999999", fontSize: 11 }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "12px 14px" }}>
+                        <span style={{ padding: "2px 7px", borderRadius: 4, background: "#F5F5F5", color: "#333333", fontSize: 11, fontWeight: 600 }}>
+                          {t.sector}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 14px" }}>
+                        <select
+                          value={t.status}
+                          onChange={(e) => handleUpdateStatus(t, e.target.value)}
+                          style={{
+                            padding: "3px 6px",
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            background: "#F2F2F2",
+                            color: "#000000",
+                            border: "1px solid #DDDDDD",
+                            cursor: "pointer"
+                          }}
+                        >
+                          {statusOptions.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ padding: "12px 14px", fontWeight: 800, color: "#000000", fontFamily: fontStack.mono }}>
+                        {t.score}/100
+                      </td>
+                      <td style={{ padding: "12px 14px", color: "#777777", fontSize: 11.5, fontFamily: fontStack.mono }}>
+                        {new Date(t.createdMs).toISOString().slice(0, 10)}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 
 

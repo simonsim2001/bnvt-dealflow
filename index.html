@@ -7,8 +7,7 @@
     <!-- Load React and ReactDOM UMD builds -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <!-- Load Babel Standalone -->
-    <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+
     <!-- Load PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <!-- Load PptxGenJS for PPTX generation -->
@@ -19,8 +18,24 @@
         body {
             margin: 0;
             padding: 0;
-            background-color: #F4F4F0; /* PAPER */
+            background-color: #FFFFFF;
+            color: #111111;
+            -webkit-font-smoothing: antialiased;
         }
+        /* Minimal theme: one sans-serif typeface everywhere (overrides inline font styles) */
+        body, body * {
+            font-family: Arial, "Helvetica Neue", Helvetica, sans-serif !important;
+        }
+        body pre, body pre *, body code {
+            font-family: Menlo, Consolas, monospace !important;
+        }
+        ::selection { background: #000000; color: #FFFFFF; }
+        input:focus, select:focus, textarea:focus, button:focus-visible {
+            outline: 1px solid #000000 !important;
+            outline-offset: 0;
+        }
+        * { scrollbar-width: thin; scrollbar-color: #BBBBBB transparent; }
+        .tab-button { letter-spacing: 0.01em; }
         /* Global table cell wrapping & word break rule to prevent overflow */
         table {
             table-layout: auto;
@@ -186,22 +201,34 @@
         // Polyfill window.storage using localStorage since it's used in the app for persistence
         // We override this to sync storage to/from the server, enabling WhatsApp webhook to write directly to the db.
         const originalSetItem = localStorage.setItem;
+        // The main DB is far larger than the browser's ~5MB localStorage quota.
+        // The server is the source of truth for it; never cache it locally, because a
+        // stale local copy would override newer server values on the next boot.
+        const SERVER_ONLY_KEYS = new Set(["bnvt-dealflow-v1"]);
+        try { localStorage.removeItem("bnvt-dealflow-v1"); } catch (e) {}
+        const safeLocalSet = (key, value) => {
+            if (SERVER_ONLY_KEYS.has(key)) return;
+            try { originalSetItem.call(localStorage, key, value); }
+            catch (e) { console.warn("localStorage cache skipped for", key, e && e.name); }
+        };
+        window.__bnvtSaveFailed = false;
         localStorage.setItem = function(key, value) {
-            originalSetItem.call(localStorage, key, value);
+            safeLocalSet(key, value);
+            // Always push to the server, even if the local cache write failed.
             fetch('/api/storage', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key, value })
             })
             .then(res => {
-                if (res.ok) return res.json();
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                window.__bnvtSaveFailed = false;
+                return res.json();
             })
-            .then(data => {
-                if (data && data.merged_value) {
-                    originalSetItem.call(localStorage, key, data.merged_value);
-                }
-            })
-            .catch(err => console.warn("Failed to sync localStorage item to server:", err));
+            .catch(err => {
+                window.__bnvtSaveFailed = true;
+                console.error("SAVE TO SERVER FAILED for", key, err);
+            });
         };
 
         if (!window.storage) {
@@ -236,43 +263,134 @@
             };
         }
     </script>
-    <!-- Load our App component from bnvt-dealflow.jsx -->
-    <script type="text/babel" src="bnvt-dealflow.jsx?v=49.0"></script>
+    <!-- Load pre-compiled App component for instant zero-lag loading -->
+    <script src="bnvt-dealflow.js?v=70.0"></script>
     <!-- Render the App once it's loaded and defined on window -->
-    <script type="text/babel">
-        function mergeLists(clientList, serverList, deletedIds = [], keyAttr = "id") {
-            const deletedSet = new Set((deletedIds || []).map(String));
-            const clientArr = (Array.isArray(clientList) ? clientList : []).filter(item => item && item[keyAttr] && !deletedSet.has(String(item[keyAttr])));
-            const serverArr = (Array.isArray(serverList) ? serverList : []).filter(item => item && item[keyAttr] && !deletedSet.has(String(item[keyAttr])));
+    <script>
+        function mergeNotesJS(cNotes = [], sNotes = []) {
+            const arrC = Array.isArray(cNotes) ? cNotes : (cNotes ? [{ text: String(cNotes) }] : []);
+            const arrS = Array.isArray(sNotes) ? sNotes : (sNotes ? [{ text: String(sNotes) }] : []);
             const map = new Map();
-            for (const item of clientArr) {
-                if (item && item[keyAttr]) map.set(String(item[keyAttr]), item);
+            for (const n of arrS) {
+                if (!n) continue;
+                const key = typeof n === "object" ? (n.id || n.ts || n.date || n.text || JSON.stringify(n)) : String(n).trim();
+                if (key) map.set(key, n);
             }
-            for (const item of serverArr) {
-                if (item && item[keyAttr]) {
-                    const idStr = String(item[keyAttr]);
-                    if (map.has(idStr)) {
-                        const clientItem = map.get(idStr);
-                        const mergedNotes = [...(clientItem.notes || [])];
-                        const existingNotesIds = new Set(mergedNotes.map(n => n.id || n.text));
-                        for (const n of (item.notes || [])) {
-                            if (!existingNotesIds.has(n.id || n.text)) {
-                                mergedNotes.push(n);
-                            }
-                        }
-                        map.set(idStr, { ...clientItem, ...item, notes: mergedNotes });
-                    } else {
-                        map.set(idStr, item);
+            for (const n of arrC) {
+                if (!n) continue;
+                const key = typeof n === "object" ? (n.id || n.ts || n.date || n.text || JSON.stringify(n)) : String(n).trim();
+                if (key) map.set(key, n);
+            }
+            const res = Array.from(map.values());
+            try {
+                res.sort((a, b) => {
+                    const tA = (a && typeof a === "object") ? (a.date || a.ts || a.createdAt || 0) : 0;
+                    const tB = (b && typeof b === "object") ? (b.date || b.ts || b.createdAt || 0) : 0;
+                    return tB - tA;
+                });
+            } catch(e) {}
+            return res;
+        }
+
+        function mergeSubListJS(cSub = [], sSub = [], idKeys = ["id", "name", "url", "text"]) {
+            const arrC = Array.isArray(cSub) ? cSub : [];
+            const arrS = Array.isArray(sSub) ? sSub : [];
+            const map = new Map();
+            const getKey = (item) => {
+                if (item && typeof item === "object") {
+                    for (const k of idKeys) {
+                        if (item[k]) return String(item[k]);
                     }
+                }
+                return String(item);
+            };
+            for (const item of arrS) {
+                if (item) map.set(getKey(item), item);
+            }
+            for (const item of arrC) {
+                if (!item) continue;
+                const k = getKey(item);
+                if (map.has(k) && typeof item === "object" && typeof map.get(k) === "object") {
+                    map.set(k, { ...map.get(k), ...item });
+                } else {
+                    map.set(k, item);
                 }
             }
             return Array.from(map.values());
         }
 
+        function mergeItemsJS(cItem, sItem) {
+            if (!sItem) return cItem;
+            if (!cItem) return sItem;
+            const merged = { ...sItem };
+            
+            const cTs = cItem.updatedAt || cItem.ts || 0;
+            const sTs = sItem.updatedAt || sItem.ts || 0;
+
+            for (const [key, cVal] of Object.entries(cItem)) {
+                const sVal = sItem[key];
+                if (key === "notes") {
+                    merged.notes = mergeNotesJS(cVal, sVal);
+                } else if (["founders", "assets", "documents", "qa", "deckIngestHistory"].includes(key)) {
+                    merged[key] = mergeSubListJS(cVal, sVal);
+                } else if (cVal && typeof cVal === "object" && !Array.isArray(cVal) && sVal && typeof sVal === "object" && !Array.isArray(sVal)) {
+                    merged[key] = { ...sVal, ...cVal };
+                } else {
+                    if (cVal === undefined || cVal === null || cVal === "" || (Array.isArray(cVal) && cVal.length === 0)) {
+                        if (sVal !== undefined && sVal !== null && sVal !== "" && (!Array.isArray(sVal) || sVal.length > 0)) {
+                            merged[key] = sVal;
+                        } else {
+                            merged[key] = cVal;
+                        }
+                    } else if (sTs > cTs && sTs > 0 && sVal !== undefined && sVal !== null && sVal !== "") {
+                        merged[key] = sVal;
+                    } else {
+                        merged[key] = cVal;
+                    }
+                }
+            }
+            for (const [key, sVal] of Object.entries(sItem)) {
+                if (!(key in cItem) && sVal !== undefined) {
+                    merged[key] = sVal;
+                }
+            }
+            return merged;
+        }
+
+        function mergeLists(clientList, serverList, deletedIds = [], keyAttr = "id") {
+            const deletedSet = new Set((deletedIds || []).map(String));
+            const clientArr = (Array.isArray(clientList) ? clientList : []).filter(item => item && item[keyAttr] && !deletedSet.has(String(item[keyAttr])));
+            const serverArr = (Array.isArray(serverList) ? serverList : []).filter(item => item && item[keyAttr] && !deletedSet.has(String(item[keyAttr])));
+            
+            const serverMap = new Map();
+            for (const item of serverArr) {
+                serverMap.set(String(item[keyAttr]), item);
+            }
+            const clientMap = new Map();
+            for (const item of clientArr) {
+                clientMap.set(String(item[keyAttr]), item);
+            }
+
+            const mergedResult = [];
+            for (const cItem of clientArr) {
+                const idStr = String(cItem[keyAttr]);
+                const sItem = serverMap.get(idStr);
+                mergedResult.push(mergeItemsJS(cItem, sItem));
+            }
+            for (const sItem of serverArr) {
+                const idStr = String(sItem[keyAttr]);
+                if (!clientMap.has(idStr)) {
+                    mergedResult.unshift(sItem);
+                }
+            }
+            return mergedResult;
+        }
+
+        let isRendered = false;
         const preSyncAndRender = async () => {
             try {
                 const keys = [
-                    "anthropic_api_key", "granola_api_key", "bnvt-dealflow-v1",
+                    "anthropic_api_key", "affinity_api_key", "granola_api_key", "bnvt-dealflow-v1",
                     "llm_config", "groq_api_key", "openrouter_api_key", "deepseek_api_key", "openai_api_key"
                 ];
                 for (const key of keys) {
@@ -280,35 +398,8 @@
                     if (res.ok) {
                         const data = await res.json();
                         if (data.value !== undefined && data.value !== null) {
-                            if (key === "bnvt-dealflow-v1") {
-                                const serverDb = JSON.parse(data.value);
-                                const clientDbStr = localStorage.getItem("bnvt-dealflow-v1");
-                                if (clientDbStr) {
-                                    const clientDb = JSON.parse(clientDbStr);
-                                    const clientDeleted = clientDb.deletedIds || [];
-                                    const serverDeleted = serverDb.deletedIds || [];
-                                    const mergedDeleted = Array.from(new Set([...clientDeleted, ...serverDeleted]));
-                                    const mergedDb = {
-                                        companies: mergeLists(clientDb.companies, serverDb.companies, mergedDeleted, "id"),
-                                        investors: mergeLists(clientDb.investors, serverDb.investors, mergedDeleted, "id"),
-                                        deepDives: mergeLists(clientDb.deepDives, serverDb.deepDives, mergedDeleted, "id"),
-                                        founderProfiles: mergeLists(clientDb.founderProfiles, serverDb.founderProfiles, mergedDeleted, "id"),
-                                        deletedIds: mergedDeleted
-                                    };
-                                    const mergedStr = JSON.stringify(mergedDb);
-                                    originalSetItem.call(localStorage, key, mergedStr);
-                                    // Send merged database back to server
-                                    await fetch('/api/storage', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ key, value: mergedStr })
-                                    }).catch(() => {});
-                                } else {
-                                    originalSetItem.call(localStorage, key, data.value);
-                                }
-                            } else {
-                                originalSetItem.call(localStorage, key, data.value);
-                            }
+                            // Main DB stays server-only (see SERVER_ONLY_KEYS); safeLocalSet skips it.
+                            safeLocalSet(key, data.value);
                         }
                     }
                 }
@@ -316,16 +407,45 @@
                 console.warn("Failed to pre-sync storage from server:", e);
             }
             
+            let attempts = 0;
             const checkAndRender = () => {
+                if (isRendered) return;
+                attempts++;
                 if (window.App) {
-                    const root = ReactDOM.createRoot(document.getElementById('root'));
-                    root.render(
-                        <React.StrictMode>
-                            <window.App />
-                        </React.StrictMode>
-                    );
-                } else {
+                    isRendered = true;
+                    try {
+                        if (!window.reactRoot) {
+                            window.reactRoot = ReactDOM.createRoot(document.getElementById('root'));
+                        }
+                        const AppComp = window.App;
+                        const Boundary = window.ErrorBoundary;
+                        window.reactRoot.render(
+                            React.createElement(
+                                React.StrictMode,
+                                null,
+                                Boundary ? React.createElement(Boundary, null, React.createElement(AppComp)) : React.createElement(AppComp)
+                            )
+                        );
+                    } catch (renderErr) {
+                        console.error("Render error:", renderErr);
+                        document.getElementById('root').innerHTML = `
+                            <div style="padding: 40px; text-align: center; font-family: sans-serif;">
+                                <h2>Application Error</h2>
+                                <p style="color: red;">${renderErr.message}</p>
+                                <button onclick="localStorage.clear(); location.reload();" style="padding: 10px 20px; font-size: 14px; cursor: pointer;">Clear Local Cache & Reload</button>
+                            </div>
+                        `;
+                    }
+                } else if (attempts < 600) {
                     setTimeout(checkAndRender, 50);
+                } else {
+                    document.getElementById('root').innerHTML = `
+                        <div style="padding: 40px; text-align: center; font-family: sans-serif;">
+                            <h2>Loading Timeout</h2>
+                            <p style="color: #666;">The application component took too long to load.</p>
+                            <button onclick="localStorage.clear(); location.reload();" style="padding: 10px 20px; font-size: 14px; cursor: pointer;">Clear Local Cache & Reload</button>
+                        </div>
+                    `;
                 }
             };
             checkAndRender();
