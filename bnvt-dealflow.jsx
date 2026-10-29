@@ -2171,6 +2171,118 @@ const speakText = (text, { rate = 1.05, onEnd } = {}) => {
   });
 };
 
+
+// ---- Gradium voice engine (server-proxied TTS + STT) ----
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+const slVoice = { audio: null, ctx: null, stream: null, node: null, src: null, stopSpeaking: null };
+const unlockGradiumAudio = () => {
+  try {
+    if (!slVoice.audio) { slVoice.audio = new Audio(); slVoice.audio.setAttribute("playsinline", ""); }
+    slVoice.audio.src = SILENT_WAV;
+    const p = slVoice.audio.play(); if (p && p.catch) p.catch(() => {});
+  } catch (e) {}
+};
+const splitForSpeech = (text) => {
+  const sentences = String(text).replace(/[*#_`>]/g, "").match(/[^.!?]+[.!?]*\s*/g) || [String(text)];
+  const chunks = []; let cur = "";
+  sentences.forEach((s, i) => {
+    const limit = chunks.length === 0 ? 140 : 380; // short first chunk = faster start
+    if ((cur + s).length > limit && cur) { chunks.push(cur.trim()); cur = ""; }
+    cur += s;
+  });
+  if (cur.trim()) chunks.push(cur.trim());
+  return chunks;
+};
+const fetchGradiumAudio = async (text, voiceId) => {
+  const res = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice_id: voiceId || undefined }) });
+  if (!res.ok) { let m = "HTTP " + res.status; try { m = (await res.json()).error || m; } catch (e) {} throw new Error(m); }
+  return URL.createObjectURL(await res.blob());
+};
+const gradiumSpeak = (text, { voiceId, onEnd, onError } = {}) => {
+  let cancelled = false;
+  const chunks = splitForSpeech(text);
+  if (!slVoice.audio) { slVoice.audio = new Audio(); slVoice.audio.setAttribute("playsinline", ""); }
+  const audio = slVoice.audio;
+  const finish = () => { if (!cancelled) { cancelled = true; onEnd && onEnd(); } };
+  slVoice.stopSpeaking = () => { cancelled = true; try { audio.pause(); } catch (e) {} };
+  (async () => {
+    try {
+      let next = fetchGradiumAudio(chunks[0], voiceId);
+      for (let i = 0; i < chunks.length; i++) {
+        const url = await next;
+        if (cancelled) return;
+        if (i + 1 < chunks.length) next = fetchGradiumAudio(chunks[i + 1], voiceId);
+        await new Promise((resolve) => {
+          audio.onended = resolve; audio.onerror = resolve;
+          audio.src = url;
+          const p = audio.play(); if (p && p.catch) p.catch(resolve);
+        });
+        URL.revokeObjectURL(url);
+      }
+      finish();
+    } catch (e) { if (!cancelled) { cancelled = true; onError ? onError(e) : (onEnd && onEnd()); } }
+  })();
+};
+const stopAllSpeech = () => { try { slVoice.stopSpeaking && slVoice.stopSpeaking(); } catch (e) {} try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) {} };
+
+const encodeWav16k = (buffers, inRate) => {
+  let len = 0; buffers.forEach(b => { len += b.length; });
+  const all = new Float32Array(len); let o = 0; buffers.forEach(b => { all.set(b, o); o += b.length; });
+  const ratio = inRate / 16000; const outLen = Math.floor(all.length / ratio);
+  const pcm = new Int16Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const start = Math.floor(i * ratio), end = Math.min(all.length, Math.floor((i + 1) * ratio));
+    let sum = 0, n = 0; for (let j = start; j < end; j++) { sum += all[j]; n++; }
+    const v = Math.max(-1, Math.min(1, n ? sum / n : 0));
+    pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  const buf = new ArrayBuffer(44 + pcm.length * 2); const dv = new DataView(buf);
+  const w = (off, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i)); };
+  w(0, "RIFF"); dv.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVE"); w(12, "fmt ");
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, 16000, true);
+  dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, "data"); dv.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) dv.setInt16(44 + i * 2, pcm[i], true);
+  return new Blob([buf], { type: "audio/wav" });
+};
+
+// Records until the speaker pauses (~1.3 s of silence after speech) or stop() is called.
+const gradiumRecord = async ({ onLevel, onSpeechStart } = {}) => {
+  if (!slVoice.stream || slVoice.stream.getTracks().every(t => t.readyState === "ended")) {
+    slVoice.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  }
+  if (!slVoice.ctx || slVoice.ctx.state === "closed") slVoice.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (slVoice.ctx.state === "suspended") await slVoice.ctx.resume();
+  const ctx = slVoice.ctx;
+  const src = ctx.createMediaStreamSource(slVoice.stream);
+  const node = ctx.createScriptProcessor(4096, 1, 1);
+  const buffers = []; let spoke = false, silentFor = 0, total = 0, stopped = false;
+  let resolveFn; const done = new Promise(r => { resolveFn = r; });
+  const stop = () => {
+    if (stopped) return; stopped = true;
+    try { node.disconnect(); src.disconnect(); } catch (e) {}
+    resolveFn(spoke ? encodeWav16k(buffers, ctx.sampleRate) : null);
+  };
+  node.onaudioprocess = (e) => {
+    if (stopped) return;
+    const d = new Float32Array(e.inputBuffer.getChannelData(0)); buffers.push(d);
+    let sum = 0; for (let i = 0; i < d.length; i++) sum += d[i] * d[i];
+    const rms = Math.sqrt(sum / d.length); const dur = d.length / ctx.sampleRate; total += dur;
+    onLevel && onLevel(rms);
+    if (rms > 0.025) { if (!spoke) { spoke = true; onSpeechStart && onSpeechStart(); } silentFor = 0; }
+    else if (spoke) { silentFor += dur; if (silentFor > 1.3) stop(); }
+    if (!spoke && total > 12) stop();   // nobody spoke
+    if (total > 90) stop();             // hard cap
+  };
+  src.connect(node); node.connect(ctx.destination);
+  return { stop, done };
+};
+const gradiumTranscribe = async (blob, language = "en") => {
+  const res = await fetch("/api/voice/stt?language=" + encodeURIComponent(language), { method: "POST", headers: { "Content-Type": "audio/wav" }, body: blob });
+  const out = await res.json();
+  if (!out.ok) throw new Error(out.error || "Transcription failed");
+  return out.text || "";
+};
+
 const VoiceAgent = ({ companies = [], readingItems = [], voiceSessions = [], setVoiceSessions, updateCompany, setReadingItems }) => {
   const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
   const [sessionId, setSessionId] = useState(null);
@@ -2183,6 +2295,13 @@ const VoiceAgent = ({ companies = [], readingItems = [], voiceSessions = [], set
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState("");
   const [showPast, setShowPast] = useState(false);
+  const [gradiumReady, setGradiumReady] = useState(false);
+  const [engine, setEngine] = useState(() => localStorage.getItem("sl_voice_engine") || "gradium");
+  const [voiceId, setVoiceId] = useState(() => localStorage.getItem("sl_gradium_voice") || "");
+  const [showSettings, setShowSettings] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [keyMsg, setKeyMsg] = useState("");
+  const [level, setLevel] = useState(0);
   const recRef = useRef(null);
   const handsFreeRef = useRef(false);
   const endRef = useRef(null);
@@ -2192,7 +2311,26 @@ const VoiceAgent = ({ companies = [], readingItems = [], voiceSessions = [], set
   const messages = session?.messages || [];
 
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" }); }, [messages.length, interim, state]);
-  useEffect(() => () => { try { recRef.current?.abort(); } catch (e) {} window.speechSynthesis?.cancel(); }, []);
+  useEffect(() => () => { try { recRef.current?.abort ? recRef.current.abort() : recRef.current?.stop?.(); } catch (e) {} stopAllSpeech(); }, []);
+  const refreshStatus = () => fetch("/api/voice/status").then(r => r.json()).then(d => setGradiumReady(!!d.gradium)).catch(() => setGradiumReady(false));
+  useEffect(() => { refreshStatus(); }, []);
+  useEffect(() => { localStorage.setItem("sl_voice_engine", engine); }, [engine]);
+  useEffect(() => { localStorage.setItem("sl_gradium_voice", voiceId); }, [voiceId]);
+  const useGradium = engine === "gradium" && gradiumReady;
+  const speak = (text, onEnd) => {
+    if (useGradium) gradiumSpeak(text, { voiceId: voiceId.trim(), onEnd, onError: (e) => { setError("Gradium voice failed (" + e.message + "), using iPhone voice."); speakText(text, { onEnd }); } });
+    else speakText(text, { onEnd });
+  };
+  const saveGradiumKey = async () => {
+    const v = keyInput.trim();
+    if (!v) return;
+    setKeyMsg("Saving…");
+    try {
+      const r = await fetch("/api/storage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "gradium_api_key", value: v }) });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      setKeyInput(""); setKeyMsg("Saved."); refreshStatus();
+    } catch (e) { setKeyMsg("Could not save: " + e.message); }
+  };
 
   const saveMessages = (id, msgs, titleHint) => {
     setVoiceSessions(prev => {
@@ -2231,7 +2369,7 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
       saveMessages(id, final);
       if (muted) { setState("idle"); if (handsFreeRef.current) startListening(); return; }
       setState("speaking");
-      speakText(answer, { onEnd: () => { setState("idle"); if (handsFreeRef.current) setTimeout(startListening, 250); } });
+      speak(answer, () => { setState("idle"); if (handsFreeRef.current) setTimeout(startListening, 250); });
     } catch (e) {
       setError("Couldn't reach Claude: " + e.message);
       setState("idle");
@@ -2239,6 +2377,7 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
   };
 
   const startListening = () => {
+    if (useGradium) { startGradiumListening(); return; }
     if (!SR) { setError("Voice input isn't supported in this browser. On iPhone use Safari, or type below."); return; }
     window.speechSynthesis?.cancel();
     try { recRef.current?.abort(); } catch (e) {}
@@ -2270,16 +2409,38 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
     try { rec.start(); } catch (e) { setError("Couldn't start microphone: " + e.message); setState("idle"); }
   };
 
+  const startGradiumListening = async () => {
+    stopAllSpeech();
+    setError("");
+    try {
+      setState("listening");
+      const rec = await gradiumRecord({ onLevel: (v) => setLevel(v), onSpeechStart: () => setInterim("…") });
+      recRef.current = rec;
+      const blob = await rec.done;
+      recRef.current = null; setLevel(0);
+      if (!blob) { setInterim(""); setState("idle"); return; }
+      setInterim("Transcribing…"); setState("thinking");
+      const text = (await gradiumTranscribe(blob, "en")).trim();
+      setInterim("");
+      if (text) ask(text); else setState("idle");
+    } catch (e) {
+      setInterim(""); setLevel(0); setState("idle");
+      if (/denied|NotAllowed|Permission/i.test(String(e && (e.name || e.message)))) setError("Microphone access was blocked. On iPhone: Settings → Safari → Microphone → Allow.");
+      else setError("Voice error: " + e.message);
+    }
+  };
+
   const onMic = () => {
+    if (useGradium) unlockGradiumAudio();
     // Unlock iOS speech synthesis inside the user gesture.
     try { if (window.speechSynthesis && !window.__slVoiceUnlocked) { window.speechSynthesis.speak(new SpeechSynthesisUtterance("")); window.__slVoiceUnlocked = true; } } catch (e) {}
     if (state === "listening") { try { recRef.current?.stop(); } catch (e) {} return; }
-    if (state === "speaking") { window.speechSynthesis?.cancel(); setState("idle"); startListening(); return; }
+    if (state === "speaking") { stopAllSpeech(); setState("idle"); startListening(); return; }
     if (state === "thinking") return;
     startListening();
   };
 
-  const newSession = () => { window.speechSynthesis?.cancel(); setSessionId(null); setState("idle"); setShowPast(false); };
+  const newSession = () => { stopAllSpeech(); setSessionId(null); setState("idle"); setShowPast(false); };
   const saveToDeal = (companyId, text) => {
     const c = companies.find(x => String(x.id) === String(companyId));
     if (!c) return;
@@ -2311,8 +2472,31 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
         <span style={{ color: FADE, marginLeft: 6 }}>Web</span>
         {[["auto", "Auto"], ["on", "On"], ["off", "Off"]].map(([k, l]) => <button key={k} style={chip(webMode === k)} onClick={() => setWebMode(k)}>{l}</button>)}
         <button style={chip(handsFree)} onClick={() => setHandsFree(!handsFree)}>Hands-free</button>
-        <button style={chip(muted)} onClick={() => { setMuted(!muted); window.speechSynthesis?.cancel(); }}>{muted ? "Muted" : "Sound on"}</button>
+        <button style={chip(muted)} onClick={() => { setMuted(!muted); stopAllSpeech(); }}>{muted ? "Muted" : "Sound on"}</button>
+        <button style={chip(showSettings)} onClick={() => setShowSettings(!showSettings)}>Voice: {useGradium ? "Gradium" : "iPhone"}</button>
       </div>
+
+      {showSettings && (
+        <div id="voice-settings" style={{ border: `1px solid ${LINE}`, borderRadius: 2, padding: 12, marginBottom: 12, display: "grid", gap: 10, fontSize: 13 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ color: FADE }}>Engine</span>
+            <button style={chip(engine === "gradium")} onClick={() => setEngine("gradium")}>Gradium (natural)</button>
+            <button style={chip(engine === "browser")} onClick={() => setEngine("browser")}>iPhone built-in</button>
+          </div>
+          <div style={{ color: gradiumReady ? INK : RUST }}>{gradiumReady ? "Gradium key connected." : "Gradium key not set — add it below (or as GRADIUM_API_KEY on Render)."}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Input id="gradium-key" type="password" placeholder={gradiumReady ? "Replace Gradium API key (gsk_…)" : "Gradium API key (gsk_…)"} value={keyInput} onChange={(e) => setKeyInput(e.target.value)} style={{ flex: 1 }} />
+            <Btn small onClick={saveGradiumKey} disabled={!keyInput.trim()}>Save</Btn>
+          </div>
+          {keyMsg && <div style={{ color: FADE }}>{keyMsg}</div>}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ color: FADE, whiteSpace: "nowrap" }}>Voice ID</span>
+            <Input id="gradium-voice" placeholder="Default (YTpq7expH9539ERJ)" value={voiceId} onChange={(e) => setVoiceId(e.target.value)} style={{ flex: 1 }} />
+            <Btn small onClick={() => { unlockGradiumAudio(); speak("Hi Simon, this is your SL Deals voice partner."); }} disabled={!useGradium}>Test</Btn>
+          </div>
+          <div style={{ color: FADE, fontSize: 11 }}>Pick voices in the Gradium studio and paste the voice ID here.</div>
+        </div>
+      )}
 
       {showPast && (
         <div style={{ border: `1px solid ${LINE}`, borderRadius: 2, marginBottom: 12, maxHeight: 260, overflowY: "auto" }}>
@@ -2341,7 +2525,7 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
             {m.role === "assistant" && (
               <div style={{ display: "flex", gap: 10, marginTop: 4, flexWrap: "wrap", alignItems: "center", fontSize: 11, color: FADE }}>
                 {m.web && <span>web</span>}
-                <button onClick={() => speakText(m.text)} style={{ border: "none", background: "none", padding: 0, fontSize: 11, color: FADE, cursor: "pointer", textDecoration: "underline" }}>Replay</button>
+                <button onClick={() => { if (useGradium) unlockGradiumAudio(); speak(m.text); }} style={{ border: "none", background: "none", padding: 0, fontSize: 11, color: FADE, cursor: "pointer", textDecoration: "underline" }}>Replay</button>
                 <button onClick={() => saveAsReading(m.text)} style={{ border: "none", background: "none", padding: 0, fontSize: 11, color: FADE, cursor: "pointer", textDecoration: "underline" }}>Save to Reading</button>
                 <select value="" onChange={(e) => { if (e.target.value) { saveToDeal(e.target.value, m.text); e.target.value = ""; } }} style={{ fontSize: 11, border: `1px solid ${LINE}`, background: PAPER, maxWidth: 150 }}>
                   <option value="">Add to deal notes…</option>
@@ -2359,7 +2543,7 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
 
       <div className="voice-controls" style={{ position: "sticky", bottom: 0, background: PAPER, borderTop: `1px solid ${LINE}`, paddingTop: 12, display: "grid", gap: 10, justifyItems: "center" }}>
         <button id="voice-mic" onClick={onMic} aria-label={label} className={state === "listening" ? "voice-mic listening" : "voice-mic"}
-          style={{ width: 76, height: 76, borderRadius: "50%", border: `2px solid ${INK}`, background: state === "listening" ? INK : PAPER, color: state === "listening" ? PAPER : INK, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", WebkitTapHighlightColor: "transparent" }}>
+          style={{ boxShadow: state === "listening" ? `0 0 0 ${Math.min(18, Math.round(level * 400))}px rgba(17,17,17,0.15)` : "none", transition: "box-shadow .08s", width: 76, height: 76, borderRadius: "50%", border: `2px solid ${INK}`, background: state === "listening" ? INK : PAPER, color: state === "listening" ? PAPER : INK, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", WebkitTapHighlightColor: "transparent" }}>
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             {state === "speaking" ? <rect x="6" y="6" width="12" height="12" /> : (<g><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v1a7 7 0 0 0 14 0v-1" /><line x1="12" y1="18" x2="12" y2="22" /></g>)}
           </svg>

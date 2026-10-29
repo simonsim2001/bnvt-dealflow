@@ -2386,6 +2386,42 @@ def handle_healthz(handler):
     return True
 
 
+
+# ---------------- Gradium voice (TTS + STT) ----------------
+GRADIUM_BASE = "https://api.gradium.ai/api"
+GRADIUM_DEFAULT_VOICE = "YTpq7expH9539ERJ"
+
+def gradium_key():
+    return (os.environ.get("GRADIUM_API_KEY") or get_stored_value_file("gradium_api_key") or "").strip()
+
+def gradium_tts(text, voice_id=None):
+    body = {"text": text[:4000], "voice_id": (voice_id or GRADIUM_DEFAULT_VOICE), "output_format": "wav", "only_audio": True}
+    req = urllib.request.Request(f"{GRADIUM_BASE}/post/speech/tts", data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"x-api-key": gradium_key(), "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read()
+
+def gradium_stt(audio, content_type="audio/wav", language="en"):
+    q = quote(json.dumps({"language": language}))
+    req = urllib.request.Request(f"{GRADIUM_BASE}/post/speech/asr?json_config={q}", data=audio, method="POST",
+                                 headers={"x-api-key": gradium_key(), "Content-Type": content_type or "audio/wav"})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        raw = r.read().decode("utf-8", "ignore")
+    words = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except Exception:
+            continue
+        if msg.get("type") == "text" and msg.get("text"):
+            words.append(msg["text"])
+        elif msg.get("type") == "error":
+            raise RuntimeError(msg.get("message") or "Gradium transcription error")
+    return " ".join(words).strip()
+
 # ---------------- Reading library: files + link metadata ----------------
 READING_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "reading")
 READING_MAX_BYTES = 30 * 1024 * 1024
@@ -2590,6 +2626,12 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"value": None}).encode('utf-8'))
+        elif parsed_url.path == '/api/voice/status':
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"gradium": bool(gradium_key())}).encode('utf-8'))
+            return
         elif parsed_url.path == '/api/reading/file':
             fname = unquote(parse_qs(parsed_url.query).get("path", [""])[0])
             data = reading_load_file(fname)
@@ -2703,6 +2745,39 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         if not gate_request(self, "POST"):
             return
         parsed_url = urlparse(self.path)
+        if parsed_url.path in ('/api/voice/tts', '/api/voice/stt'):
+            try:
+                if not gradium_key():
+                    raise ValueError("Gradium API key not set (Settings or GRADIUM_API_KEY)")
+                n = int(self.headers.get('Content-Length', 0))
+                if n > 20 * 1024 * 1024:
+                    raise ValueError("Audio too large")
+                raw = self.rfile.read(n) if n else b""
+                if parsed_url.path == '/api/voice/tts':
+                    body = json.loads(raw.decode('utf-8') or "{}")
+                    text = str(body.get("text", "")).strip()
+                    if not text:
+                        raise ValueError("No text")
+                    audio = gradium_tts(text, body.get("voice_id"))
+                    self.send_response(200)
+                    self.send_header("Content-Type", "audio/wav")
+                    self.send_header("Content-Length", str(len(audio)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(audio)
+                    return
+                lang = parse_qs(parsed_url.query).get("language", ["en"])[0]
+                result, code = {"ok": True, "text": gradium_stt(raw, self.headers.get("Content-Type"), lang)}, 200
+            except urllib.error.HTTPError as e:
+                detail = e.read()[:300].decode("utf-8", "ignore")
+                result, code = {"ok": False, "error": f"Gradium HTTP {e.code}: {detail}"}, 502
+            except Exception as e:
+                result, code = {"ok": False, "error": str(e)}, 400
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode('utf-8'))
+            return
         if parsed_url.path in ('/api/reading/upload', '/api/reading/meta'):
             try:
                 n = int(self.headers.get('Content-Length', 0))
