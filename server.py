@@ -2422,6 +2422,16 @@ def gradium_stt(audio, content_type="audio/wav", language="en"):
             raise RuntimeError(msg.get("message") or "Gradium transcription error")
     return " ".join(words).strip()
 
+
+def gradium_token():
+    req = urllib.request.Request(f"{GRADIUM_BASE}/api-keys/token", headers={"x-api-key": gradium_key()})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read())
+
+def anthropic_server_key(handler=None):
+    k = (client_api_key(handler) if handler else None) or get_stored_value("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY") or ""
+    return k.strip() if isinstance(k, str) else ""
+
 # ---------------- Reading library: files + link metadata ----------------
 READING_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "reading")
 READING_MAX_BYTES = 30 * 1024 * 1024
@@ -2745,6 +2755,71 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
         if not gate_request(self, "POST"):
             return
         parsed_url = urlparse(self.path)
+        if parsed_url.path == '/api/voice/token':
+            try:
+                if not gradium_key():
+                    raise ValueError("Gradium API key not set")
+                result, code = {"ok": True, **gradium_token()}, 200
+            except Exception as e:
+                result, code = {"ok": False, "error": str(e)}, 502
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode('utf-8'))
+            return
+        if parsed_url.path == '/api/voice/chat':
+            # Streams Claude's reply as plain text chunks so speech can start on the first sentence.
+            try:
+                n = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(n).decode('utf-8') or "{}")
+                key = anthropic_server_key(self)
+                if not key:
+                    raise ValueError("Anthropic API key not set")
+                use_search = bool(body.get("search"))
+                payload = {
+                    "model": "claude-sonnet-4-6" if use_search else "claude-haiku-4-5",
+                    "max_tokens": 900 if use_search else 600,
+                    "stream": True,
+                    "system": str(body.get("system", ""))[:60000],
+                    "messages": body.get("messages", [])[-20:],
+                }
+                headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+                if use_search:
+                    payload["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}]
+                req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+                resp = urllib.request.urlopen(req, timeout=120)
+            except urllib.error.HTTPError as e:
+                msg = e.read()[:400].decode("utf-8", "ignore")
+                self.send_response(502); self.send_header("Content-Type", "text/plain; charset=utf-8"); self.end_headers()
+                self.wfile.write(f"[error] Claude HTTP {e.code}: {msg}".encode("utf-8")); return
+            except Exception as e:
+                self.send_response(400); self.send_header("Content-Type", "text/plain; charset=utf-8"); self.end_headers()
+                self.wfile.write(f"[error] {e}".encode("utf-8")); return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            try:
+                for raw in resp:
+                    line = raw.decode("utf-8", "ignore").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        ev = json.loads(line[5:].strip())
+                    except Exception:
+                        continue
+                    if ev.get("type") == "content_block_delta" and ev.get("delta", {}).get("type") == "text_delta":
+                        self.wfile.write(ev["delta"]["text"].encode("utf-8"))
+                        self.wfile.flush()
+                    elif ev.get("type") == "error":
+                        self.wfile.write(f" [error] {ev.get('error', {}).get('message', '')}".encode("utf-8"))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                resp.close()
+            return
         if parsed_url.path in ('/api/voice/tts', '/api/voice/stt'):
             try:
                 if not gradium_key():

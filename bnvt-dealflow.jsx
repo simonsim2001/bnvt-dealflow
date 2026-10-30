@@ -2283,6 +2283,357 @@ const gradiumTranscribe = async (blob, language = "en") => {
   return out.text || "";
 };
 
+
+// ===================== REALTIME VOICE (Gradium WebSocket STT + TTS, streaming Claude) =====================
+const b64FromInt16 = (int16) => {
+  const bytes = new Uint8Array(int16.buffer, int16.byteOffset, int16.byteLength);
+  let bin = ""; const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+  return btoa(bin);
+};
+const floatToInt16 = (f32) => { const o = new Int16Array(f32.length); for (let i = 0; i < f32.length; i++) { const v = Math.max(-1, Math.min(1, f32[i])); o[i] = v < 0 ? v * 0x8000 : v * 0x7fff; } return o; };
+const resampleTo = (f32, inRate, outRate) => {
+  if (inRate === outRate) return f32;
+  const ratio = inRate / outRate, n = Math.floor(f32.length / ratio), out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = f32[Math.floor(i * ratio)];
+  return out;
+};
+const getGradiumToken = async () => {
+  const r = await fetch("/api/voice/token", { method: "POST" });
+  const d = await r.json();
+  if (!d.ok || !d.token) throw new Error(d.error || "No Gradium token");
+  return d.token;
+};
+
+class RealtimeVoice {
+  constructor({ onState, onPartial, onUserFinal, onAssistantText, onLevel, onError, voiceId }) {
+    Object.assign(this, { onState, onPartial, onUserFinal, onAssistantText, onLevel, onError, voiceId });
+    this.state = "off"; this.utter = ""; this.lastTextAt = 0; this.playhead = 0; this.sources = []; this.ttsWs = null; this.replyAbort = null; this.genId = 0;
+  }
+  setState(s) { this.state = s; this.onState && this.onState(s); }
+  async start() {
+    this.setState("connecting");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    this.stream = stream;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new Ctx();
+    if (this.ctx.state === "suspended") await this.ctx.resume();
+    const rate = this.ctx.sampleRate;
+    this.inFormat = rate === 48000 ? "pcm_48000" : rate === 44100 ? "pcm_44100" : "pcm";
+    this.inRate = this.inFormat === "pcm" ? 24000 : rate;
+    await this.openStt();
+    const src = this.ctx.createMediaStreamSource(stream);
+    const node = this.ctx.createScriptProcessor(4096, 1, 1);
+    node.onaudioprocess = (e) => {
+      const d = e.inputBuffer.getChannelData(0);
+      let sum = 0; for (let i = 0; i < d.length; i += 4) sum += d[i] * d[i];
+      this.onLevel && this.onLevel(Math.sqrt(sum / (d.length / 4)));
+      if (this.stt && this.stt.readyState === 1 && this.sttReady) {
+        const pcm = floatToInt16(resampleTo(d, rate, this.inRate));
+        this.stt.send(JSON.stringify({ type: "audio", audio: b64FromInt16(pcm) }));
+      }
+    };
+    src.connect(node); node.connect(this.ctx.destination);
+    this.src = src; this.node = node;
+    this.setState("listening");
+  }
+  async openStt() {
+    const token = await getGradiumToken();
+    const ws = new WebSocket("wss://api.gradium.ai/api/speech/asr?token=" + encodeURIComponent(token));
+    this.stt = ws; this.sttReady = false;
+    await new Promise((resolve, reject) => {
+      ws.onopen = () => { ws.send(JSON.stringify({ type: "setup", model_name: "default", input_format: this.inFormat, json_config: { language: "en" } })); this.sttReady = true; resolve(); };
+      ws.onerror = () => reject(new Error("Couldn't connect to Gradium speech recognition"));
+    });
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === "text" && m.text) {
+        // While the assistant talks, only a clear interruption (3+ words) counts; shorter bits are usually echo.
+        if (this.state === "speaking" || this.state === "thinking") {
+          this.bargeBuf = ((this.bargeBuf || "") + " " + m.text).trim();
+          if (this.bargeBuf.split(/\s+/).length >= 3) { this.interrupt(); this.utter = this.bargeBuf; this.bargeBuf = ""; this.setState("listening"); this.onPartial && this.onPartial(this.utter); }
+          return;
+        }
+        this.utter = (this.utter + " " + m.text).trim(); this.lastTextAt = Date.now();
+        this.onPartial && this.onPartial(this.utter);
+      } else if (m.type === "step" && Array.isArray(m.vad)) {
+        const p = (m.vad[2] || m.vad[m.vad.length - 1] || {}).inactivity_prob || 0;
+        if (this.state === "listening" && this.utter && p > 0.6 && Date.now() - this.lastTextAt > 250) this.endTurn();
+      } else if (m.type === "error") {
+        this.onError && this.onError(new Error(m.message || "Gradium STT error"));
+      }
+    };
+    ws.onclose = () => { this.sttReady = false; if (this.state !== "off") setTimeout(() => { if (this.state !== "off") this.openStt().catch(e => this.onError && this.onError(e)); }, 500); };
+  }
+  endTurn() {
+    const text = this.utter.trim(); this.utter = ""; this.bargeBuf = "";
+    this.onPartial && this.onPartial("");
+    if (text) this.onUserFinal && this.onUserFinal(text);
+  }
+  sendNow() { if (this.utter.trim()) this.endTurn(); }
+  // Streams a Claude reply and speaks it sentence by sentence as it arrives.
+  async reply({ system, messages, search }) {
+    const gen = ++this.genId;
+    this.setState("thinking");
+    this.bargeBuf = "";
+    const tts = await this.openTts(gen).catch(e => { this.onError && this.onError(e); return null; });
+    const ctrl = new AbortController(); this.replyAbort = ctrl;
+    let full = "", pending = "";
+    const flushSentences = (final) => {
+      const re = /[^.!?]*[.!?]+["')\]]?\s+/g; let m, last = 0;
+      while ((m = re.exec(pending))) { this.speakChunk(tts, pending.slice(last, re.lastIndex)); last = re.lastIndex; }
+      pending = pending.slice(last);
+      if (final && pending.trim()) { this.speakChunk(tts, pending); pending = ""; }
+    };
+    try {
+      const res = await fetch("/api/voice/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ system, messages, search }), signal: ctrl.signal });
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done || gen !== this.genId) break;
+        const chunk = dec.decode(value, { stream: true });
+        full += chunk; pending += chunk;
+        this.onAssistantText && this.onAssistantText(full, false);
+        flushSentences(false);
+      }
+      if (gen !== this.genId) return full;
+      flushSentences(true);
+      if (tts && tts.readyState === 1) tts.send(JSON.stringify({ type: "end_of_stream" }));
+      this.onAssistantText && this.onAssistantText(full, true);
+      if (!tts) this.setState("listening");
+    } catch (e) {
+      if (e.name !== "AbortError") { this.onError && this.onError(e); this.setState("listening"); }
+    }
+    return full;
+  }
+  speakChunk(tts, text) {
+    const t = String(text).replace(/[*#_`>]/g, "").trim();
+    if (!t || !tts) return;
+    const send = () => tts.send(JSON.stringify({ type: "text", text: t + " " }));
+    if (tts.readyState === 1 && tts.__ready) send(); else (tts.__queue = tts.__queue || []).push(send);
+  }
+  async openTts(gen) {
+    const token = await getGradiumToken();
+    const ws = new WebSocket("wss://api.gradium.ai/api/speech/tts?token=" + encodeURIComponent(token));
+    this.ttsWs = ws; ws.__queue = [];
+    ws.onopen = () => ws.send(JSON.stringify({ type: "setup", model_name: "default", voice_id: this.voiceId || "YTpq7expH9539ERJ", output_format: "pcm" }));
+    ws.onmessage = (ev) => {
+      if (gen !== this.genId) return;
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === "ready") { ws.__ready = true; (ws.__queue || []).forEach(f => f()); ws.__queue = []; }
+      else if (m.type === "audio" && m.audio) this.playPcm(m.audio);
+      else if (m.type === "end_of_stream") { ws.__ended = true; this.checkDone(gen); }
+      else if (m.type === "error") this.onError && this.onError(new Error(m.message || "Gradium TTS error"));
+    };
+    ws.onclose = () => { ws.__ended = true; this.checkDone(gen); };
+    return ws;
+  }
+  playPcm(b64) {
+    const bin = atob(b64); const n = bin.length >> 1; const f = new Float32Array(n);
+    for (let i = 0; i < n; i++) { let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v >= 0x8000) v -= 0x10000; f[i] = v / 0x8000; }
+    const buf = this.ctx.createBuffer(1, n, 48000); buf.copyToChannel ? buf.copyToChannel(f, 0) : buf.getChannelData(0).set(f);
+    const s = this.ctx.createBufferSource(); s.buffer = buf; s.connect(this.ctx.destination);
+    const now = this.ctx.currentTime; if (this.playhead < now + 0.05) this.playhead = now + 0.05;
+    s.start(this.playhead); this.playhead += buf.duration;
+    this.sources.push(s); s.onended = () => { this.sources = this.sources.filter(x => x !== s); };
+    if (this.state !== "speaking") this.setState("speaking");
+  }
+  checkDone(gen) {
+    if (gen !== this.genId) return;
+    const wait = Math.max(0, (this.playhead - this.ctx.currentTime) * 1000) + 150;
+    clearTimeout(this.doneTimer);
+    this.doneTimer = setTimeout(() => { if (gen === this.genId && (this.state === "speaking" || this.state === "thinking")) { this.setState("listening"); } }, wait);
+  }
+  interrupt() {
+    this.genId++;
+    try { this.replyAbort && this.replyAbort.abort(); } catch (e) {}
+    try { this.ttsWs && this.ttsWs.close(); } catch (e) {}
+    this.sources.forEach(s => { try { s.stop(); } catch (e) {} }); this.sources = [];
+    this.playhead = this.ctx ? this.ctx.currentTime : 0;
+    clearTimeout(this.doneTimer);
+  }
+  stop() {
+    this.interrupt();
+    this.setState("off");
+    try { this.stt && this.stt.send(JSON.stringify({ type: "end_of_stream" })); } catch (e) {}
+    try { this.stt && this.stt.close(); } catch (e) {}
+    try { this.node && this.node.disconnect(); this.src && this.src.disconnect(); } catch (e) {}
+    try { this.stream && this.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    try { this.ctx && this.ctx.close(); } catch (e) {}
+    this.onLevel && this.onLevel(0);
+  }
+}
+
+const LiveVoicePanel = ({ companies = [], readingItems = [], voiceSessions = [], setVoiceSessions, days = 30, webMode = "auto", voiceId = "", onFallback }) => {
+  const [state, setState] = useState("off");
+  const [partial, setPartial] = useState("");
+  const [live, setLive] = useState("");
+  const [error, setError] = useState("");
+  const [level, setLevel] = useState(0);
+  const [log, setLog] = useState([]);
+  const rvRef = useRef(null); const logRef = useRef([]); const sessionRef = useRef(null); const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView?.({ block: "end" }); }, [log.length, live, partial]);
+  useEffect(() => () => { rvRef.current && rvRef.current.stop(); }, []);
+
+  const persist = (msgs) => {
+    const id = sessionRef.current || ("vs_" + Date.now().toString(36)); sessionRef.current = id;
+    const now = Date.now();
+    setVoiceSessions(prev => {
+      const list = prev || [];
+      return list.some(s => s.id === id) ? list.map(s => s.id === id ? { ...s, messages: msgs, updatedAt: now } : s)
+        : [{ id, title: (msgs[0]?.text || "Live conversation").slice(0, 60), messages: msgs, createdAt: now, updatedAt: now, live: true }, ...list];
+    });
+  };
+  const system = () => `You are the live voice research partner inside "SL Deals", a venture deal-flow app used by Simon, an early-stage investor. This is a real-time spoken conversation:
+- Reply in 1 to 4 short spoken sentences. Start with the answer. No lists, no markdown, no URLs.
+- Ground what you say in the pipeline data below and name companies. Point out patterns and what changed recently.
+- For market trends and news, use web search when available and mention the source briefly.
+- Be candid and push back when useful. Ask one short follow-up question when it helps.
+
+PIPELINE DATA:
+${buildVoiceContext({ companies, readingItems, days })}`;
+
+  const start = async () => {
+    setError("");
+    const rv = new RealtimeVoice({
+      voiceId: voiceId.trim(),
+      onState: setState, onPartial: setPartial, onLevel: setLevel,
+      onError: (e) => setError(e.message),
+      onAssistantText: (t, done) => setLive(done ? "" : t),
+      onUserFinal: async (text) => {
+        const userMsg = { role: "user", text, ts: Date.now() };
+        logRef.current = [...logRef.current, userMsg]; setLog(logRef.current);
+        const search = webMode === "on" || (webMode === "auto" && VOICE_SEARCH_RE.test(text));
+        const messages = logRef.current.slice(-16).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+        const answer = await rv.reply({ system: system(), messages, search });
+        if (answer && answer.trim()) {
+          logRef.current = [...logRef.current, { role: "assistant", text: answer.trim(), ts: Date.now(), web: search }];
+          setLog(logRef.current); persist(logRef.current);
+        }
+      },
+    });
+    rvRef.current = rv;
+    try { await rv.start(); }
+    catch (e) {
+      rv.stop(); rvRef.current = null;
+      setError(/denied|NotAllowed|Permission/i.test(String(e.name || e.message)) ? "Microphone access was blocked. On iPhone: Settings → Safari → Microphone → Allow." : "Live voice couldn't start: " + e.message);
+    }
+  };
+  const stop = () => { rvRef.current && rvRef.current.stop(); rvRef.current = null; setPartial(""); setLive(""); };
+  const tapOrb = () => {
+    const rv = rvRef.current;
+    if (!rv) return start();
+    if (state === "speaking" || state === "thinking") { rv.interrupt(); rv.setState("listening"); setLive(""); return; }
+    if (state === "listening" && partial) { rv.sendNow(); return; }
+  };
+  const label = { off: "Tap to start a live conversation", connecting: "Connecting…", listening: partial ? "Listening… tap to send now" : "Listening — just talk", thinking: "Thinking… tap to interrupt", speaking: "Speaking — talk or tap to interrupt" }[state] || "";
+  const scale = state === "listening" ? 1 + Math.min(0.35, level * 6) : state === "speaking" ? 1.08 : 1;
+
+  return (
+    <div className="live-voice" style={{ display: "flex", flexDirection: "column", minHeight: "calc(100vh - 230px)" }}>
+      <div style={{ flex: 1, display: "grid", gap: 10, alignContent: "start", paddingBottom: 8 }}>
+        {log.length === 0 && state === "off" && (
+          <div style={{ fontSize: 14, color: FADE, lineHeight: 1.5 }}>Live mode: talk naturally. It notices when you've finished, replies straight away in a natural voice, and you can cut in at any time.</div>
+        )}
+        {log.map((m, i) => (
+          <div key={i} style={{ justifySelf: m.role === "user" ? "end" : "start", maxWidth: "88%", fontSize: 15, lineHeight: 1.5, padding: "9px 13px", borderRadius: 14, background: m.role === "user" ? INK : "#F2F2F2", color: m.role === "user" ? PAPER : INK }}>{m.text}</div>
+        ))}
+        {live && <div style={{ justifySelf: "start", maxWidth: "88%", fontSize: 15, lineHeight: 1.5, padding: "9px 13px", borderRadius: 14, background: "#F2F2F2" }}>{live}</div>}
+        {partial && <div style={{ justifySelf: "end", maxWidth: "88%", fontSize: 15, padding: "9px 13px", borderRadius: 14, border: `1px dashed ${INK}`, color: "#555" }}>{partial}</div>}
+        {error && <div style={{ fontSize: 13, color: RUST }}>{error} {onFallback && <button onClick={onFallback} style={{ border: "none", background: "none", textDecoration: "underline", cursor: "pointer", color: RUST, fontSize: 13 }}>Use tap-to-talk instead</button>}</div>}
+        <div ref={endRef} />
+      </div>
+      <div className="voice-controls" style={{ position: "sticky", bottom: 0, background: PAPER, paddingTop: 10, display: "grid", justifyItems: "center", gap: 8 }}>
+        <button id="live-orb" onClick={tapOrb} aria-label={label}
+          style={{ width: 96, height: 96, borderRadius: "50%", border: "none", cursor: "pointer", background: state === "off" ? INK : state === "speaking" ? "#333" : INK, color: PAPER, transform: `scale(${scale})`, transition: "transform .12s ease-out", boxShadow: state === "off" ? "none" : "0 0 0 8px rgba(17,17,17,0.08), 0 0 0 18px rgba(17,17,17,0.04)", display: "flex", alignItems: "center", justifyContent: "center", WebkitTapHighlightColor: "transparent" }}>
+          {state === "thinking" ? <span style={{ fontSize: 22, letterSpacing: 4 }}>•••</span> :
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {state === "speaking" ? <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" /> : <g><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v1a7 7 0 0 0 14 0v-1" /><line x1="12" y1="18" x2="12" y2="22" /></g>}
+            </svg>}
+        </button>
+        <div style={{ fontSize: 12, color: FADE, textAlign: "center" }}>{label}</div>
+        {state !== "off" && <button onClick={stop} style={{ fontFamily: fontStack.ui, fontSize: 13, padding: "8px 18px", border: `1px solid ${INK}`, borderRadius: 20, background: PAPER, cursor: "pointer" }}>End conversation</button>}
+      </div>
+    </div>
+  );
+};
+
+// ===================== PHONE PIPELINE =====================
+const useIsPhone = () => {
+  const q = "(max-width: 768px)";
+  const get = () => typeof window !== "undefined" && window.matchMedia ? window.matchMedia(q).matches : false;
+  const [is, setIs] = useState(get);
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const m = window.matchMedia(q); const h = () => setIs(m.matches);
+    m.addEventListener ? m.addEventListener("change", h) : m.addListener(h);
+    return () => { m.removeEventListener ? m.removeEventListener("change", h) : m.removeListener(h); };
+  }, []);
+  return is;
+};
+
+const MobilePipeline = ({ companies = [], setSelected, updateCompany }) => {
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("new");
+  const [limit, setLimit] = useState(40);
+  const norm = (s) => String(s || "").toLowerCase();
+  const filters = [["all", "All"], ["starred", "Starred"], ...STATUSES.map(s => [s, s.replace("Active Opportunity", "Active")])];
+  const list = useMemo(() => {
+    const t = norm(q).trim();
+    let arr = companies.filter(c => {
+      if (filter === "starred" && !c.starred) return false;
+      if (filter !== "all" && filter !== "starred" && norm(c.status) !== norm(filter)) return false;
+      if (!t) return true;
+      return norm([c.name, c.oneLiner, c.sector, c.stage, c.geo, (c.tags || []).join(" "), (c.founders || []).map(f => f && f.name).join(" ")].join(" ")).includes(t);
+    });
+    arr = arr.slice().sort((a, b) => sort === "score" ? (compositeScore(b.scores) || 0) - (compositeScore(a.scores) || 0) : (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+    return arr;
+  }, [companies, q, filter, sort]);
+  useEffect(() => { setLimit(40); }, [q, filter, sort]);
+  const chip = (active) => ({ flex: "0 0 auto", fontFamily: fontStack.ui, fontSize: 13, padding: "7px 13px", borderRadius: 18, border: `1px solid ${active ? INK : "#D6D6D6"}`, background: active ? INK : PAPER, color: active ? PAPER : INK, cursor: "pointer", whiteSpace: "nowrap" });
+  return (
+    <div id="mobile-pipeline">
+      <div style={{ position: "sticky", top: "calc(52px + env(safe-area-inset-top))", zIndex: 10, background: PAPER, paddingBottom: 8, marginLeft: -14, marginRight: -14, paddingLeft: 14, paddingRight: 14 }}>
+        <div style={{ position: "relative" }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" style={{ position: "absolute", left: 12, top: 12 }}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+          <input id="mobile-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search companies, founders, sectors"
+            style={{ width: "100%", boxSizing: "border-box", fontFamily: fontStack.ui, fontSize: 16, padding: "10px 12px 10px 36px", borderRadius: 10, border: "none", background: "#F1F1F1", outline: "none", WebkitAppearance: "none" }} />
+        </div>
+        <div className="no-scrollbar" style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 8, WebkitOverflowScrolling: "touch" }}>
+          {filters.map(([k, l]) => <button key={k} style={chip(filter === k)} onClick={() => setFilter(k)}>{l}</button>)}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontSize: 12, color: FADE }}>
+          <span>{list.length} {list.length === 1 ? "company" : "companies"}</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={() => setSort("new")} style={{ border: "none", background: "none", fontSize: 12, fontWeight: sort === "new" ? 700 : 400, color: sort === "new" ? INK : FADE, cursor: "pointer" }}>Newest</button>
+            <button onClick={() => setSort("score")} style={{ border: "none", background: "none", fontSize: 12, fontWeight: sort === "score" ? 700 : 400, color: sort === "score" ? INK : FADE, cursor: "pointer" }}>Top score</button>
+          </div>
+        </div>
+      </div>
+      <div style={{ borderTop: `1px solid ${LINE}` }}>
+        {list.slice(0, limit).map(c => {
+          const sc = compositeScore(c.scores);
+          return (
+            <div key={c.id} onClick={() => { setSelected(c.id); window.scrollTo && window.scrollTo(0, 0); }} style={{ display: "flex", gap: 12, padding: "13px 2px", borderBottom: `1px solid ${LINE}`, cursor: "pointer", alignItems: "flex-start" }}>
+              <div style={{ flex: "0 0 40px", height: 40, borderRadius: 10, background: "#F1F1F1", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>{sc != null && sc > 0 ? Number(sc).toFixed(1) : "–"}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
+                {c.oneLiner && <div style={{ fontSize: 13.5, color: "#555", lineHeight: 1.35, marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "normal", overflowWrap: "break-word" }}>{c.oneLiner}</div>}
+                <div style={{ fontSize: 12, color: FADE, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{[c.status, c.stage, c.sector].filter(Boolean).join(" · ")}</div>
+              </div>
+              <button aria-label={c.starred ? "Unstar" : "Star"} onClick={(e) => { e.stopPropagation(); updateCompany(c.id, { starred: !c.starred, starredAt: !c.starred ? Date.now() : null }); }}
+                style={{ flex: "0 0 36px", height: 36, border: "none", background: "none", fontSize: 20, cursor: "pointer", color: c.starred ? INK : "#C8C8C8" }}>{c.starred ? "★" : "☆"}</button>
+            </div>
+          );
+        })}
+        {list.length > limit && <button onClick={() => setLimit(limit + 40)} style={{ width: "100%", padding: 14, border: "none", background: "none", fontFamily: fontStack.ui, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Show more ({list.length - limit})</button>}
+        {list.length === 0 && <div style={{ padding: 24, textAlign: "center", color: FADE, fontSize: 14 }}>No companies match.</div>}
+      </div>
+    </div>
+  );
+};
+
 const VoiceAgent = ({ companies = [], readingItems = [], voiceSessions = [], setVoiceSessions, updateCompany, setReadingItems }) => {
   const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
   const [sessionId, setSessionId] = useState(null);
@@ -2302,6 +2653,7 @@ const VoiceAgent = ({ companies = [], readingItems = [], voiceSessions = [], set
   const [keyInput, setKeyInput] = useState("");
   const [keyMsg, setKeyMsg] = useState("");
   const [level, setLevel] = useState(0);
+  const [mode, setMode] = useState(() => localStorage.getItem("sl_voice_mode") || "live");
   const recRef = useRef(null);
   const handsFreeRef = useRef(false);
   const endRef = useRef(null);
@@ -2317,6 +2669,8 @@ const VoiceAgent = ({ companies = [], readingItems = [], voiceSessions = [], set
   useEffect(() => { localStorage.setItem("sl_voice_engine", engine); }, [engine]);
   useEffect(() => { localStorage.setItem("sl_gradium_voice", voiceId); }, [voiceId]);
   const useGradium = engine === "gradium" && gradiumReady;
+  useEffect(() => { localStorage.setItem("sl_voice_mode", mode); }, [mode]);
+  const liveMode = mode === "live" && gradiumReady;
   const speak = (text, onEnd) => {
     if (useGradium) gradiumSpeak(text, { voiceId: voiceId.trim(), onEnd, onError: (e) => { setError("Gradium voice failed (" + e.message + "), using iPhone voice."); speakText(text, { onEnd }); } });
     else speakText(text, { onEnd });
@@ -2471,7 +2825,8 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
         {[7, 30, 90].map(d => <button key={d} style={chip(days === d)} onClick={() => setDays(d)}>{d}d</button>)}
         <span style={{ color: FADE, marginLeft: 6 }}>Web</span>
         {[["auto", "Auto"], ["on", "On"], ["off", "Off"]].map(([k, l]) => <button key={k} style={chip(webMode === k)} onClick={() => setWebMode(k)}>{l}</button>)}
-        <button style={chip(handsFree)} onClick={() => setHandsFree(!handsFree)}>Hands-free</button>
+        <button style={chip(liveMode)} onClick={() => setMode(liveMode ? "tap" : "live")} disabled={!gradiumReady}>{liveMode ? "Live" : "Tap-to-talk"}</button>
+        {!liveMode && <button style={chip(handsFree)} onClick={() => setHandsFree(!handsFree)}>Hands-free</button>}
         <button style={chip(muted)} onClick={() => { setMuted(!muted); stopAllSpeech(); }}>{muted ? "Muted" : "Sound on"}</button>
         <button style={chip(showSettings)} onClick={() => setShowSettings(!showSettings)}>Voice: {useGradium ? "Gradium" : "iPhone"}</button>
       </div>
@@ -2510,6 +2865,9 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
         </div>
       )}
 
+      {liveMode ? (
+        <LiveVoicePanel companies={companies} readingItems={readingItems} voiceSessions={voiceSessions} setVoiceSessions={setVoiceSessions} days={days} webMode={webMode} voiceId={voiceId} onFallback={() => setMode("tap")} />
+      ) : (<>
       <div style={{ flex: 1, display: "grid", gap: 12, alignContent: "start", paddingBottom: 12 }}>
         {messages.length === 0 && (
           <div style={{ display: "grid", gap: 8 }}>
@@ -2554,6 +2912,7 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
           <Btn primary onClick={() => { if (typed.trim()) { ask(typed); setTyped(""); } }} disabled={!typed.trim() || state === "thinking"}>Send</Btn>
         </div>
       </div>
+      </>)}
     </div>
   );
 };
@@ -7282,9 +7641,11 @@ Construct the final email now. Maintain the exact formatting of the examples abo
     return (b.createdAt || 0) - (a.createdAt || 0);
   });
   
+  const isPhone = useIsPhone();
   const sel = companies.find((c) => c.id === selected);
 
   if (sel) return <CompanyDetail company={sel} investors={investors} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => removeCompany(sel.id)} founderProfiles={founderProfiles} researchingTamIds={researchingTamIds} runTamForId={runTamForId} />;
+  if (isPhone) return <MobilePipeline companies={companies} setSelected={setSelected} updateCompany={updateCompany} />;
 
   const unscoredCount = companies.filter(c => c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:"))).length;
   const unSizedTamCount = companies.filter(c => {
