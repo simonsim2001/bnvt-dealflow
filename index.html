@@ -235,6 +235,12 @@
             #mobile-pipeline div, #mobile-pipeline span { word-break: normal; overflow-wrap: break-word; }
             .live-voice { min-height: calc(100vh - 210px) !important; }
         }
+        /* phone text wrapping fix */
+        @media (max-width: 768px) {
+            p, li, span, div, h1, h2, h3, h4, h5, h6, td, th, a, label, button { word-break: normal !important; overflow-wrap: break-word !important; }
+            .app-body div[style*="space-between"] { flex-wrap: wrap !important; }
+            .app-body h1, .app-body h2 { min-width: 0; }
+        }
     </style>
 </head>
 <body>
@@ -326,7 +332,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=74.0"></script>
+    <script src="bnvt-dealflow.js?v=74.1"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {

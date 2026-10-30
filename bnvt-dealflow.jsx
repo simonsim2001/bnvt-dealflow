@@ -5139,7 +5139,7 @@ function RecontactNotificationModal({
 }
 
 window.App = function App() {
-  const [tab, setTab] = useState("pipeline");
+  const [tab, setTab] = useState(() => { try { return new URLSearchParams(window.location.search).get("tab") || "pipeline"; } catch (e) { return "pipeline"; } });
   const [isCmdKOpen, setCmdKOpen] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [hasAutoOpenedReminders, setHasAutoOpenedReminders] = useState(false);
