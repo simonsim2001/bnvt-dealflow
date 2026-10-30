@@ -169,28 +169,6 @@
                 box-sizing: border-box !important;
             }
 
-            /* 7. Side Drawer & Modals become mobile bottom sheets */
-            div[style*="width: 320px"], 
-            div[style*="width: 350px"], 
-            div[style*="width: 400px"], 
-            div[style*="width: 30%"], 
-            div[style*="width: 40%"] {
-                width: 100% !important;
-                max-width: 100% !important;
-                position: fixed !important;
-                left: 0 !important;
-                right: 0 !important;
-                bottom: 0 !important;
-                top: auto !important;
-                height: 85% !important;
-                border-radius: 16px 16px 0 0 !important;
-                border-left: none !important;
-                border-top: 2px solid #000 !important;
-                z-index: 1000 !important;
-                box-shadow: 0 -4px 20px rgba(0,0,0,0.15) !important;
-                overflow-y: auto !important;
-            }
-
             /* 8. Spacers and wrappers adjustments */
             div[style*="gap: 24px"], div[style*="gap: 20px"] {
                 gap: 12px !important;
@@ -240,6 +218,30 @@
             p, li, span, div, h1, h2, h3, h4, h5, h6, td, th, a, label, button { word-break: normal !important; overflow-wrap: break-word !important; }
             .app-body div[style*="space-between"] { flex-wrap: wrap !important; }
             .app-body h1, .app-body h2 { min-width: 0; }
+        }
+        /* phone overflow guard */
+        @media (max-width: 768px) {
+            html, body { overflow-x: hidden !important; max-width: 100vw; }
+            .app-container, .app-body { max-width: 100vw !important; min-width: 0 !important; box-sizing: border-box; }
+            .app-body div[style*="display: flex"]:not([style*="flex-direction: column"]):not([style*="nowrap"]) { flex-wrap: wrap !important; }
+            .app-body div[style*="display: flex"] > * { min-width: 0; }
+            .app-body div[style*="minmax("] { grid-template-columns: 1fr !important; }
+            .app-body img, .app-body svg, .app-body canvas, .app-body pre { max-width: 100%; }
+            .app-body pre { white-space: pre-wrap !important; }
+            .app-body button, .app-body .bnvt-btn { white-space: normal !important; text-overflow: clip !important; line-height: 1.2 !important; min-height: 36px; }
+            .app-body div[style*="display: flex"] > input, .app-body div[style*="display: flex"] > select, .app-body div[style*="display: flex"] > textarea { flex: 1 1 160px !important; min-width: 140px !important; }
+            .app-body div[style*="display: flex"] > div:has(> input), .app-body div[style*="display: flex"] > div:has(> select), .app-body div[style*="display: flex"] > label:has(> select) { flex: 1 1 160px !important; min-width: 140px !important; }
+            .app-body div[style*="display: flex"] > div:has(> select) > select, .app-body div[style*="display: flex"] > div:has(> input) > input { width: 100% !important; }
+            #reading-library div[style*="min-height: 320px"] { min-height: 90px !important; }
+            #mobile-pipeline .no-scrollbar { flex-wrap: nowrap !important; }
+            #mobile-pipeline .no-scrollbar > button { flex: 0 0 auto !important; min-width: 0 !important; font-size: 13px !important; padding: 7px 13px !important; min-height: 0 !important; }
+            .app-body div[style*="display: grid"] { grid-template-columns: minmax(0, 1fr) !important; }
+            .app-body div[style*="display: grid"] > * { min-width: 0 !important; max-width: 100%; }
+            #mobile-search { padding-left: 36px !important; font-size: 16px !important; padding-top: 10px !important; padding-bottom: 10px !important; }
+            #mobile-pipeline button, .mobile-nav button, #live-orb, #voice-mic { font-size: inherit; }
+            .mobile-nav-btn { font-size: 10.5px !important; padding: 8px 0 6px !important; overflow: visible !important; flex-direction: column !important; }
+            #live-orb, #voice-mic { padding: 0 !important; overflow: visible !important; }
+            div[style*="position: fixed"][style*="inset: 0"] > div { max-width: 100vw !important; box-sizing: border-box; }
         }
     </style>
 </head>
@@ -332,7 +334,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=74.1"></script>
+    <script src="bnvt-dealflow.js?v=75.2"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {

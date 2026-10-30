@@ -2308,16 +2308,28 @@ const getGradiumToken = async () => {
 class RealtimeVoice {
   constructor({ onState, onPartial, onUserFinal, onAssistantText, onLevel, onError, voiceId }) {
     Object.assign(this, { onState, onPartial, onUserFinal, onAssistantText, onLevel, onError, voiceId });
+    this.onDiag = arguments[0].onDiag;
     this.state = "off"; this.utter = ""; this.lastTextAt = 0; this.playhead = 0; this.sources = []; this.ttsWs = null; this.replyAbort = null; this.genId = 0;
   }
   setState(s) { this.state = s; this.onState && this.onState(s); }
-  async start() {
+  diag(msg) { this.onDiag && this.onDiag(msg); }
+  // Call synchronously from the tap handler, before any await (iOS only allows audio started by a gesture).
+  static __slUnlockCtx() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    try { if (navigator.audioSession) navigator.audioSession.type = "play-and-record"; } catch (e) {}
+    const ctx = new Ctx();
+    try { ctx.resume(); } catch (e) {}
+    try { const b = ctx.createBuffer(1, 1, 22050); const s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0); } catch (e) {}
+    return ctx;
+  }
+  async start(ctx) {
     this.setState("connecting");
+    this.ctx = ctx || RealtimeVoice.__slUnlockCtx();
+    this.diag && this.diag("Asking for microphone…");
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     this.stream = stream;
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new Ctx();
-    if (this.ctx.state === "suspended") await this.ctx.resume();
+    if (this.ctx.state !== "running") { try { await this.ctx.resume(); } catch (e) {} }
+    this.diag && this.diag("Microphone on (" + this.ctx.sampleRate + " Hz). Connecting to Gradium…");
     const rate = this.ctx.sampleRate;
     this.inFormat = rate === 48000 ? "pcm_48000" : rate === 44100 ? "pcm_44100" : "pcm";
     this.inRate = this.inFormat === "pcm" ? 24000 : rate;
@@ -2333,17 +2345,21 @@ class RealtimeVoice {
         this.stt.send(JSON.stringify({ type: "audio", audio: b64FromInt16(pcm) }));
       }
     };
-    src.connect(node); node.connect(this.ctx.destination);
-    this.src = src; this.node = node;
+    // Route the processor through a muted gain so the mic is never played back through the speaker.
+    const mute = this.ctx.createGain(); mute.gain.value = 0;
+    src.connect(node); node.connect(mute); mute.connect(this.ctx.destination);
+    this.src = src; this.node = node; this.mute = mute;
     this.setState("listening");
+    this.diag && this.diag("Live. Speak whenever you like.");
   }
   async openStt() {
     const token = await getGradiumToken();
     const ws = new WebSocket("wss://api.gradium.ai/api/speech/asr?token=" + encodeURIComponent(token));
     this.stt = ws; this.sttReady = false;
     await new Promise((resolve, reject) => {
-      ws.onopen = () => { ws.send(JSON.stringify({ type: "setup", model_name: "default", input_format: this.inFormat, json_config: { language: "en" } })); this.sttReady = true; resolve(); };
-      ws.onerror = () => reject(new Error("Couldn't connect to Gradium speech recognition"));
+      const t = setTimeout(() => reject(new Error("Gradium speech recognition didn't answer within 8 s (network or key problem)")), 8000);
+      ws.onopen = () => { clearTimeout(t); ws.send(JSON.stringify({ type: "setup", model_name: "default", input_format: this.inFormat, json_config: { language: "en" } })); this.sttReady = true; resolve(); };
+      ws.onerror = () => { clearTimeout(t); reject(new Error("Couldn't connect to Gradium speech recognition")); };
     });
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
@@ -2363,7 +2379,8 @@ class RealtimeVoice {
         this.onError && this.onError(new Error(m.message || "Gradium STT error"));
       }
     };
-    ws.onclose = () => { this.sttReady = false; if (this.state !== "off") setTimeout(() => { if (this.state !== "off") this.openStt().catch(e => this.onError && this.onError(e)); }, 500); };
+    ws.onclose = (ev) => { if (this.state !== "off") this.diag && this.diag("Speech connection closed (" + ev.code + "), reconnecting…"); };
+    ws.addEventListener("close", () => { this.sttReady = false; if (this.state !== "off") setTimeout(() => { if (this.state !== "off") this.openStt().catch(e => this.onError && this.onError(e)); }, 500); });
   }
   endTurn() {
     const text = this.utter.trim(); this.utter = ""; this.bargeBuf = "";
@@ -2429,6 +2446,7 @@ class RealtimeVoice {
     return ws;
   }
   playPcm(b64) {
+    if (this.ctx.state !== "running") { try { this.ctx.resume(); } catch (e) {} }
     const bin = atob(b64); const n = bin.length >> 1; const f = new Float32Array(n);
     for (let i = 0; i < n; i++) { let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v >= 0x8000) v -= 0x10000; f[i] = v / 0x8000; }
     const buf = this.ctx.createBuffer(1, n, 48000); buf.copyToChannel ? buf.copyToChannel(f, 0) : buf.getChannelData(0).set(f);
@@ -2457,7 +2475,7 @@ class RealtimeVoice {
     this.setState("off");
     try { this.stt && this.stt.send(JSON.stringify({ type: "end_of_stream" })); } catch (e) {}
     try { this.stt && this.stt.close(); } catch (e) {}
-    try { this.node && this.node.disconnect(); this.src && this.src.disconnect(); } catch (e) {}
+    try { this.node && this.node.disconnect(); this.src && this.src.disconnect(); this.mute && this.mute.disconnect(); } catch (e) {}
     try { this.stream && this.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
     try { this.ctx && this.ctx.close(); } catch (e) {}
     this.onLevel && this.onLevel(0);
@@ -2471,6 +2489,7 @@ const LiveVoicePanel = ({ companies = [], readingItems = [], voiceSessions = [],
   const [error, setError] = useState("");
   const [level, setLevel] = useState(0);
   const [log, setLog] = useState([]);
+  const [diag, setDiag] = useState("");
   const rvRef = useRef(null); const logRef = useRef([]); const sessionRef = useRef(null); const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView?.({ block: "end" }); }, [log.length, live, partial]);
   useEffect(() => () => { rvRef.current && rvRef.current.stop(); }, []);
@@ -2495,17 +2514,21 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
 
   const start = async () => {
     setError("");
+    const ctx = RealtimeVoice.__slUnlockCtx(); // synchronous, inside the tap
     const rv = new RealtimeVoice({
       voiceId: voiceId.trim(),
+      onDiag: setDiag,
       onState: setState, onPartial: setPartial, onLevel: setLevel,
-      onError: (e) => setError(e.message),
+      onError: (e) => { setError(e.message); setDiag(""); },
       onAssistantText: (t, done) => setLive(done ? "" : t),
       onUserFinal: async (text) => {
         const userMsg = { role: "user", text, ts: Date.now() };
         logRef.current = [...logRef.current, userMsg]; setLog(logRef.current);
         const search = webMode === "on" || (webMode === "auto" && VOICE_SEARCH_RE.test(text));
         const messages = logRef.current.slice(-16).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+        setDiag(search ? "Searching the web and thinking…" : "Thinking…");
         const answer = await rv.reply({ system: system(), messages, search });
+        setDiag("");
         if (answer && answer.trim()) {
           logRef.current = [...logRef.current, { role: "assistant", text: answer.trim(), ts: Date.now(), web: search }];
           setLog(logRef.current); persist(logRef.current);
@@ -2513,7 +2536,7 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
       },
     });
     rvRef.current = rv;
-    try { await rv.start(); }
+    try { await rv.start(ctx); }
     catch (e) {
       rv.stop(); rvRef.current = null;
       setError(/denied|NotAllowed|Permission/i.test(String(e.name || e.message)) ? "Microphone access was blocked. On iPhone: Settings → Safari → Microphone → Allow." : "Live voice couldn't start: " + e.message);
@@ -2552,6 +2575,7 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
             </svg>}
         </button>
         <div style={{ fontSize: 12, color: FADE, textAlign: "center" }}>{label}</div>
+        {diag && state !== "off" && <div id="live-diag" style={{ fontSize: 11, color: "#999", textAlign: "center" }}>{diag}</div>}
         {state !== "off" && <button onClick={stop} style={{ fontFamily: fontStack.ui, fontSize: 13, padding: "8px 18px", border: `1px solid ${INK}`, borderRadius: 20, background: PAPER, cursor: "pointer" }}>End conversation</button>}
       </div>
     </div>
@@ -2600,7 +2624,7 @@ const MobilePipeline = ({ companies = [], setSelected, updateCompany }) => {
           <input id="mobile-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search companies, founders, sectors"
             style={{ width: "100%", boxSizing: "border-box", fontFamily: fontStack.ui, fontSize: 16, padding: "10px 12px 10px 36px", borderRadius: 10, border: "none", background: "#F1F1F1", outline: "none", WebkitAppearance: "none" }} />
         </div>
-        <div className="no-scrollbar" style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 8, WebkitOverflowScrolling: "touch" }}>
+        <div className="no-scrollbar" style={{ display: "flex", flexWrap: "nowrap", gap: 6, overflowX: "auto", marginTop: 8, WebkitOverflowScrolling: "touch" }}>
           {filters.map(([k, l]) => <button key={k} style={chip(filter === k)} onClick={() => setFilter(k)}>{l}</button>)}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontSize: 12, color: FADE }}>
@@ -2663,7 +2687,12 @@ const VoiceAgent = ({ companies = [], readingItems = [], voiceSessions = [], set
   const messages = session?.messages || [];
 
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" }); }, [messages.length, interim, state]);
-  useEffect(() => () => { try { recRef.current?.abort ? recRef.current.abort() : recRef.current?.stop?.(); } catch (e) {} stopAllSpeech(); }, []);
+  useEffect(() => () => {
+    try { recRef.current?.abort ? recRef.current.abort() : recRef.current?.stop?.(); } catch (e) {}
+    stopAllSpeech();
+    try { slVoice.stream && slVoice.stream.getTracks().forEach(t => t.stop()); slVoice.stream = null; } catch (e) {}
+    try { slVoice.ctx && slVoice.ctx.close(); slVoice.ctx = null; } catch (e) {}
+  }, []);
   const refreshStatus = () => fetch("/api/voice/status").then(r => r.json()).then(d => setGradiumReady(!!d.gradium)).catch(() => setGradiumReady(false));
   useEffect(() => { refreshStatus(); }, []);
   useEffect(() => { localStorage.setItem("sl_voice_engine", engine); }, [engine]);
@@ -4227,7 +4256,7 @@ function Settings({ setTab }) {
             Platform Credentials & Cloud Integrations
           </div>
           <h1 style={{ fontFamily: fontStack.display, fontSize: 28, margin: "4px 0 0 0", color: INK }}>
-            BNVT Platform Settings & Storage Config
+            SL Deals Settings & Storage Config
           </h1>
           <p style={{ fontSize: 13, color: FADE, margin: "4px 0 0 0" }}>
             Configure Anthropic Claude, Supabase Cloud Database, Affinity CRM, and LLM credentials. All changes automatically sync across local and cloud memory.
@@ -5267,7 +5296,7 @@ window.App = function App() {
   }, [companies, founderProfiles, investors, snoozedReminders, reminderThresholdDays]);
 
   useEffect(() => {
-    if (loaded && reminders.length > 0 && !hasAutoOpenedReminders) {
+    if (loaded && reminders.length > 0 && !hasAutoOpenedReminders && !(window.matchMedia && window.matchMedia("(max-width: 768px)").matches)) {
       setIsReminderModalOpen(true);
       setHasAutoOpenedReminders(true);
     }
