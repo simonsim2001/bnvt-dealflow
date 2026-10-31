@@ -2983,6 +2983,365 @@ const MobileNav = ({ tab, setTab, tabs, setSelected }) => {
 };
 
 
+// ===================== PHONE LAYER (phone only; rendered when useIsPhone() is true) =====================
+// Shared M* primitives. Styling lives in index.html under "#root .m-root" so desktop is untouched.
+const PhoneCtx = React.createContext({ openMenu: () => {}, openFull: () => {}, setTab: () => {} });
+const usePhone = () => React.useContext(PhoneCtx);
+const mCopy = async (text) => { try { await navigator.clipboard.writeText(text); return true; } catch (e) { try { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); return true; } catch (_) { return false; } } };
+const mDay = (ts) => { const n = Number(ts); if (!n) return ""; const d = new Date(n); return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "2-digit" }); };
+const mNotes = (n) => { if (!n) return []; if (typeof n === "string") return n.trim() ? [{ ts: 0, text: n }] : []; if (Array.isArray(n)) return n.map(x => typeof x === "string" ? { ts: 0, text: x } : (x || {})).filter(x => x.text); return []; };
+const mScore = (c) => { const s = compositeScore(c && c.scores); return s != null && s > 0 ? Number(s).toFixed(1) : null; };
+
+const mStatus = (s) => String(s || "").replace(/Active opportunity/i, "Active").replace("Meeting Scheduled", "Meeting").replace("Due Diligence", "Diligence");
+const MIcon = ({ d, size = 22, w = 1.8 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>;
+const M_ICONS = {
+  menu: "M4 7h16M4 12h16M4 17h16", back: "M15 5l-7 7 7 7", more: "M5 12h.01M12 12h.01M19 12h.01", plus: "M12 5v14M5 12h14", close: "M6 6l12 12M18 6L6 18",
+  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3", chev: "M9 6l6 6-6 6", down: "M6 9l6 6 6-6",
+  pipeline: "M4 6h16M4 12h16M4 18h10", voice: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zM5 10v1a7 7 0 0 0 14 0v-1M12 18v4",
+  reading: "M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z", network: "M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20c0-3 3-5 6-5s6 2 6 5M14 15c3 0 8 1 8 5",
+};
+
+const MHeader = ({ title, onBack, menu = true, action, sub }) => {
+  const { openMenu } = usePhone();
+  return (
+    <header className="m-header">
+      {onBack ? <button className="m-icon" aria-label="Back" onClick={onBack}><MIcon d={M_ICONS.back} /></button>
+        : menu ? <button className="m-icon" id="m-menu-btn" aria-label="Menu" onClick={openMenu}><MIcon d={M_ICONS.menu} /></button> : <span className="m-icon" />}
+      <div className="m-title"><div className="m-title-t">{title}</div>{sub && <div className="m-title-s">{sub}</div>}</div>
+      {action || <span className="m-icon" />}
+    </header>
+  );
+};
+const MAction = ({ icon = "plus", label, onClick, id }) => <button className="m-icon" id={id} aria-label={label} onClick={onClick}><MIcon d={M_ICONS[icon]} /></button>;
+
+const MSearch = ({ value, onChange, placeholder = "Search", id = "m-search" }) => (
+  <div className="m-search">
+    <span className="m-search-i"><MIcon d={M_ICONS.search} size={16} w={2} /></span>
+    <input id={id} type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoComplete="off" />
+  </div>
+);
+
+const MChips = ({ items, value, onChange, sticky }) => (
+  <div className={"m-chips no-scrollbar" + (sticky ? " sticky" : "")}>
+    {items.map(([k, l]) => <button key={k} className={"m-chip" + ((Array.isArray(value) ? value.includes(k) : value === k) ? " on" : "")} onClick={() => onChange(k)}>{l}</button>)}
+  </div>
+);
+
+const MRow = ({ title, sub, value, lead, onClick, chevron = true, right, id, selected }) => (
+  <div className={"m-row" + (selected ? " sel" : "")} id={id} onClick={onClick} role={onClick ? "button" : undefined}>
+    {lead != null && <div className="m-lead">{lead}</div>}
+    <div className="m-row-main">
+      <div className="m-row-t">{title}</div>
+      {sub && <div className="m-row-s">{sub}</div>}
+    </div>
+    {value != null && value !== "" && <div className="m-row-v">{value}</div>}
+    {right}
+    {chevron && onClick && <span className="m-chev"><MIcon d={M_ICONS.chev} size={16} w={2} /></span>}
+  </div>
+);
+
+const MSection = ({ title, count, defaultOpen = false, children, id }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="m-section" id={id}>
+      <button className="m-section-h" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="m-section-t">{title}</span>
+        {count != null && <span className="m-section-c">{count}</span>}
+        <span className={"m-section-a" + (open ? " open" : "")}><MIcon d={M_ICONS.down} size={16} w={2} /></span>
+      </button>
+      {open && <div className="m-section-b">{children}</div>}
+    </section>
+  );
+};
+
+const MStat = ({ items }) => (
+  <div className="m-stat">
+    {items.map(([v, l], i) => <div key={i} className="m-stat-i"><div className="m-stat-v">{v}</div><div className="m-stat-l">{l}</div></div>)}
+  </div>
+);
+
+// Bottom sheet: slides up in 200ms, tap backdrop or ✕ to close.
+const MSheet = ({ open, onClose, title, children, footer, tall, id }) => {
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (open) { setMounted(true); const r = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true))); return () => cancelAnimationFrame(r); }
+    setShown(false); const t = setTimeout(() => setMounted(false), 200); return () => clearTimeout(t);
+  }, [open]);
+  useEffect(() => { if (!mounted) return; const o = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = o; }; }, [mounted]);
+  if (!mounted) return null;
+  return ReactDOM.createPortal(
+    <div className={"m-root m-sheet-bg" + (shown ? " on" : "")} onClick={onClose} id={id}>
+      <div className={"m-sheet" + (shown ? " on" : "") + (tall ? " tall" : "")} onClick={(e) => e.stopPropagation()}>
+        <div className="m-sheet-h">
+          <div className="m-sheet-t">{title}</div>
+          <button className="m-icon" aria-label="Close" onClick={onClose}><MIcon d={M_ICONS.close} size={20} /></button>
+        </div>
+        <div className="m-sheet-b">{children}</div>
+        {footer && <div className="m-sheet-f">{footer}</div>}
+      </div>
+    </div>, document.body);
+};
+
+// ⋯ menu: list of [label, onClick] in a sheet.
+const MMore = ({ items, title = "More" }) => {
+  const [open, setOpen] = useState(false);
+  return (<>
+    <button className="m-icon" id="m-more-btn" aria-label="More" onClick={() => setOpen(true)}><MIcon d={M_ICONS.more} w={3.2} /></button>
+    <MSheet open={open} onClose={() => setOpen(false)} title={title}>
+      {items.filter(Boolean).map(([l, fn, sub], i) => <MRow key={i} title={l} sub={sub} onClick={() => { setOpen(false); fn(); }} />)}
+    </MSheet>
+  </>);
+};
+
+const MEmpty = ({ children }) => <div className="m-empty">{children}</div>;
+const MField = ({ label, children }) => <label className="m-field"><span className="m-label">{label}</span>{children}</label>;
+const MFullLink = ({ label = "Open full view" }) => { const { openFull } = usePhone(); return <button className="m-btn m-full ghost" id="m-full-view" onClick={openFull}>{label}</button>; };
+
+// ---- Navigation: 4 tabs at the bottom, everything else behind ☰ ----
+const PHONE_NAV = [["pipeline", "Pipeline"], ["voice", "Voice"], ["reading", "Reading"], ["network", "Network"]];
+const PHONE_MENU = [
+  ["reports", "Reports"], ["dtm", "Deal Team Meeting"], ["preemption", "Pre-emption Sandbox"], ["add", "Add opportunity"],
+  ["deepdives", "Deep Dives"], ["talentDashboard", "Talent Sourcing"], ["founders", "LinkedIn · Founder Assessment"],
+  ["chat", "AI Assistant"], ["outreach", "Cold Reach"], ["assets", "Asset Library"], ["distribute", "Distribute (desktop view)"], ["settings", "Settings"],
+];
+const PhoneNav = ({ tab, go }) => (
+  <nav className="m-root m-tabbar" id="m-tabbar">
+    {PHONE_NAV.map(([k, l]) => (
+      <button key={k} id={"m-nav-" + k} className={"m-tab" + (tab === k ? " on" : "")} onClick={() => go(k)}>
+        <MIcon d={M_ICONS[k]} /><span>{l}</span>
+      </button>
+    ))}
+  </nav>
+);
+const PhoneMenu = ({ open, onClose, tab, go, extra = [] }) => {
+  if (!open) return null;
+  return ReactDOM.createPortal(
+    <div className="m-root m-menu" id="m-menu">
+      <MHeader title="Menu" menu={false} action={<button className="m-icon" aria-label="Close menu" onClick={onClose}><MIcon d={M_ICONS.close} size={20} /></button>} />
+      <div className="m-menu-b">
+        {PHONE_MENU.map(([k, l]) => <MRow key={k} id={"m-menu-" + k} title={l} selected={tab === k} onClick={() => go(k)} />)}
+        <div className="m-gap" />
+        {extra.map(([l, fn, v], i) => <MRow key={i} title={l} value={v} onClick={() => { onClose(); fn(); }} />)}
+      </div>
+    </div>, document.body);
+};
+
+// ---- Share deals with investors (used by the deal view and the Network contact book) ----
+const investorFit = (inv, comps) => {
+  let score = 0;
+  comps.forEach(comp => {
+    const text = ((comp.sector || "") + " " + (comp.oneLiner || "") + " " + (comp.overview?.product || "")).toLowerCase();
+    (inv.focus || []).forEach(f => { if (f && text.includes(String(f).toLowerCase())) score += 2; });
+    if (inv.stage && comp.stage && comp.stage.toLowerCase().includes(String(inv.stage).toLowerCase())) score += 3;
+    if (inv.geo && comp.geo && (comp.geo.toLowerCase().includes(String(inv.geo).toLowerCase()) || String(inv.geo).toLowerCase().includes(comp.geo.toLowerCase()))) score += 2;
+  });
+  return score;
+};
+const fitLabel = (s) => s >= 5 ? "High fit" : s >= 2 ? "Some fit" : "";
+const draftPrompt = (selectedCompanies, invs, extra) => `You write deal-sharing messages for Simon, partner at BNVT Capital (early-stage AI fund, US + EU, tickets up to $10M). Voice: concise, direct, warm, analytically dense. Use hyphens, never em-dashes. No fluff, no "I hope this finds you well".
+
+Companies being shared:
+${JSON.stringify(selectedCompanies.map(c => ({ name: c.name, oneLiner: c.oneLiner, sector: c.sector, stage: c.stage, url: c.url, founderLinkedIn: (c.founders || []).map(f => `${f.name}: ${f.linkedin}`).join(", ") })), null, 1)}
+
+Additional angle from Simon: ${extra || "(none)"}
+
+For EACH investor below, write a highly concise professional email/message (typically under 100-150 words) that:
+1. Opens with why these specific companies fit their investment thesis or focus areas.
+2. Provides a very concise one-liner blurb/summary for EACH shared company (keep it strictly to a single sentence or line of description) in a structured, readable way, and MUST explicitly include either the company website URL or founder LinkedIn URL (using the provided "url" or "founderLinkedIn"). Do NOT use any bold formatting, double asterisks (**), or single asterisks (*) anywhere in the message. Example format: Company Name (website_url or linkedin_url) - concise one sentence summary.
+3. Closes with a light offer to share the decks or arrange introductions.
+Each email must feel individually written, referencing the investor's focus areas and aligning the shared companies to their sweet spot.
+
+Investors: ${JSON.stringify(invs)}
+
+Respond ONLY with valid JSON, no fences:
+[{"investorId":"...","subject":"short email subject","message":"the message"}]`;
+
+const MDraftCard = ({ inv, subject, message }) => {
+  const [copied, setCopied] = useState(false);
+  const phone = String(inv?.phone || inv?.whatsapp || "").replace(/[^\d]/g, "");
+  return (
+    <div className="m-card">
+      <div className="m-row-t">{inv ? inv.name : "Draft"}{inv?.fund ? <span className="m-fade"> · {inv.fund}</span> : null}</div>
+      {subject && <div className="m-small m-b">{subject}</div>}
+      <div className="m-text m-mt8">{message}</div>
+      <div className="m-btns m-mt12">
+        <button className="m-btn sm" onClick={async () => { if (await mCopy((subject ? subject + "\n\n" : "") + message)) { setCopied(true); setTimeout(() => setCopied(false), 1500); } }}>{copied ? "Copied" : "Copy"}</button>
+        <a className="m-btn sm" href={`mailto:${inv?.email || ""}?subject=${encodeURIComponent(subject || "")}&body=${encodeURIComponent(message)}`}>Email</a>
+        <a className="m-btn sm" href={`https://wa.me/${phone}?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
+      </div>
+    </div>
+  );
+};
+
+// Step flow: deals → ranked contacts → drafts. Either side can be pre-filled.
+const MShareFlow = ({ open, onClose, companies = [], investors = [], initialCompanyIds = [], initialInvestorIds = [] }) => {
+  const [step, setStep] = useState(1);
+  const [cIds, setCIds] = useState(initialCompanyIds);
+  const [iIds, setIIds] = useState(initialInvestorIds);
+  const [q, setQ] = useState("");
+  const [extra, setExtra] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [drafts, setDrafts] = useState(null);
+  useEffect(() => { if (open) { setCIds(initialCompanyIds); setIIds(initialInvestorIds); setStep(initialCompanyIds.length ? 2 : 1); setDrafts(null); setErr(""); setQ(""); } }, [open]);
+  const comps = companies.filter(c => cIds.includes(c.id));
+  const tog = (arr, set, id) => set(arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id]);
+  const norm = (s) => String(s || "").toLowerCase();
+  const dealList = useMemo(() => {
+    const t = norm(q).trim();
+    let arr = companies.filter(c => !t || norm(c.name + " " + c.sector + " " + c.oneLiner).includes(t));
+    if (iIds.length) { const invs = investors.filter(i => iIds.includes(i.id)); arr = arr.map(c => [c, invs.reduce((s, i) => s + investorFit(i, [c]), 0)]).sort((a, b) => b[1] - a[1]).map(x => x[0]); }
+    else arr = arr.slice().sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
+    return arr.slice(0, 60);
+  }, [companies, q, iIds, investors]);
+  const invList = useMemo(() => {
+    const t = norm(q).trim();
+    return investors.filter(i => !t || norm([i.name, i.fund, (i.focus || []).join(" "), i.geo, i.city].join(" ")).includes(t))
+      .map(i => [i, investorFit(i, comps)]).sort((a, b) => b[1] - a[1]).slice(0, 80);
+  }, [investors, q, cIds]);
+  const generate = async () => {
+    setBusy(true); setErr(""); setDrafts(null);
+    try {
+      const invs = investors.filter(i => iIds.includes(i.id)).map(i => ({ id: i.id, name: i.name, fund: i.fund, focus: i.focus, sweetSpot: i.sweetSpot, notes: i.notes }));
+      setDrafts(parseJSON(await callClaude(draftPrompt(comps, invs, extra))));
+      setStep(3);
+    } catch (e) { setErr("Generation failed: " + e.message); }
+    setBusy(false);
+  };
+  const titles = { 1: "Share · pick deals", 2: "Share · pick contacts", 3: "Share · drafts" };
+  const footer = step === 1 ? <button className="m-btn pri m-full" disabled={!cIds.length} onClick={() => { setQ(""); setStep(iIds.length ? 3.5 : 2); }}>{cIds.length ? `Next · ${cIds.length} deal${cIds.length > 1 ? "s" : ""}` : "Pick at least one deal"}</button>
+    : step === 2 || step === 3.5 ? <button className="m-btn pri m-full" disabled={!iIds.length || !cIds.length || busy} onClick={generate}>{busy ? "Writing drafts…" : `Write ${iIds.length || ""} draft${iIds.length === 1 ? "" : "s"}`}</button>
+    : <button className="m-btn m-full" onClick={() => setStep(2)}>Back to contacts</button>;
+  return (
+    <MSheet open={open} onClose={onClose} tall title={titles[Math.floor(step)] || "Share"} footer={footer} id="m-share">
+      {err && <div className="m-err">{err}</div>}
+      {step === 1 && (<>
+        <MSearch value={q} onChange={setQ} placeholder="Search deals" id="m-share-q" />
+        {dealList.map(c => <MRow key={c.id} title={c.name} sub={[c.stage, c.sector].filter(Boolean).join(" · ")} chevron={false} selected={cIds.includes(c.id)} onClick={() => tog(cIds, setCIds, c.id)} right={<span className={"m-check" + (cIds.includes(c.id) ? " on" : "")} />} />)}
+      </>)}
+      {(step === 2 || step === 3.5) && (<>
+        <div className="m-small m-pad0">{comps.map(c => c.name).join(", ")}{" · "}<button className="m-link" onClick={() => setStep(1)}>change</button></div>
+        <MSearch value={q} onChange={setQ} placeholder="Search contacts" id="m-share-iq" />
+        {invList.map(([i, s]) => <MRow key={i.id} title={i.name} sub={[i.fund, fitLabel(s)].filter(Boolean).join(" · ")} chevron={false} selected={iIds.includes(i.id)} onClick={() => tog(iIds, setIIds, i.id)} right={<span className={"m-check" + (iIds.includes(i.id) ? " on" : "")} />} />)}
+        <MField label="Extra angle (optional)"><textarea className="m-input" rows={2} value={extra} onChange={(e) => setExtra(e.target.value)} /></MField>
+      </>)}
+      {step === 3 && (drafts || []).map((d, i) => <MDraftCard key={i} inv={investors.find(x => x.id === d.investorId)} subject={d.subject} message={d.message} />)}
+    </MSheet>
+  );
+};
+
+// ---- Pipeline ----
+const PhonePipeline = ({ companies = [], setSelected, updateCompany, setTab }) => {
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("new");
+  const [limit, setLimit] = useState(50);
+  const norm = (s) => String(s || "").toLowerCase();
+  const filters = [["all", "All"], ["starred", "★ Starred"], ["dtm", "DTM"], ...STATUSES.map(s => [s, s.replace("Active Opportunity", "Active")]), ["sort", sort === "new" ? "↓ Newest" : "↓ Top score"]];
+  const list = useMemo(() => {
+    const t = norm(q).trim();
+    return companies.filter(c => {
+      if (filter === "starred" && !c.starred) return false;
+      if (filter === "dtm" && !c.dtm) return false;
+      if (!["all", "starred", "dtm"].includes(filter) && norm(c.status) !== norm(filter)) return false;
+      return !t || norm([c.name, c.oneLiner, c.sector, c.stage, c.geo, (c.tags || []).join(" "), (c.founders || []).map(f => f && f.name).join(" ")].join(" ")).includes(t);
+    }).sort((a, b) => sort === "score" ? (compositeScore(b.scores) || 0) - (compositeScore(a.scores) || 0) : (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+  }, [companies, q, filter, sort]);
+  useEffect(() => { setLimit(50); }, [q, filter, sort]);
+  return (
+    <div className="m-root m-page" id="m-pipeline">
+      <MHeader title="Pipeline" sub={`${list.length} ${list.length === 1 ? "company" : "companies"}`} action={<MAction label="Add opportunity" id="m-add-btn" onClick={() => setTab("add")} />} />
+      <div className="m-sticky2">
+        <MSearch value={q} onChange={setQ} placeholder="Search companies, founders, sectors" />
+        <MChips items={filters} value={filter} onChange={(k) => k === "sort" ? setSort(sort === "new" ? "score" : "new") : setFilter(k)} />
+      </div>
+      {list.slice(0, limit).map(c => (
+        <MRow key={c.id} lead={mScore(c) || "–"} title={c.name} sub={[mStatus(c.status), c.stage, c.sector].filter(Boolean).join(" · ")}
+          onClick={() => { setSelected(c.id); window.scrollTo && window.scrollTo(0, 0); }} chevron={false}
+          right={<button className={"m-star" + (c.starred ? " on" : "")} aria-label={c.starred ? "Unstar" : "Star"} onClick={(e) => { e.stopPropagation(); updateCompany(c.id, { starred: !c.starred, starredAt: !c.starred ? Date.now() : null }); }}>{c.starred ? "★" : "☆"}</button>} />
+      ))}
+      {list.length > limit && <button className="m-btn ghost m-full" onClick={() => setLimit(limit + 50)}>Show more ({list.length - limit})</button>}
+      {list.length === 0 && <MEmpty>No companies match.</MEmpty>}
+    </div>
+  );
+};
+
+// ---- Deal view ----
+const MobileDeal = ({ company: c, investors = [], companies = [], update, back, remove, setTab }) => {
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const { openFull } = usePhone();
+  const sc = mScore(c);
+  const notes = mNotes(c.notes).slice().sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+  const addNote = () => { const t = note.trim(); if (!t) return; const arr = Array.isArray(c.notes) ? c.notes : mNotes(c.notes); update({ notes: [...arr, { ts: Date.now(), text: t, via: "Phone" }] }); setNote(""); };
+  const ov = c.overview && typeof c.overview === "object" ? Object.entries(c.overview).filter(([, v]) => typeof v === "string" && v.trim()) : [];
+  const label = (k) => k.replace(/([A-Z])/g, " $1").replace(/^./, (x) => x.toUpperCase());
+  return (
+    <div className="m-root m-page" id="m-deal">
+      <MHeader title={c.name} onBack={back} action={<MMore title={c.name} items={[
+        ["Open full view", openFull, "Memos, diligence, TAM, data room"],
+        ["Delete company", () => { if (window.confirm(`Delete ${c.name}?`)) remove(); }],
+      ]} />} />
+      <div className="m-pad">
+        <div className="m-h1">{c.name}</div>
+        <div className="m-small">{[c.stage, c.sector, c.geo].filter(Boolean).join(" · ") || "No stage or sector yet"}</div>
+        {c.oneLiner && <div className="m-text m-mt8">{c.oneLiner}</div>}
+      </div>
+      <MStat items={[[sc ? sc + "/5" : "–", "Score"], [c.status ? mStatus(c.status) : "–", "Status"], [notes.length, "Notes"]]} />
+      <div className="m-chips no-scrollbar m-pt8">
+        <button className="m-chip" id="m-status-btn" onClick={() => setStatusOpen(true)}>Status ▾</button>
+        <button className={"m-chip" + (c.starred ? " on" : "")} onClick={() => update({ starred: !c.starred, starredAt: !c.starred ? Date.now() : null })}>★ Star</button>
+        <button className={"m-chip" + (c.dtm ? " on" : "")} onClick={() => update({ dtm: !c.dtm })}>DTM</button>
+        <button className={"m-chip" + (c.preemption ? " on" : "")} onClick={() => update({ preemption: !c.preemption })}>Pre-emption</button>
+      </div>
+      <MSection title="Overview" id="m-sec-overview">
+        {c.url && <MField label="Website"><a className="m-link" href={/^https?:/.test(c.url) ? c.url : "https://" + c.url} target="_blank" rel="noopener noreferrer">{c.url.replace(/^https?:\/\/(www\.)?/, "")}</a></MField>}
+        {(c.founders || []).filter(f => f && f.name).length > 0 && <MField label="Founders">{(c.founders || []).filter(f => f && f.name).map((f, i) => <div key={i} className="m-text">{f.linkedin ? <a className="m-link" href={f.linkedin} target="_blank" rel="noopener noreferrer">{f.name}</a> : f.name}{f.role ? <span className="m-fade"> · {f.role}</span> : null}</div>)}</MField>}
+        {ov.map(([k, v]) => <MField key={k} label={label(k)}><div className="m-text">{v}</div></MField>)}
+        {c.source && <MField label="Source"><div className="m-text">{c.source}</div></MField>}
+        {c.createdAt && <MField label="Added"><div className="m-text">{mDay(c.createdAt)}</div></MField>}
+      </MSection>
+      <MSection title="Defensibility" count={sc ? sc + "/5" : null} id="m-sec-def">
+        {!c.scores && <MEmpty>Not scored yet. Open full view to run diligence.</MEmpty>}
+        {c.scores && DIMS.map(d => {
+          const v = Number(c.scores[d.key]) || 0;
+          return (
+            <div key={d.key} className="m-dim">
+              <div className="m-dim-h"><span className="m-dim-l">{d.label}</span><span className="m-b">{v}/5</span></div>
+              <div className="m-bar"><div style={{ width: (v / 5 * 100) + "%" }} /></div>
+              {c.rationale?.[d.key] && <div className="m-small m-mt4">{c.rationale[d.key]}</div>}
+            </div>
+          );
+        })}
+      </MSection>
+      <MSection title="Notes" count={notes.length} id="m-sec-notes">
+        <textarea className="m-input" rows={3} placeholder="Add a note" value={note} onChange={(e) => setNote(e.target.value)} />
+        <button className="m-btn pri m-full m-mt8" disabled={!note.trim()} onClick={addNote}>Save note</button>
+        {notes.map((n, i) => <div key={i} className="m-note"><div className="m-label">{[mDay(n.ts), n.via].filter(Boolean).join(" · ")}</div><div className="m-text">{n.text}</div></div>)}
+      </MSection>
+      <MSection title="Actions" id="m-sec-actions">
+        <MRow title="Share with investors" sub="Rank contacts, write drafts" onClick={() => setShareOpen(true)} />
+        <MRow title="Rejection draft" sub="Write a pass email" onClick={() => setRejectOpen(true)} />
+        <MRow title="Deep dive" sub="Open Deep Dives" onClick={() => setTab("deepdives")} />
+        <MRow title="Full view" sub="Memos, diligence, TAM, data room" onClick={openFull} />
+      </MSection>
+      <div className="m-pad"><MFullLink /></div>
+      <MSheet open={statusOpen} onClose={() => setStatusOpen(false)} title="Status">
+        {STATUSES.map(s => <MRow key={s} title={s} chevron={false} selected={c.status === s} right={c.status === s ? <span className="m-b">✓</span> : null} onClick={() => { update({ status: s, statusChangedAt: Date.now() }); setStatusOpen(false); }} />)}
+      </MSheet>
+      <MSheet open={rejectOpen} onClose={() => setRejectOpen(false)} title="Rejection draft" tall>
+        <div className="m-embed"><RejectionWriter company={c} update={update} /></div>
+      </MSheet>
+      <MShareFlow open={shareOpen} onClose={() => setShareOpen(false)} companies={companies} investors={investors} initialCompanyIds={[c.id]} />
+    </div>
+  );
+};
+// ===================== END PHONE LAYER (batch 1) =====================
+
+
 const Input = (props) => (
   <input
     {...props}
@@ -6437,6 +6796,24 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     URL.revokeObjectURL(url);
   };
 
+  // ---- Phone layer state (only used when useIsPhone() is true) ----
+  const isPhone = useIsPhone();
+  const [phoneFull, setPhoneFull] = useState(false);
+  const [phoneMenu, setPhoneMenu] = useState(false);
+  useEffect(() => { setPhoneFull(false); }, [tab, selected]);
+  const phoneGo = (k) => { setTab(k); setSelected(null); setPhoneMenu(false); window.scrollTo && window.scrollTo(0, 0); };
+  const phoneCtx = { openMenu: () => setPhoneMenu(true), openFull: () => { setPhoneFull(true); window.scrollTo && window.scrollTo(0, 0); }, setTab: phoneGo };
+  const markDeletedId = (id) => setDeletedIds(prev => Array.from(new Set([...(prev || []), String(id)])));
+  const renderPhoneTab = () => {
+    if (tab === "pipeline") {
+      const sel = companies.find(c => c.id === selected);
+      if (sel) return <MobileDeal company={sel} investors={investors} companies={companies} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => { setCompanies((cs) => cs.filter((c) => c.id !== sel.id)); setDeletedIds((prev) => [...prev, sel.id]); setSelected(null); }} setTab={phoneGo} />;
+      return <PhonePipeline companies={companies} setSelected={setSelected} updateCompany={updateCompany} setTab={phoneGo} />;
+    }
+    return null;
+  };
+  const phoneView = isPhone && !phoneFull ? renderPhoneTab() : null;
+
   const tabs = [
     ["pipeline", "Pipeline"],
     ["voice", "Voice"],
@@ -6459,7 +6836,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   return (
     <div className="app-container" style={{ minHeight: "100vh", background: PAPER, color: INK, fontFamily: fontStack.ui }}>
       {/* Header */}
-      <div className="app-header" style={{ borderBottom: `1px solid ${INK}`, padding: "18px 28px 0 28px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      {!isPhone && (<div className="app-header" style={{ borderBottom: `1px solid ${INK}`, padding: "18px 28px 0 28px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "column" }}>
           
           <div style={{ display: "flex", alignItems: "baseline", gap: 24, flexWrap: "wrap" }}>
@@ -6586,8 +6963,18 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
         </div>
       </div>
 
-      <MobileNav tab={tab} setTab={setTab} tabs={tabs} setSelected={setSelected} />
+      )}
+
+      {isPhone ? (<><PhoneNav tab={tab} go={phoneGo} /><PhoneCtx.Provider value={phoneCtx}><PhoneMenu open={phoneMenu} onClose={() => setPhoneMenu(false)} tab={tab} go={phoneGo} extra={[["Search everything", () => setCmdKOpen(true)], ["Reminders", () => setIsReminderModalOpen(true), reminders.length ? String(reminders.length) : ""]]} /></PhoneCtx.Provider></>)
+        : <MobileNav tab={tab} setTab={setTab} tabs={tabs} setSelected={setSelected} />}
       <div className="app-body" style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
+      <PhoneCtx.Provider value={phoneCtx}>
+      {phoneView || (<>
+        {isPhone && (
+          <div className="m-root m-fullbar">
+            <MHeader title={(tabs.find(t => t[0] === tab) || [, "SL Deals"])[1]} onBack={phoneFull ? () => setPhoneFull(false) : undefined} sub={phoneFull ? "Full view" : undefined} />
+          </div>
+        )}
         {tab === "pipeline" && (
           <Pipeline
             companies={companies}
@@ -6778,6 +7165,8 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             setTab={setTab} 
           />
         )}
+      </>)}
+      </PhoneCtx.Provider>
       </div>
 
       <CmdKModal
