@@ -246,9 +246,10 @@
         /* ---- Phone layer (M* primitives). Only elements with .m-root use these; desktop never renders them. ---- */
         #root .m-root, body > .m-root { font-family: Arial, "Helvetica Neue", Helvetica, sans-serif !important; color: #000; font-size: 15px; line-height: 1.35; }
         .m-root *, .m-root *::before, .m-root *::after { box-sizing: border-box; }
-        #root .m-root button, body > .m-root button, #root .m-root a.m-btn, body > .m-root a.m-btn { font-family: inherit !important; font-size: 15px !important; padding: 0 !important; margin: 0; border: none; background: none; color: inherit; min-height: 0 !important; height: auto !important; line-height: 1.2 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; max-width: none !important; cursor: pointer; -webkit-tap-highlight-color: transparent; text-decoration: none; }
-        #root .m-root button:disabled, body > .m-root button:disabled { opacity: .35; cursor: default; }
-        #root .m-root input, #root .m-root textarea, #root .m-root select, body > .m-root input, body > .m-root textarea, body > .m-root select { font-family: inherit !important; font-size: 16px !important; flex: none !important; min-width: 0 !important; max-width: 100% !important; }
+        :where(#root .m-root, body > .m-root) button[class^="m-"], :where(#root .m-root, body > .m-root) a.m-btn { font-family: inherit !important; font-size: 15px !important; padding: 0 !important; margin: 0; color: inherit; min-height: 0 !important; height: auto !important; line-height: 1.2 !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; max-width: none !important; cursor: pointer; -webkit-tap-highlight-color: transparent; text-decoration: none; }
+        :where(#root .m-root, body > .m-root) button[class^="m-"]:where(:not(.m-btn):not(.m-chip)) { border: none; background: none; }
+        #root .m-root button[class^="m-"]:disabled, body > .m-root button[class^="m-"]:disabled { opacity: .35; cursor: default; }
+        #root .m-root .m-input, #root .m-root .m-search input, body > .m-root .m-input, body > .m-root .m-search input { font-family: inherit !important; font-size: 16px !important; flex: none !important; min-width: 0 !important; max-width: 100% !important; }
         #root .m-page { margin: -14px -14px 0; min-height: calc(100vh - 60px); background: #fff; }
         .m-header { position: sticky; top: 0; z-index: 1500; background: rgba(255,255,255,.97); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); height: calc(44px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 0 0; display: flex; flex-wrap: nowrap; align-items: center; border-bottom: 1px solid #E8E8E8; }
         #root .m-root .m-icon, body > .m-root .m-icon { flex: 0 0 44px; width: 44px; height: 44px !important; color: #000; }
@@ -337,6 +338,22 @@
         .m-bar > div { height: 100%; background: #000; }
         .m-embed { margin: 0 -4px; }
         .m-embed > div { border: none !important; padding: 0 !important; margin: 0 !important; }
+        .m-letter { position: sticky; top: calc(140px + env(safe-area-inset-top)); z-index: 5; padding: 4px 16px; font-size: 11px; font-weight: 700; color: #6B6B6B; background: #F6F6F6; border-bottom: 1px solid #EEEEEE; }
+        .m-sheet-b .m-chips { padding: 0 0 8px; }
+        .m-chat { padding: 12px 16px calc(80px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px; }
+        .m-bubble { max-width: 85%; padding: 8px 12px; border-radius: 14px; font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: break-word; }
+        .m-bubble.user { align-self: flex-end; background: #000; color: #fff; border-bottom-right-radius: 4px; }
+        .m-bubble.assistant { align-self: flex-start; background: #F2F2F2; border-bottom-left-radius: 4px; }
+        .m-composer { position: fixed; left: 0; right: 0; bottom: calc(53px + env(safe-area-inset-bottom)); z-index: 1900; display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border-top: 1px solid #E8E8E8; }
+        #root .m-root .m-composer .m-input { flex: 1 1 auto !important; height: 40px; border-radius: 20px; padding: 0 14px !important; }
+        #root .m-root .m-composer .m-btn { height: 40px !important; border-radius: 20px; }
+        #root .m-root .m-mic.on { color: #C00000; }
+        #root #live-orb { width: 96px !important; height: 96px !important; flex: none !important; }
+        #root #voice-mic { width: 76px !important; height: 76px !important; flex: none !important; }
+        @media (max-width: 768px) { html, body, .app-container { overflow-x: clip !important; } }
+        .m-letter-top { position: static; }
+        .m-slider { padding: 8px 0; }
+        #root .m-root .m-slider input[type=range], body > .m-root .m-slider input[type=range] { width: 100%; accent-color: #000; margin-top: 8px; }
         .m-fullbar { position: sticky; top: 0; z-index: 1600; margin: -14px -14px 12px; }
     </style>
 </head>
@@ -429,7 +446,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=75.4"></script>
+    <script src="bnvt-dealflow.js?v=75.8"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {

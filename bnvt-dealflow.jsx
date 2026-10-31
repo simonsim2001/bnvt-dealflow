@@ -2552,13 +2552,14 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
   const label = { off: "Tap to start a live conversation", connecting: "Connecting…", listening: partial ? "Listening… tap to send now" : "Listening — just talk", thinking: "Thinking… tap to interrupt", speaking: "Speaking — talk or tap to interrupt" }[state] || "";
   const scale = state === "listening" ? 1 + Math.min(0.35, level * 6) : state === "speaking" ? 1.08 : 1;
 
+  const isPhoneL = useIsPhone();
   return (
     <div className="live-voice" style={{ display: "flex", flexDirection: "column", minHeight: "calc(100vh - 230px)" }}>
       <div style={{ flex: 1, display: "grid", gap: 10, alignContent: "start", paddingBottom: 8 }}>
         {log.length === 0 && state === "off" && (
           <div style={{ fontSize: 14, color: FADE, lineHeight: 1.5 }}>Live mode: talk naturally. It notices when you've finished, replies straight away in a natural voice, and you can cut in at any time.</div>
         )}
-        {log.map((m, i) => (
+        {(isPhoneL ? log.slice(-6) : log).map((m, i) => (
           <div key={i} style={{ justifySelf: m.role === "user" ? "end" : "start", maxWidth: "88%", fontSize: 15, lineHeight: 1.5, padding: "9px 13px", borderRadius: 14, background: m.role === "user" ? INK : "#F2F2F2", color: m.role === "user" ? PAPER : INK }}>{m.text}</div>
         ))}
         {live && <div style={{ justifySelf: "start", maxWidth: "88%", fontSize: 15, lineHeight: 1.5, padding: "9px 13px", borderRadius: 14, background: "#F2F2F2" }}>{live}</div>}
@@ -2839,28 +2840,8 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
   const label = { idle: "Tap to talk", listening: "Listening… tap to send", thinking: "Thinking…", speaking: "Speaking… tap to interrupt" }[state];
   const chip = (active) => ({ fontFamily: fontStack.ui, fontSize: 12, padding: "6px 10px", border: `1px solid ${INK}`, borderRadius: 2, cursor: "pointer", background: active ? INK : PAPER, color: active ? PAPER : INK });
 
-  return (
-    <div id="voice-agent" className="voice-agent" style={{ display: "flex", flexDirection: "column", minHeight: "calc(100vh - 220px)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <h2 style={{ fontFamily: fontStack.display, fontSize: 24, margin: 0, fontWeight: 600 }}>Voice</h2>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <button style={chip(false)} onClick={newSession}>New</button>
-          <button style={chip(showPast)} onClick={() => setShowPast(!showPast)}>History ({(voiceSessions || []).length})</button>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, fontSize: 12, alignItems: "center" }}>
-        <span style={{ color: FADE }}>Deals from last</span>
-        {[7, 30, 90].map(d => <button key={d} style={chip(days === d)} onClick={() => setDays(d)}>{d}d</button>)}
-        <span style={{ color: FADE, marginLeft: 6 }}>Web</span>
-        {[["auto", "Auto"], ["on", "On"], ["off", "Off"]].map(([k, l]) => <button key={k} style={chip(webMode === k)} onClick={() => setWebMode(k)}>{l}</button>)}
-        <button style={chip(liveMode)} onClick={() => setMode(liveMode ? "tap" : "live")} disabled={!gradiumReady}>{liveMode ? "Live" : "Tap-to-talk"}</button>
-        {!liveMode && <button style={chip(handsFree)} onClick={() => setHandsFree(!handsFree)}>Hands-free</button>}
-        <button style={chip(muted)} onClick={() => { setMuted(!muted); stopAllSpeech(); }}>{muted ? "Muted" : "Sound on"}</button>
-        <button style={chip(showSettings)} onClick={() => setShowSettings(!showSettings)}>Voice: {useGradium ? "Gradium" : "iPhone"}</button>
-      </div>
-
-      {showSettings && (
+  const isPhoneV = useIsPhone();
+  const voiceSettingsBlock = (
         <div id="voice-settings" style={{ border: `1px solid ${LINE}`, borderRadius: 2, padding: 12, marginBottom: 12, display: "grid", gap: 10, fontSize: 13 }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ color: FADE }}>Engine</span>
@@ -2880,9 +2861,8 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
           </div>
           <div style={{ color: FADE, fontSize: 11 }}>Pick voices in the Gradium studio and paste the voice ID here.</div>
         </div>
-      )}
-
-      {showPast && (
+  );
+  const voicePastBlock = (
         <div style={{ border: `1px solid ${LINE}`, borderRadius: 2, marginBottom: 12, maxHeight: 260, overflowY: "auto" }}>
           {(voiceSessions || []).length === 0 && <div style={{ padding: 12, fontSize: 13, color: FADE }}>No conversations yet.</div>}
           {(voiceSessions || []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(s => (
@@ -2892,7 +2872,64 @@ ${buildVoiceContext({ companies, readingItems, days })}`;
             </div>
           ))}
         </div>
-      )}
+  );
+  const voiceChipsBlock = (
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, fontSize: 12, alignItems: "center" }}>
+        <span style={{ color: FADE }}>Deals from last</span>
+        {[7, 30, 90].map(d => <button key={d} style={chip(days === d)} onClick={() => setDays(d)}>{d}d</button>)}
+        <span style={{ color: FADE, marginLeft: 6 }}>Web</span>
+        {[["auto", "Auto"], ["on", "On"], ["off", "Off"]].map(([k, l]) => <button key={k} style={chip(webMode === k)} onClick={() => setWebMode(k)}>{l}</button>)}
+        <button style={chip(liveMode)} onClick={() => setMode(liveMode ? "tap" : "live")} disabled={!gradiumReady}>{liveMode ? "Live" : "Tap-to-talk"}</button>
+        {!liveMode && <button style={chip(handsFree)} onClick={() => setHandsFree(!handsFree)}>Hands-free</button>}
+        <button style={chip(muted)} onClick={() => { setMuted(!muted); stopAllSpeech(); }}>{muted ? "Muted" : "Sound on"}</button>
+        <button style={chip(showSettings)} onClick={() => setShowSettings(!showSettings)}>Voice: {useGradium ? "Gradium" : "iPhone"}</button>
+      </div>
+  );
+  return (
+    <div id="voice-agent" className="voice-agent" style={{ display: "flex", flexDirection: "column", minHeight: "calc(100vh - 220px)" }}>
+      {!isPhoneV && (<>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <h2 style={{ fontFamily: fontStack.display, fontSize: 24, margin: 0, fontWeight: 600 }}>Voice</h2>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button style={chip(false)} onClick={newSession}>New</button>
+          <button style={chip(showPast)} onClick={() => setShowPast(!showPast)}>History ({(voiceSessions || []).length})</button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, fontSize: 12, alignItems: "center" }}>
+        <span style={{ color: FADE }}>Deals from last</span>
+        {[7, 30, 90].map(d => <button key={d} style={chip(days === d)} onClick={() => setDays(d)}>{d}d</button>)}
+        <span style={{ color: FADE, marginLeft: 6 }}>Web</span>
+        {[["auto", "Auto"], ["on", "On"], ["off", "Off"]].map(([k, l]) => <button key={k} style={chip(webMode === k)} onClick={() => setWebMode(k)}>{l}</button>)}
+        <button style={chip(liveMode)} onClick={() => setMode(liveMode ? "tap" : "live")} disabled={!gradiumReady}>{liveMode ? "Live" : "Tap-to-talk"}</button>
+        {!liveMode && <button style={chip(handsFree)} onClick={() => setHandsFree(!handsFree)}>Hands-free</button>}
+        <button style={chip(muted)} onClick={() => { setMuted(!muted); stopAllSpeech(); }}>{muted ? "Muted" : "Sound on"}</button>
+        <button style={chip(showSettings)} onClick={() => setShowSettings(!showSettings)}>Voice: {useGradium ? "Gradium" : "iPhone"}</button>
+      </div>
+
+      {showSettings && voiceSettingsBlock}
+      {showPast && voicePastBlock}
+      </>)}
+      {isPhoneV && (<>
+        <div className="m-root m-fullbar">
+          <MHeader title="Voice" sub={liveMode ? "Live conversation" : "Tap to talk"} action={<MMore title="Voice" items={[
+            ["New conversation", newSession],
+            ["History", () => setShowPast(true), `${(voiceSessions || []).length} conversations`],
+            ["Voice settings", () => setShowSettings(true), "Deals window, web search, engine, Gradium key"],
+          ]} />} />
+          <div className="m-chips no-scrollbar m-pt8">
+            <button className={"m-chip" + (liveMode ? " on" : "")} disabled={!gradiumReady} onClick={() => setMode(liveMode ? "tap" : "live")}>{liveMode ? "Live" : "Tap-to-talk"}</button>
+            {!liveMode && <button className={"m-chip" + (handsFree ? " on" : "")} onClick={() => setHandsFree(!handsFree)}>Hands-free</button>}
+            <button className={"m-chip" + (muted ? " on" : "")} onClick={() => { setMuted(!muted); stopAllSpeech(); }}>{muted ? "Muted" : "Sound on"}</button>
+            <button className="m-chip" onClick={() => setShowSettings(true)}>{days}d · Web {webMode}</button>
+          </div>
+        </div>
+        <MSheet open={showSettings} onClose={() => setShowSettings(false)} title="Voice settings" id="m-voice-settings">
+          {voiceChipsBlock}
+          {voiceSettingsBlock}
+        </MSheet>
+        <MSheet open={showPast} onClose={() => setShowPast(false)} title="History" id="m-voice-history">{voicePastBlock}</MSheet>
+      </>)}
 
       {liveMode ? (
         <LiveVoicePanel companies={companies} readingItems={readingItems} voiceSessions={voiceSessions} setVoiceSessions={setVoiceSessions} days={days} webMode={webMode} voiceId={voiceId} onFallback={() => setMode("tap")} />
@@ -2996,7 +3033,7 @@ const mStatus = (s) => String(s || "").replace(/Active opportunity/i, "Active").
 const MIcon = ({ d, size = 22, w = 1.8 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>;
 const M_ICONS = {
   menu: "M4 7h16M4 12h16M4 17h16", back: "M15 5l-7 7 7 7", more: "M5 12h.01M12 12h.01M19 12h.01", plus: "M12 5v14M5 12h14", close: "M6 6l12 12M18 6L6 18",
-  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3", chev: "M9 6l6 6-6 6", down: "M6 9l6 6 6-6",
+  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3", speaker: "M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13", mute: "M11 5L6 9H2v6h4l5 4V5zM22 9l-6 6M16 9l6 6", gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z", chev: "M9 6l6 6-6 6", down: "M6 9l6 6 6-6",
   pipeline: "M4 6h16M4 12h16M4 18h10", voice: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zM5 10v1a7 7 0 0 0 14 0v-1M12 18v4",
   reading: "M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z", network: "M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20c0-3 3-5 6-5s6 2 6 5M14 15c3 0 8 1 8 5",
 };
@@ -3339,7 +3376,275 @@ const MobileDeal = ({ company: c, investors = [], companies = [], update, back, 
     </div>
   );
 };
-// ===================== END PHONE LAYER (batch 1) =====================
+
+// ---- Network: contact book with merged deal sharing (phone) ----
+const M_REGIONS = ["EU", "US", "UK", "Nordics", "Global"];
+const mInitials = (n) => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteInvestor }) => {
+  const { openFull } = usePhone();
+  const [q, setQ] = useState("");
+  const [chip, setChip] = useState("all");
+  const [dealId, setDealId] = useState(null);
+  const [dealPick, setDealPick] = useState(false);
+  const [dealQ, setDealQ] = useState("");
+  const [openId, setOpenId] = useState(null);
+  const [editing, setEditing] = useState(null); // investor | "new"
+  const [share, setShare] = useState(null); // { companyIds, investorIds }
+  const [limit, setLimit] = useState(80);
+  const norm = (s) => String(s || "").toLowerCase();
+  const deal = companies.find(c => c.id === dealId);
+  const list = useMemo(() => {
+    const t = norm(q).trim();
+    let arr = investors.filter(i => {
+      if (chip === "high" && i.priority !== "High") return false;
+      if (M_REGIONS.includes(chip) && !norm(i.geo + " " + i.city).includes(norm(chip))) return false;
+      if (STAGES.includes(chip) && !norm(i.stage).includes(norm(chip))) return false;
+      return !t || norm([i.name, i.fund, (i.focus || []).join(" "), i.stage, i.geo, i.city, i.sweetSpot, (i.tags || []).join(" ")].join(" ")).includes(t);
+    });
+    if (deal) return arr.map(i => [i, investorFit(i, [deal])]).sort((a, b) => b[1] - a[1]);
+    return arr.sort((a, b) => norm(a.name).localeCompare(norm(b.name))).map(i => [i, null]);
+  }, [investors, q, chip, deal]);
+  useEffect(() => { setLimit(80); }, [q, chip, dealId]);
+  const inv = investors.find(i => i.id === openId);
+  const save = (f) => { setInvestors(l => { const ix = l.findIndex(i => i.id === f.id); return ix >= 0 ? l.map(i => i.id === f.id ? { ...i, ...f } : i) : [f, ...l]; }); setEditing(null); };
+  const chips = [["all", "All"], ["deal", deal ? "For " + deal.name : "For a deal…"], ["high", "High priority"], ...M_REGIONS.map(r => [r, r]), ...STAGES.slice(0, 3).map(s => [s, s])];
+  let lastLetter = "";
+  const dealsForPicker = companies.filter(c => !dealQ || norm(c.name + " " + c.sector).includes(norm(dealQ))).sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)).slice(0, 60);
+  return (
+    <div className="m-root m-page" id="m-network">
+      <MHeader title="Network" sub={`${list.length} contacts`} action={<MMore title="Network" items={[
+        ["Add contact", () => setEditing("new")],
+        ["Share deals", () => setShare({ companyIds: [], investorIds: [] }), "Pick deals, rank contacts, write drafts"],
+        ["World map", openFull, "Opens the full Network view"],
+        ["AI recalibrate", openFull, "Opens the full Network view"],
+        ["Export TSV / bulk import", openFull, "Opens the full Network view"],
+      ]} />} />
+      <div className="m-sticky2">
+        <MSearch value={q} onChange={setQ} placeholder="Name, fund, sector, stage, city" id="m-net-q" />
+        <MChips items={chips} value={chip === "deal" || deal ? [chip, "deal"] : chip} onChange={(k) => {
+          if (k === "deal") { if (deal) setDealId(null); else setDealPick(true); return; }
+          setChip(chip === k ? "all" : k);
+        }} />
+      </div>
+      {deal && <div className="m-pad m-small" id="m-net-dealbar">Ranked for <b>{deal.name}</b> · <button className="m-link" onClick={() => setShare({ companyIds: [deal.id], investorIds: list.filter(x => x[1] >= 2).slice(0, 10).map(x => x[0].id) })}>share with top matches</button></div>}
+      {list.slice(0, limit).map(([i, fit]) => {
+        const letter = (String(i.name || "#")[0] || "#").toUpperCase();
+        const head = !deal && letter !== lastLetter ? (lastLetter = letter) : null;
+        return (
+          <React.Fragment key={i.id}>
+            {head && <div className="m-letter">{head}</div>}
+            <MRow lead={mInitials(i.name)} title={i.name || "(no name)"} sub={[i.fund, i.city || i.geo, (i.focus || []).slice(0, 2).join(", ")].filter(Boolean).join(" · ")} value={deal ? fitLabel(fit) : (i.priority === "High" ? "High" : "")} onClick={() => setOpenId(i.id)} />
+          </React.Fragment>
+        );
+      })}
+      {list.length > limit && <button className="m-btn ghost m-full" onClick={() => setLimit(limit + 80)}>Show more ({list.length - limit})</button>}
+      {list.length === 0 && <MEmpty>No contacts match.</MEmpty>}
+
+      <MSheet open={!!inv} onClose={() => setOpenId(null)} title={inv ? inv.name : ""} id="m-contact">
+        {inv && (<>
+          <div className="m-small">{[inv.fund, inv.city, inv.geo].filter(Boolean).join(" · ")}</div>
+          <div className="m-btns m-mt12">
+            {inv.phone ? <a className="m-btn sm" href={"tel:" + inv.phone}>Call</a> : <button className="m-btn sm" disabled>Call</button>}
+            {inv.email ? <a className="m-btn sm" href={"mailto:" + inv.email}>Email</a> : <button className="m-btn sm" disabled>Email</button>}
+            {inv.linkedin ? <a className="m-btn sm" href={inv.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a> : <button className="m-btn sm" disabled>LinkedIn</button>}
+          </div>
+          <div className="m-btns m-mt8">
+            <button className="m-btn sm pri" id="m-contact-share" onClick={() => { setOpenId(null); setShare({ companyIds: deal ? [deal.id] : [], investorIds: [inv.id] }); }}>Share deal</button>
+            <button className="m-btn sm" onClick={() => { setOpenId(null); setEditing(inv); }}>Edit</button>
+          </div>
+          {deal && <MField label={"Fit for " + deal.name}><div className="m-text">{fitLabel(investorFit(inv, [deal])) || "Low fit"}</div></MField>}
+          {inv.sweetSpot && <MField label="Check size"><div className="m-text">{inv.sweetSpot}</div></MField>}
+          {inv.stage && !/^https?:/.test(inv.stage) && <MField label="Stage"><div className="m-text">{inv.stage}</div></MField>}
+          {inv.priority && <MField label="Priority"><div className="m-text">{inv.priority}</div></MField>}
+          {(inv.focus || []).length > 0 && <MField label="Focus"><div className="m-text">{(inv.focus || []).join(", ")}</div></MField>}
+          {notesToText(inv.notes) && <MField label="Notes"><div className="m-text">{notesToText(inv.notes)}</div></MField>}
+          {(() => { const rec = companies.map(c => [c, investorFit(inv, [c])]).filter(x => x[1] >= 4).sort((a, b) => b[1] - a[1]).slice(0, 5); return rec.length > 0 && (
+            <MField label="Deals that fit">{rec.map(([c]) => <MRow key={c.id} title={c.name} sub={[c.stage, c.sector].filter(Boolean).join(" · ")} onClick={() => { setOpenId(null); setShare({ companyIds: [c.id], investorIds: [inv.id] }); }} />)}</MField>); })()}
+        </>)}
+      </MSheet>
+
+      <MSheet open={dealPick} onClose={() => setDealPick(false)} title="Rank contacts for a deal" tall id="m-deal-pick">
+        <MSearch value={dealQ} onChange={setDealQ} placeholder="Search deals" id="m-deal-pick-q" />
+        {dealsForPicker.map(c => <MRow key={c.id} title={c.name} sub={[c.starred ? "★" : "", c.stage, c.sector].filter(Boolean).join(" · ")} onClick={() => { setDealId(c.id); setDealPick(false); }} />)}
+      </MSheet>
+
+      <MSheet open={!!editing} onClose={() => setEditing(null)} title={editing === "new" ? "New contact" : "Edit contact"} tall id="m-contact-edit">
+        {editing && <div className="m-embed"><InvestorForm companies={companies} initial={editing === "new" ? null : editing} onSave={save} onCancel={() => setEditing(null)} onDelete={(id) => { onDeleteInvestor(id); setEditing(null); }} setTab={() => {}} setDistributePicked={() => {}} setDistributeCompanyIds={() => {}} /></div>}
+      </MSheet>
+
+      <MShareFlow open={!!share} onClose={() => setShare(null)} companies={companies} investors={investors} initialCompanyIds={share ? share.companyIds : []} initialInvestorIds={share ? share.investorIds : []} />
+    </div>
+  );
+};
+
+// ---- Reports (phone) ----
+const PhoneReports = ({ companies = [], readingItems = [], reports = [], setReports, markDeleted = () => {} }) => {
+  const [viewId, setViewId] = useState(null);
+  const [newOpen, setNewOpen] = useState(false);
+  const [range, setRange] = useState("this");
+  const [allStarred, setAllStarred] = useState(false);
+  const [withAI, setWithAI] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const thisWeek = startOfIsoWeek(new Date());
+  const ranges = { this: [0, 0], last: [-1, -1], four: [-3, 0] };
+  const fileName = (r) => r.title.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") + ".pdf";
+  const download = (r) => { try { reportToPdf(r).save(fileName(r)); } catch (e) { setError(e.message); } };
+  const share = async (r) => {
+    try {
+      const blob = reportToPdf(r).output("blob");
+      const file = new File([blob], fileName(r), { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: r.title, text: r.title });
+      else { reportToPdf(r).save(fileName(r)); setError("Sharing isn't supported here, so the PDF was downloaded instead."); }
+    } catch (e) { if (e.name !== "AbortError") setError(e.message); }
+  };
+  const generate = async () => {
+    setError(""); setBusy("Generating…");
+    const [a, b] = ranges[range];
+    const fromDate = new Date(thisWeek); fromDate.setDate(fromDate.getDate() + a * 7);
+    const toDate = new Date(thisWeek); toDate.setDate(toDate.getDate() + b * 7);
+    const fromMs = fromDate.getTime(); const end = new Date(toDate); end.setDate(end.getDate() + 7); const toMs = end.getTime();
+    const preview = buildReportData({ companies, readingItems, fromMs, toMs, allStarred });
+    const w1 = isoWeekInfo(fromDate), w2 = isoWeekInfo(toDate);
+    const title = w1.week === w2.week && w1.year === w2.year ? `Weekly report — W${w1.week} ${w1.year}` : `Report — W${w1.week} ${w1.year} to W${w2.week} ${w2.year}`;
+    let summary = "";
+    if (withAI) {
+      try {
+        const prompt = `Write a concise executive summary (max 120 words, plain prose, no markdown) for a VC partner covering this period's starred deals and new reading.\nDeals: ${JSON.stringify(preview.deals.slice(0, 25).map(d => ({ n: d.name, s: d.status, sc: d.score, ch: d.changes, o: d.oneLiner })))}\nReading: ${JSON.stringify(Object.fromEntries(Object.entries(preview.readingByType).map(([k, v]) => [k, v.map(i => i.title)])))}`;
+        summary = String(await callClaude(prompt, false, "light") || "").trim();
+      } catch (e) { setError("AI summary skipped: " + e.message); }
+    }
+    const report = { id: "rep_" + Date.now().toString(36), title, from: fromMs, to: toMs, fromWeek: weekValue(fromDate), toWeek: weekValue(toDate), allStarred, summary, data: preview, createdAt: Date.now() };
+    setReports(prev => [report, ...(prev || [])]);
+    setBusy(""); setNewOpen(false); setViewId(report.id);
+  };
+  const r = (reports || []).find(x => x.id === viewId);
+  if (r) return (
+    <div className="m-root m-page" id="m-report">
+      <MHeader title={r.title} sub={`${fmtDay(r.from)} – ${fmtDay(r.to - 1)}`} onBack={() => setViewId(null)} action={<MMore title={r.title} items={[
+        ["Download PDF", () => download(r)], ["Share PDF", () => share(r)],
+        ["Delete report", () => { if (window.confirm("Delete this report?")) { setReports(prev => prev.filter(x => x.id !== r.id)); markDeleted(r.id); setViewId(null); } }],
+      ]} />} />
+      {error && <div className="m-pad m-err">{error}</div>}
+      <MStat items={[[r.data.deals.length, "Starred deals"], [r.data.readingCount, "Reading"]]} />
+      {r.summary && <MSection title="Summary" defaultOpen><div className="m-text">{r.summary}</div></MSection>}
+      <MSection title="Starred deals" count={r.data.deals.length} defaultOpen={!r.summary}>
+        {r.data.deals.length === 0 && <MEmpty>No starred deals with activity in this period.</MEmpty>}
+        {r.data.deals.map(d => (
+          <div key={d.id} className="m-note">
+            <div className="m-dim-h"><span className="m-dim-l m-b">{d.name}</span>{d.score != null && <span>{Number(d.score).toFixed(1)}/5</span>}</div>
+            <div className="m-small">{[mStatus(d.status), d.stage, d.sector].filter(Boolean).join(" · ")}</div>
+            {d.oneLiner && <div className="m-text m-mt4">{d.oneLiner}</div>}
+            {d.changes.length > 0 && <div className="m-small m-mt4">This period: {d.changes.join(", ")}</div>}
+          </div>
+        ))}
+      </MSection>
+      <MSection title="New reading" count={r.data.readingCount}>
+        {r.data.readingCount === 0 && <MEmpty>No new reading in this period.</MEmpty>}
+        {Object.entries(r.data.readingByType).map(([type, items]) => (
+          <div key={type} className="m-mt12"><div className="m-label">{type}</div>{items.map(it => <div key={it.id} className="m-text">{it.title}{it.source && <span className="m-fade"> · {it.source}</span>}</div>)}</div>
+        ))}
+      </MSection>
+    </div>
+  );
+  return (
+    <div className="m-root m-page" id="m-reports">
+      <MHeader title="Reports" sub={`${(reports || []).length} saved`} action={<MAction label="New report" id="m-report-new" onClick={() => setNewOpen(true)} />} />
+      {error && <div className="m-pad m-err">{error}</div>}
+      {(reports || []).length === 0 && <MEmpty>No reports yet. Tap + to create one.</MEmpty>}
+      {(reports || []).map(x => <MRow key={x.id} title={x.title} sub={`${x.data.deals.length} deals · ${x.data.readingCount} reading`} value={mDay(x.createdAt)} onClick={() => setViewId(x.id)} />)}
+      <MSheet open={newOpen} onClose={() => setNewOpen(false)} title="New report" id="m-report-sheet" footer={<button className="m-btn pri m-full" id="m-report-generate" disabled={!!busy} onClick={generate}>{busy || "Generate report"}</button>}>
+        <div className="m-label m-mt8">Period</div>
+        <MChips items={[["this", "This week"], ["last", "Last week"], ["four", "Last 4 weeks"]]} value={range} onChange={setRange} />
+        <MRow title="Include all starred deals" sub="Not only those active in the period" chevron={false} onClick={() => setAllStarred(!allStarred)} right={<span className={"m-check" + (allStarred ? " on" : "")} />} />
+        <MRow title="Add AI summary" sub="Short executive summary" chevron={false} onClick={() => setWithAI(!withAI)} right={<span className={"m-check" + (withAI ? " on" : "")} />} />
+        <div className="m-mt12"><MFullLink label="Custom week range (full view)" /></div>
+      </MSheet>
+    </div>
+  );
+};
+
+// ---- Reading (phone): one column at a time ----
+const PhoneReading = ({ readingItems = [], setReadingItems, readingColumns, companies = [], markDeleted = () => {} }) => {
+  const { openFull } = usePhone();
+  const columns = (readingColumns && readingColumns.length) ? readingColumns : DEFAULT_READING_COLUMNS;
+  const [col, setCol] = useState(columns[0].id);
+  const [q, setQ] = useState("");
+  const [openId, setOpenId] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteBody, setNoteBody] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const valid = new Set(columns.map(c => c.id));
+  const colOf = (it) => valid.has(it.column) ? it.column : columns[0].id;
+  const t = q.trim().toLowerCase();
+  const items = (readingItems || []).filter(it => (t ? true : colOf(it) === col) && (!t || [it.title, it.description, it.summary, it.source, (it.tags || []).join(" ")].join(" ").toLowerCase().includes(t)))
+    .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+  const counts = Object.fromEntries(columns.map(c => [c.id, (readingItems || []).filter(it => colOf(it) === c.id).length]));
+  const addItem = (item) => { const now = Date.now(); setReadingItems(prev => [{ id: readingId(), column: col, tags: [], companyIds: [], createdAt: now, updatedAt: now, ...item }, ...(prev || [])]); };
+  const updateItem = (id, patch) => setReadingItems(prev => (prev || []).map(it => it.id === id ? { ...it, ...patch, updatedAt: Date.now() } : it));
+  const addLink = async () => {
+    const url = linkUrl.trim(); if (!url) return;
+    setBusy("Reading link…"); setError("");
+    let meta = {};
+    try { const res = await fetch("/api/reading/meta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) }); meta = await res.json(); } catch (e) { meta = {}; }
+    addItem({ title: meta.title || url, description: meta.description || "", source: meta.site || "", kind: "link", url, type: guessReadingType("", url) });
+    setLinkUrl(""); setBusy(""); setAdding(false);
+  };
+  const addNote = () => { if (!noteTitle.trim()) return; addItem({ title: noteTitle.trim(), description: noteBody.trim(), kind: "note", type: "Memo" }); setNoteTitle(""); setNoteBody(""); setAdding(false); };
+  const summarise = async (it) => {
+    setBusy("Summarising…"); setError("");
+    try {
+      const prompt = `Summarise this reading item for a venture capital team in 3 short bullet points (plain text, start each with "- "). Focus on what matters for investing.\nTitle: ${it.title}\nType: ${it.type}\nSource/URL: ${it.url || it.source || it.fileName || ""}\nDescription: ${it.description || ""}`;
+      updateItem(it.id, { summary: String(await callClaude(prompt, !!it.url, "light") || "").trim() });
+    } catch (e) { setError("Summary failed: " + e.message); }
+    setBusy("");
+  };
+  const open = (readingItems || []).find(it => it.id === openId);
+  const companyName = (id) => companies.find(c => String(c.id) === String(id))?.name || "";
+  return (
+    <div className="m-root m-page" id="m-reading">
+      <MHeader title="Reading" sub={`${(readingItems || []).length} items`} action={<MAction label="Add reading" id="m-reading-add" onClick={() => setAdding(true)} />} />
+      <div className="m-sticky2">
+        <MSearch value={q} onChange={setQ} placeholder="Search all reading" id="m-reading-q" />
+        {!t && <MChips items={columns.map(c => [c.id, `${c.name} ${counts[c.id] || 0}`])} value={col} onChange={setCol} />}
+      </div>
+      {error && <div className="m-pad m-err">{error}</div>}
+      {items.map(it => <MRow key={it.id} title={it.title} sub={[it.type, it.source || it.fileName, mDay(it.createdAt)].filter(Boolean).join(" · ")} onClick={() => setOpenId(it.id)} />)}
+      {items.length === 0 && <MEmpty>{t ? "Nothing matches." : "This column is empty."}</MEmpty>}
+      <div className="m-pad"><MFullLink label="Board view, uploads and columns" /></div>
+
+      <MSheet open={!!open} onClose={() => setOpenId(null)} title={open ? open.title : ""} tall id="m-reading-item">
+        {open && (<>
+          <div className="m-small">{[open.type, open.source, mDay(open.createdAt)].filter(Boolean).join(" · ")}</div>
+          <div className="m-btns m-mt12">
+            {(open.url || open.fileUrl) && <a className="m-btn sm pri" href={open.url || open.fileUrl} target="_blank" rel="noopener noreferrer">Open</a>}
+            <button className="m-btn sm" disabled={!!busy} onClick={() => summarise(open)}>{busy === "Summarising…" ? "Summarising…" : (open.summary ? "Re-summarise" : "Summarise")}</button>
+          </div>
+          {open.summary && <MField label="Summary"><div className="m-text">{open.summary}</div></MField>}
+          {open.description && <MField label="Description"><div className="m-text">{open.description}</div></MField>}
+          {(open.companyIds || []).length > 0 && <MField label="Linked deals"><div className="m-text">{open.companyIds.map(companyName).filter(Boolean).join(", ")}</div></MField>}
+          <MField label="Move to"><div className="m-chips no-scrollbar">{columns.map(c => <button key={c.id} className={"m-chip" + (colOf(open) === c.id ? " on" : "")} onClick={() => updateItem(open.id, { column: c.id })}>{c.name}</button>)}</div></MField>
+          <MField label="Type"><select className="m-input" value={open.type || ""} onChange={(e) => updateItem(open.id, { type: e.target.value })}>{READING_TYPES.map(x => <option key={x} value={x}>{x}</option>)}</select></MField>
+          <button className="m-btn ghost m-full m-mt12" onClick={() => { if (!window.confirm("Delete this item from the library?")) return; setReadingItems(prev => (prev || []).filter(x => x.id !== open.id)); markDeleted(open.id); setOpenId(null); }}>Delete</button>
+        </>)}
+      </MSheet>
+
+      <MSheet open={adding} onClose={() => setAdding(false)} title="Add reading" id="m-reading-new">
+        <MField label="Link"><input className="m-input" type="url" placeholder="https://" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} /></MField>
+        <button className="m-btn pri m-full m-mt8" disabled={!linkUrl.trim() || !!busy} onClick={addLink}>{busy === "Reading link…" ? busy : "Add link"}</button>
+        <MField label="Or a note"><input className="m-input" placeholder="Title" value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} /></MField>
+        <textarea className="m-input m-mt8" rows={3} placeholder="Text" value={noteBody} onChange={(e) => setNoteBody(e.target.value)} />
+        <button className="m-btn m-full m-mt8" disabled={!noteTitle.trim()} onClick={addNote}>Add note</button>
+        <div className="m-small m-mt12">File uploads are in the board view.</div>
+      </MSheet>
+    </div>
+  );
+};
+
+// ===================== END PHONE LAYER =====================
 
 
 const Input = (props) => (
@@ -6810,6 +7115,11 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       if (sel) return <MobileDeal company={sel} investors={investors} companies={companies} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => { setCompanies((cs) => cs.filter((c) => c.id !== sel.id)); setDeletedIds((prev) => [...prev, sel.id]); setSelected(null); }} setTab={phoneGo} />;
       return <PhonePipeline companies={companies} setSelected={setSelected} updateCompany={updateCompany} setTab={phoneGo} />;
     }
+    if (tab === "voice") return <VoiceAgent companies={companies} readingItems={readingItems} voiceSessions={voiceSessions} setVoiceSessions={setVoiceSessions} updateCompany={updateCompany} setReadingItems={setReadingItems} />;
+    if (tab === "chat") return <AIAssistant companies={companies} />;
+    if (tab === "reports") return <PhoneReports companies={companies} readingItems={readingItems} reports={reports} setReports={setReports} markDeleted={markDeletedId} />;
+    if (tab === "reading") return <PhoneReading readingItems={readingItems} setReadingItems={setReadingItems} readingColumns={readingColumns} companies={companies} markDeleted={markDeletedId} />;
+    if (tab === "network") return <PhoneNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} />;
     return null;
   };
   const phoneView = isPhone && !phoneFull ? renderPhoneTab() : null;
@@ -26880,6 +27190,22 @@ Instructions:
     }
   };
 
+  const isPhoneA = useIsPhone();
+  if (isPhoneA) return (
+    <div className="m-root m-page" id="m-assistant">
+      <MHeader title="AI Assistant" sub="Knows your whole pipeline" action={<button className="m-icon" aria-label={useSpeech ? "Mute replies" : "Speak replies"} onClick={() => setUseSpeech(!useSpeech)}><MIcon d={useSpeech ? M_ICONS.speaker : M_ICONS.mute} /></button>} />
+      <div className="m-chat">
+        {messages.map((m, idx) => <div key={idx} className={"m-bubble " + m.role}>{m.text}</div>)}
+        {isLoading && <div className="m-bubble assistant m-fade">Thinking…</div>}
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="m-composer">
+        <button className={"m-icon m-mic" + (isListening ? " on" : "")} aria-label="Speak" onClick={startListening}><MIcon d={M_ICONS.voice} /></button>
+        <input className="m-input" id="m-assistant-input" type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSend()} placeholder="Ask about your dealflow" />
+        <button className="m-btn pri" onClick={() => handleSend()} disabled={!inputText.trim() || isLoading}>Send</button>
+      </div>
+    </div>
+  );
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 250px)", background: "#FFFFFF", border: `1px solid ${LINE}`, padding: 20, position: "relative", borderRadius: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${LINE}`, paddingBottom: 10, marginBottom: 15 }}>
