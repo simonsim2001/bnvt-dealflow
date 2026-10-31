@@ -3644,6 +3644,243 @@ const PhoneReading = ({ readingItems = [], setReadingItems, readingColumns, comp
   );
 };
 
+// ---- Talent Sourcing + LinkedIn founder assessment (phone) ----
+const M_FOUNDER_DIMS = [["ambition", "Ambition"], ["execution", "Execution"], ["resilience", "Resilience"], ["chemistry", "Chemistry"], ["hungerness", "Hunger"], ["domainExpertise", "Domain expertise"]];
+const PhonePeople = ({ mode, founderProfiles = [], companies = [], setSelected, setTab }) => {
+  const { openFull } = usePhone();
+  const [q, setQ] = useState("");
+  const [chip, setChip] = useState("all");
+  const [openId, setOpenId] = useState(null);
+  const now = Date.now();
+  const people = useMemo(() => {
+    const list = (founderProfiles || []).filter(p => p && p.id).map(p => {
+      const fq = founderQualitativeAverage(p);
+      const sc = p.overallScore || p.score;
+      return { id: p.id, kind: "profile", name: p.name || "Unnamed", title: p.title || "", company: p.company || "", linkedin: p.linkedin || p.url || "", location: p.location || p.city || "", sector: p.sector || p.focus || "",
+        status: p.status || "", score: mode === "founders" ? (fq != null ? fq.toFixed(1) : null) : (sc != null ? String(sc) : (fq != null ? fq.toFixed(1) : null)), created: p.createdAt ? new Date(p.createdAt).getTime() : 0, raw: p };
+    });
+    if (mode === "talent") (companies || []).filter(c => c && c.entityType === "Individual").forEach(c => list.push({ id: c.id, kind: "deal", name: c.name, title: c.oneLiner || "", company: "", linkedin: c.url || "", location: c.geo || "", sector: c.sector || "", status: c.status || "", score: mScore(c), created: Number(c.createdAt) || 0, raw: c }));
+    return list;
+  }, [founderProfiles, companies, mode]);
+  const t = q.trim().toLowerCase();
+  const list = people.filter(p => {
+    if (chip === "90d" && !(p.created >= now - 90 * 86400000)) return false;
+    if (chip === "scored" && p.score == null) return false;
+    if (chip === "pipeline" && p.kind !== "deal") return false;
+    return !t || [p.name, p.title, p.company, p.sector, p.location].join(" ").toLowerCase().includes(t);
+  }).sort((a, b) => (parseFloat(b.score) || 0) - (parseFloat(a.score) || 0));
+  const p = people.find(x => x.id === openId);
+  const r = p && p.raw;
+  const title = mode === "founders" ? "LinkedIn assessment" : "Talent Sourcing";
+  return (
+    <div className="m-root m-page" id={"m-" + mode}>
+      <MHeader title={title} sub={`${list.length} people`} action={<MMore title={title} items={[
+        [mode === "founders" ? "Assess a new founder" : "Add or import talent", openFull, "Opens the full view"],
+        ["Open full view", openFull, mode === "founders" ? "Generate, re-assess, delete" : "Timeframes, sectors, export"],
+      ]} />} />
+      <MStat items={[[people.length, "People"], [people.filter(x => x.created >= now - 90 * 86400000).length, "Last 90d"], [people.filter(x => x.score != null).length, "Scored"]]} />
+      <div className="m-sticky2">
+        <MSearch value={q} onChange={setQ} placeholder="Name, role, company, sector" id={"m-" + mode + "-q"} />
+        <MChips items={[["all", "All"], ["90d", "Last 90 days"], ["scored", "Scored"], ...(mode === "talent" ? [["pipeline", "In pipeline"]] : [])]} value={chip} onChange={setChip} />
+      </div>
+      {list.map(x => <MRow key={x.kind + x.id} lead={x.score != null ? x.score : "–"} title={x.name} sub={[x.title, x.company].filter(Boolean).join(" · ") || x.sector} onClick={() => setOpenId(x.id)} />)}
+      {list.length === 0 && <MEmpty>No people match.</MEmpty>}
+      <MSheet open={!!p} onClose={() => setOpenId(null)} title={p ? p.name : ""} tall id="m-person">
+        {p && (<>
+          <div className="m-small">{[p.title, p.company].filter(Boolean).join(" · ")}</div>
+          {p.score != null && <MField label="Score"><div className="m-text m-b">{p.score}{mode === "founders" ? "/5" : ""}</div></MField>}
+          {p.location && <MField label="Location"><div className="m-text">{p.location}</div></MField>}
+          {p.sector && <MField label="Sector"><div className="m-text">{p.sector}</div></MField>}
+          {p.status && <MField label="Status"><div className="m-text">{mStatus(p.status)}</div></MField>}
+          <div className="m-btns m-mt12">
+            {p.linkedin ? <a className="m-btn sm" href={/^https?:/.test(p.linkedin) ? p.linkedin : "https://" + p.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a> : <button className="m-btn sm" disabled>LinkedIn</button>}
+            {p.kind === "deal" ? <button className="m-btn sm pri" onClick={() => { setTab("pipeline"); setSelected(p.id); }}>Open deal</button> : <button className="m-btn sm" onClick={openFull}>Full view</button>}
+          </div>
+          <div className="m-mt12" />
+          {r && r.scores && typeof r.scores === "object" && M_FOUNDER_DIMS.some(([k]) => r.scores[k] != null) && (
+            <MSection title="Assessment" count={founderQualitativeAverage(r) != null ? founderQualitativeAverage(r).toFixed(1) + "/5" : null}>
+              {M_FOUNDER_DIMS.filter(([k]) => r.scores[k] != null).map(([k, l]) => (
+                <div key={k} className="m-dim">
+                  <div className="m-dim-h"><span className="m-dim-l">{l}</span><span className="m-b">{r.scores[k]}/5</span></div>
+                  <div className="m-bar"><div style={{ width: (Number(r.scores[k]) / 5 * 100) + "%" }} /></div>
+                  {r.rationale?.[k] && <div className="m-small m-mt4">{r.rationale[k]}</div>}
+                </div>
+              ))}
+            </MSection>
+          )}
+          {(r?.background || r?.oneLiner || r?.bio) && <MSection title="Background"><div className="m-text">{r.background || r.oneLiner || r.bio}</div></MSection>}
+          {Array.isArray(r?.strengths) && r.strengths.length > 0 && <MSection title="Strengths" count={r.strengths.length}>{r.strengths.map((s, i) => <div key={i} className="m-text">· {s}</div>)}</MSection>}
+          {Array.isArray(r?.tags) && r.tags.length > 0 && <MSection title="Tags" count={r.tags.length}><div className="m-text">{r.tags.join(", ")}</div></MSection>}
+          {p.kind === "deal" && r?.overview && <MSection title="Overview">{Object.entries(r.overview).filter(([, v]) => typeof v === "string" && v).map(([k, v]) => <MField key={k} label={k}><div className="m-text">{v}</div></MField>)}</MSection>}
+          {r?.rawProfile && <MSection title="Raw profile"><div className="m-text m-small">{String(r.rawProfile).slice(0, 4000)}</div></MSection>}
+        </>)}
+      </MSheet>
+    </div>
+  );
+};
+
+// ---- Deep Dives (phone) ----
+const M_DIVE_FIELDS = [["longTermMoat", "Long-term moat"], ["tamSamSom", "TAM / SAM / SOM"], ["laborReplacement", "Labour replacement"], ["techStackCompression", "Tech stack compression"], ["wedge", "Wedge"], ["teamProfile", "Team profile"], ["legacyPlayers", "Legacy players"], ["incumbents", "Incumbents"], ["backingFunds", "Backing funds"]];
+const PhoneDives = ({ deepDives = [], setDeepDives, setDeletedIds }) => {
+  const { openFull } = usePhone();
+  const [openId, setOpenId] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [topic, setTopic] = useState("");
+  const [q, setQ] = useState("");
+  const sorted = deepDives.slice().sort((a, b) => (a.rank || 999) - (b.rank || 999)).filter(d => !q.trim() || [d.topic, d.opportunitySummary].join(" ").toLowerCase().includes(q.trim().toLowerCase()));
+  const d = deepDives.find(x => x.id === openId);
+  const add = () => {
+    if (!topic.trim()) return;
+    const nd = { id: uid(), topic: topic.trim(), createdAt: Date.now(), rank: deepDives.length + 1, opportunitySummary: "", rankRationale: "", profile: { longTermMoat: "", tamSamSom: "", laborReplacement: "", techStackCompression: "", wedge: "", teamProfile: "", legacyPlayers: "", incumbents: "", backingFunds: "" }, experts: [], tam: 0, cagr: 0 };
+    setDeepDives([...deepDives, nd]); setTopic(""); setAdding(false); setOpenId(nd.id);
+  };
+  if (d) return (
+    <div className="m-root m-page" id="m-dive">
+      <MHeader title={d.topic} sub={"#" + (d.rank || "–")} onBack={() => setOpenId(null)} action={<MMore title={d.topic} items={[
+        ["Open full view", openFull, "Edit, run study, expert outreach"],
+        ["Delete deep dive", () => { if (!window.confirm("Delete this deep dive topic?")) return; setDeepDives(deepDives.filter(x => x.id !== d.id).map((x, i) => ({ ...x, rank: i + 1 }))); setDeletedIds && setDeletedIds(prev => [...prev, d.id]); setOpenId(null); }],
+      ]} />} />
+      <MStat items={[[d.tam ? "$" + d.tam + "B" : "–", "TAM"], [d.cagr ? d.cagr + "%" : "–", "CAGR"], [(d.experts || []).length, "Experts"]]} />
+      {!d.opportunitySummary && !Object.values(d.profile || {}).some(Boolean) && <div className="m-pad"><MEmpty>No study yet. Open the full view to run it.</MEmpty><MFullLink /></div>}
+      {d.opportunitySummary && <MSection title="Summary" defaultOpen><div className="m-text">{d.opportunitySummary}</div></MSection>}
+      {d.rankRationale && <MSection title="Why this rank"><div className="m-text">{d.rankRationale}</div></MSection>}
+      {M_DIVE_FIELDS.filter(([k]) => d.profile && d.profile[k]).map(([k, l]) => <MSection key={k} title={l}><div className="m-text">{d.profile[k]}</div></MSection>)}
+      {(d.experts || []).length > 0 && <MSection title="Experts" count={d.experts.length}>{d.experts.map((e, i) => <MRow key={i} title={e.name} sub={[e.title, e.company].filter(Boolean).join(" · ")} onClick={e.linkedin ? () => window.open(e.linkedin, "_blank") : undefined} />)}</MSection>}
+    </div>
+  );
+  return (
+    <div className="m-root m-page" id="m-dives">
+      <MHeader title="Deep Dives" sub={`${deepDives.length} topics`} action={<MAction label="New deep dive" id="m-dive-new" onClick={() => setAdding(true)} />} />
+      <div className="m-sticky2"><MSearch value={q} onChange={setQ} placeholder="Search topics" id="m-dive-q" /></div>
+      {sorted.map(x => <MRow key={x.id} lead={"#" + (x.rank || "–")} title={x.topic} sub={x.opportunitySummary || "No study yet"} onClick={() => setOpenId(x.id)} />)}
+      {sorted.length === 0 && <MEmpty>No deep dives yet.</MEmpty>}
+      <MSheet open={adding} onClose={() => setAdding(false)} title="New deep dive" footer={<button className="m-btn pri m-full" disabled={!topic.trim()} onClick={add}>Create</button>}>
+        <MField label="Topic"><input className="m-input" placeholder="e.g. AI for freight brokerage" value={topic} onChange={(e) => setTopic(e.target.value)} /></MField>
+      </MSheet>
+    </div>
+  );
+};
+
+// ---- Deal Team Meeting (phone) ----
+const PhoneDTM = ({ companies = [], updateCompany, setSelected, setTab }) => {
+  const { openFull } = usePhone();
+  const [openId, setOpenId] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [q, setQ] = useState("");
+  const [note, setNote] = useState("");
+  const dtm = companies.filter(c => c.dtm);
+  const groups = STATUSES.map(s => [s, dtm.filter(c => (c.status || "").toLowerCase() === s.toLowerCase())]).filter(g => g[1].length);
+  const other = dtm.filter(c => !STATUSES.some(s => s.toLowerCase() === (c.status || "").toLowerCase()));
+  if (other.length) groups.push(["Other", other]);
+  const c = companies.find(x => x.id === openId);
+  const addNote = (text, via) => { const arr = Array.isArray(c.notes) ? c.notes : mNotes(c.notes); updateCompany(c.id, { notes: [...arr, { ts: Date.now(), text, via }] }); };
+  const lastVote = c ? mNotes(c.notes).filter(n => n.via === "DTM vote").slice(-1)[0] : null;
+  return (
+    <div className="m-root m-page" id="m-dtm">
+      <MHeader title="Deal Team Meeting" sub={`${dtm.length} on the agenda`} action={<MMore title="Deal Team Meeting" items={[
+        ["Add deals to agenda", () => setAdding(true)],
+        ["Write DTM email", openFull, "Priorities, round terms, email draft"],
+      ]} />} />
+      {dtm.length === 0 && <MEmpty>Nothing on the agenda. Use ⋯ to add deals.</MEmpty>}
+      {groups.map(([s, list]) => (
+        <React.Fragment key={s}>
+          <div className="m-letter m-letter-top">{mStatus(s)} · {list.length}</div>
+          {list.map(x => <MRow key={x.id} lead={mScore(x) || "–"} title={x.name} sub={[x.stage, x.sector].filter(Boolean).join(" · ")} onClick={() => setOpenId(x.id)} />)}
+        </React.Fragment>
+      ))}
+      <MSheet open={!!c} onClose={() => setOpenId(null)} title={c ? c.name : ""} tall id="m-dtm-deal">
+        {c && (<>
+          <div className="m-small">{[c.stage, c.sector, c.geo].filter(Boolean).join(" · ")}</div>
+          {c.oneLiner && <div className="m-text m-mt8">{c.oneLiner}</div>}
+          <MField label={"Your vote" + (lastVote ? " · last: " + lastVote.text.replace("DTM vote: ", "") : "")}>
+            <div className="m-btns">{["Yes", "Maybe", "No"].map(v => <button key={v} className={"m-btn sm" + (lastVote && lastVote.text === "DTM vote: " + v ? " pri" : "")} onClick={() => addNote("DTM vote: " + v, "DTM vote")}>{v}</button>)}</div>
+          </MField>
+          <MField label="Notes"><textarea className="m-input" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Discussion notes" /></MField>
+          <button className="m-btn m-full m-mt8" disabled={!note.trim()} onClick={() => { addNote(note.trim(), "DTM"); setNote(""); }}>Save note</button>
+          <MField label="Decision">
+            <div className="m-chips no-scrollbar">{STATUSES.map(s => <button key={s} className={"m-chip" + (c.status === s ? " on" : "")} onClick={() => updateCompany(c.id, { status: s, statusChangedAt: Date.now() })}>{mStatus(s)}</button>)}</div>
+          </MField>
+          <div className="m-btns m-mt12">
+            <button className="m-btn sm" onClick={() => updateCompany(c.id, { dtm: false })}>Remove from DTM</button>
+            <button className="m-btn sm pri" onClick={() => { setOpenId(null); setTab("pipeline"); setSelected(c.id); }}>Open deal</button>
+          </div>
+          {mNotes(c.notes).filter(n => /DTM/.test(n.via || "")).slice(-5).reverse().map((n, i) => <div key={i} className="m-note"><div className="m-label">{mDay(n.ts)}</div><div className="m-text">{n.text}</div></div>)}
+        </>)}
+      </MSheet>
+      <MSheet open={adding} onClose={() => setAdding(false)} title="Add to agenda" tall>
+        <MSearch value={q} onChange={setQ} placeholder="Search deals" id="m-dtm-q" />
+        {companies.filter(x => !q.trim() || (x.name || "").toLowerCase().includes(q.trim().toLowerCase())).slice(0, 60).map(x => <MRow key={x.id} title={x.name} sub={[mStatus(x.status), x.stage].filter(Boolean).join(" · ")} chevron={false} selected={!!x.dtm} onClick={() => updateCompany(x.id, { dtm: !x.dtm })} right={<span className={"m-check" + (x.dtm ? " on" : "")} />} />)}
+      </MSheet>
+    </div>
+  );
+};
+
+// ---- Pre-emption Sandbox (phone): key figures pinned, sliders in a panel ----
+const M_PRE_SLIDERS = [
+  ["ticket", "Ticket", 0.5, 20, 0.5, v => "$" + v + "M"], ["valuation", "Post-money", 5, 500, 5, v => "$" + v + "M"], ["dilution", "Dilution to exit", 0, 70, 1, v => v + "%"],
+  ["currentArr", "Current ARR", 0, 50, 0.5, v => "$" + v + "M"], ["cagr", "ARR CAGR", 0, 300, 5, v => v + "%"], ["holdPeriod", "Hold period", 1, 12, 1, v => v + " yrs"], ["exitMultiple", "Exit multiple", 1, 50, 1, v => v + "x"],
+  ["bearProb", "Bear probability", 0, 100, 5, v => v + "%"], ["bearVal", "Bear exit value", 0, 1000, 5, v => "$" + v + "M"], ["baseProb", "Base probability", 0, 100, 5, v => v + "%"],
+  ["bullProb", "Bull probability", 0, 100, 5, v => v + "%"], ["bullVal", "Bull exit value", 0, 5000, 10, v => "$" + v + "M"],
+];
+const mPreCalc = (c) => {
+  const m = getPreemptionModel(c);
+  const entry = m.valuation > 0 ? (m.ticket / m.valuation) * 100 : 0;
+  const exit = entry * (1 - m.dilution / 100);
+  const baseExitVal = m.currentArr * Math.pow(1 + m.cagr / 100, m.holdPeriod) * m.exitMultiple;
+  const pos = [m.bearVal, baseExitVal, m.bullVal].map(v => v * exit / 100);
+  const mult = pos.map(p => m.ticket > 0 ? p / m.ticket : 0);
+  const pr = [m.bearProb, m.baseProb, m.bullProb].map(x => x / 100);
+  const em = mult.reduce((s, x, i) => s + x * pr[i], 0);
+  const ev = pos.reduce((s, x, i) => s + x * pr[i], 0);
+  return { m, entry, exit, baseExitVal, mult, em, ev, fund: ev / 130 * 100, probSum: m.bearProb + m.baseProb + m.bullProb };
+};
+const PhoneSandbox = ({ companies = [], updateCompany, setSelected, setTab }) => {
+  const { openFull } = usePhone();
+  const [openId, setOpenId] = useState(null);
+  const [sliders, setSliders] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [q, setQ] = useState("");
+  const list = companies.filter(c => c.preemption);
+  const c = companies.find(x => x.id === openId);
+  const set = (field, value) => { const cur = c.preemptionModel || {}; updateCompany(c.id, { preemptionModel: { ...cur, [field]: parseFloat(value) } }); };
+  if (c) {
+    const k = mPreCalc(c);
+    return (
+      <div className="m-root m-page" id="m-sandbox-deal">
+        <MHeader title={c.name} sub="Pre-emption model" onBack={() => setOpenId(null)} action={<MMore title={c.name} items={[["Open deal", () => { setTab("pipeline"); setSelected(c.id); }], ["Full sandbox (Excel export)", openFull], ["Remove from sandbox", () => { updateCompany(c.id, { preemption: false }); setOpenId(null); }]]} />} />
+        <div className="m-sticky2"><MStat items={[[k.em.toFixed(2) + "x", "Exp. MoIC"], [k.fund.toFixed(1) + "%", "Fund ret."], [k.entry.toFixed(1) + "%", "Entry own"]]} /></div>
+        {k.probSum !== 100 && <div className="m-pad m-err">Scenario probabilities add up to {k.probSum}%, not 100%.</div>}
+        <MSection title="Scenarios" defaultOpen>
+          {[["Bear", k.m.bearVal, k.mult[0], k.m.bearProb], ["Base", k.baseExitVal, k.mult[1], k.m.baseProb], ["Bull", k.m.bullVal, k.mult[2], k.m.bullProb]].map(([l, v, x, p]) => (
+            <div key={l} className="m-dim"><div className="m-dim-h"><span className="m-dim-l m-b">{l} · {p}%</span><span>${Number(v).toFixed(0)}M exit · {x.toFixed(2)}x</span></div></div>
+          ))}
+          <div className="m-small m-mt8">Exit ownership {k.exit.toFixed(2)}% · expected value ${k.ev.toFixed(1)}M</div>
+        </MSection>
+        <div className="m-pad"><button className="m-btn pri m-full" id="m-sandbox-sliders" onClick={() => setSliders(true)}>Adjust inputs</button></div>
+        <MSheet open={sliders} onClose={() => setSliders(false)} title={"Inputs · " + k.em.toFixed(2) + "x · " + k.fund.toFixed(1) + "% fund"} tall id="m-sandbox-sheet">
+          {M_PRE_SLIDERS.map(([f, l, min, max, step, fmt]) => (
+            <div key={f} className="m-slider">
+              <div className="m-dim-h"><span className="m-dim-l">{l}</span><span className="m-b">{fmt(k.m[f])}</span></div>
+              <input type="range" min={min} max={max} step={step} value={k.m[f]} onChange={(e) => set(f, e.target.value)} />
+            </div>
+          ))}
+        </MSheet>
+      </div>
+    );
+  }
+  return (
+    <div className="m-root m-page" id="m-sandbox">
+      <MHeader title="Pre-emption Sandbox" sub={`${list.length} in scope`} action={<MAction label="Add to sandbox" id="m-sandbox-add" onClick={() => setAdding(true)} />} />
+      {list.length === 0 && <MEmpty>No pre-emption deals yet. Tap + to add one.</MEmpty>}
+      {list.map(x => { const k = mPreCalc(x); return <MRow key={x.id} title={x.name} sub={`$${k.m.ticket}M at $${k.m.valuation}M · ${k.entry.toFixed(1)}% entry`} value={k.em.toFixed(2) + "x"} onClick={() => setOpenId(x.id)} />; })}
+      <MSheet open={adding} onClose={() => setAdding(false)} title="Add to sandbox" tall>
+        <MSearch value={q} onChange={setQ} placeholder="Search deals" id="m-sandbox-q" />
+        {companies.filter(x => !x.preemption && (!q.trim() || (x.name || "").toLowerCase().includes(q.trim().toLowerCase()))).slice(0, 60).map(x => <MRow key={x.id} title={x.name} sub={x.stage || ""} onClick={() => { updateCompany(x.id, { preemption: true }); setAdding(false); setOpenId(x.id); }} />)}
+      </MSheet>
+    </div>
+  );
+};
+
 // ===================== END PHONE LAYER =====================
 
 
@@ -4899,9 +5136,13 @@ function Settings({ setTab }) {
   const sbConnected = supabaseLive?.status === "ok";
   const sbConfigured = !!(supabaseDbUrl || supabaseUrl);
 
-  return (
+  const isPhoneS = useIsPhone();
+  const [sCard, setSCard] = useState(null);
+  const showS = (k) => !isPhoneS || sCard === k;
+  const settingsBody = (
     <div style={{ maxWidth: 940, margin: "0 auto", paddingBottom: 60 }}>
       {/* Top Banner */}
+      {!isPhoneS && (
       <div style={{
         background: "#FFFFFF",
         borderRadius: 12,
@@ -4937,9 +5178,11 @@ function Settings({ setTab }) {
           </Btn>
         </div>
       </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {/* Supabase Cloud Database Card */}
+        {showS("supabase") && (
         <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${BLUE}40`, padding: "22px 26px", boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -5068,8 +5311,10 @@ function Settings({ setTab }) {
             )}
           </div>
         </div>
+        )}
 
         {/* 1. Anthropic API Key Card */}
+        {showS("claude") && (
         <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -5150,8 +5395,10 @@ function Settings({ setTab }) {
             </div>
           )}
         </div>
+        )}
 
         {/* 2. Affinity CRM API Key Card */}
+        {showS("affinity") && (
         <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -5232,8 +5479,10 @@ function Settings({ setTab }) {
             </div>
           )}
         </div>
+        )}
 
         {/* 3. Granola API Key Card */}
+        {showS("granola") && (
         <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -5294,8 +5543,10 @@ function Settings({ setTab }) {
             </button>
           </div>
         </div>
+        )}
 
         {/* 4. Model Tier & Provider Preferences */}
+        {showS("models") && (
         <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
           <div style={{ fontWeight: 700, fontSize: 15, color: INK, marginBottom: 4 }}>
             🤖 AI Model Tier & Provider Preferences
@@ -5356,6 +5607,7 @@ function Settings({ setTab }) {
             </div>
           </div>
         </div>
+        )}
 
         {/* Save Controls */}
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 14, marginTop: 10 }}>
@@ -5369,6 +5621,27 @@ function Settings({ setTab }) {
           </Btn>
         </div>
       </div>
+    </div>
+  );
+  if (!isPhoneS) return settingsBody;
+  const sRows = [
+    ["claude", "Claude", anthropicKey ? "● Connected" : "Not set"],
+    ["models", "Models & providers", modelTier],
+    ["supabase", "Supabase", (supabaseUrl || supabaseDbUrl) ? "● Connected" : "Not set"],
+    ["affinity", "Affinity CRM", affinityKey ? "● Set" : "Not set"],
+    ["granola", "Granola", granolaKey ? "● Set" : "Not set"],
+  ];
+  const sTitle = (sRows.find(x => x[0] === sCard) || [])[1] || "";
+  return (
+    <div className="m-root m-page" id="m-settings">
+      <MHeader title="Settings" />
+      <div className="m-letter m-letter-top">Integrations</div>
+      {sRows.map(([k, l, v]) => <MRow key={k} id={"m-set-" + k} title={l} value={v} onClick={() => setSCard(k)} />)}
+      <div className="m-letter m-letter-top">Voice</div>
+      <MRow title="Gradium voice" sub="Engine, key and voice ID" onClick={() => setTab("voice")} />
+      <MSheet open={!!sCard} onClose={() => setSCard(null)} title={sTitle} tall id="m-settings-sheet">
+        <div className="m-embed m-legacy">{settingsBody}</div>
+      </MSheet>
     </div>
   );
 }
@@ -7119,6 +7392,11 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     if (tab === "chat") return <AIAssistant companies={companies} />;
     if (tab === "reports") return <PhoneReports companies={companies} readingItems={readingItems} reports={reports} setReports={setReports} markDeleted={markDeletedId} />;
     if (tab === "reading") return <PhoneReading readingItems={readingItems} setReadingItems={setReadingItems} readingColumns={readingColumns} companies={companies} markDeleted={markDeletedId} />;
+    if (tab === "talentDashboard") return <PhonePeople mode="talent" founderProfiles={founderProfiles} companies={companies} setSelected={setSelected} setTab={setTab} />;
+    if (tab === "founders") return <PhonePeople mode="founders" founderProfiles={founderProfiles} companies={companies} setSelected={setSelected} setTab={setTab} />;
+    if (tab === "deepdives") return <PhoneDives deepDives={deepDives} setDeepDives={setDeepDives} setDeletedIds={setDeletedIds} />;
+    if (tab === "dtm") return <PhoneDTM companies={companies} updateCompany={updateCompany} setSelected={setSelected} setTab={setTab} />;
+    if (tab === "preemption") return <PhoneSandbox companies={companies} updateCompany={updateCompany} setSelected={setSelected} setTab={setTab} />;
     if (tab === "network") return <PhoneNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} />;
     return null;
   };
@@ -7280,7 +7558,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       <div className="app-body" style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
       <PhoneCtx.Provider value={phoneCtx}>
       {phoneView || (<>
-        {isPhone && (
+        {isPhone && (phoneFull || !["add", "settings"].includes(tab)) && (
           <div className="m-root m-fullbar">
             <MHeader title={(tabs.find(t => t[0] === tab) || [, "SL Deals"])[1]} onBack={phoneFull ? () => setPhoneFull(false) : undefined} sub={phoneFull ? "Full view" : undefined} />
           </div>
@@ -20228,6 +20506,44 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
     }
   };
 
+  const isPhoneAdd = useIsPhone();
+  const deckRef = useRef(null);
+  if (isPhoneAdd) return (
+    <div className="m-root m-page" id="m-add">
+      <MHeader title={bulkMode ? "Bulk import" : "Add opportunity"} onBack={bulkMode ? () => setBulkMode(false) : undefined} action={bulkMode ? null : <MMore title="Add opportunity" items={[["Bulk import (paste rows)", () => setBulkMode(true)]]} />} />
+      {!bulkMode ? (<div className="m-pad">
+        <MField label="Website or LinkedIn URL">
+          <input className="m-input" id="m-add-url" type="url" inputMode="url" autoCapitalize="off" placeholder="company.com or linkedin.com/in/name" value={url} onChange={(e) => { const val = e.target.value; setUrl(val); if (val.includes("linkedin.com/in/")) setEntityType("Individual"); else if (val.includes("linkedin.com/company/")) setEntityType("Company"); }} />
+        </MField>
+        <input ref={deckRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handlePdfChange} />
+        <div className="m-btns m-mt8">
+          <button className="m-btn sm" id="m-add-deck" onClick={() => deckRef.current && deckRef.current.click()}>{pdfLoading ? "Reading deck…" : pdfFile ? "📎 " + pdfFile.name : "📎 Deck"}</button>
+          {voice.supported && <button className={"m-btn sm" + (voice.listening ? " pri" : "")} onClick={voice.toggle}>{voice.listening ? "Stop dictating" : "Dictate context"}</button>}
+        </div>
+        <MField label="Context (optional)"><textarea className="m-input" rows={3} placeholder="Where you met, traction, round…" value={context} onChange={(e) => setContext(e.target.value)} /></MField>
+        <div className="m-mt12" />
+        <MSection title="Options" count={[entityType, stage].join(" · ")}>
+          <MField label="Deck link (DocSend, Pitch, Notion)"><input className="m-input" type="url" autoCapitalize="off" value={docsendUrl} onChange={(e) => setDocsendUrl(e.target.value)} placeholder="https://docsend.com/view/…" /></MField>
+          {docsendUrl.trim() !== "" && <MField label="DocSend email"><input className="m-input" value={docsendEmail} onChange={(e) => setDocsendEmail(e.target.value)} /></MField>}
+          {docsendUrl.trim() !== "" && <MField label="DocSend password"><input className="m-input" type="password" value={docsendPassword} onChange={(e) => setDocsendPassword(e.target.value)} /></MField>}
+          <MField label="Entity type"><select className="m-input" value={entityType} onChange={(e) => setEntityType(e.target.value)}><option value="Company">Company</option><option value="Individual">Individual</option></select></MField>
+          <MField label="Source"><select className="m-input" value={source} onChange={(e) => setSource(e.target.value)}>{SOURCES.map(x => <option key={x}>{x}</option>)}</select></MField>
+          <MField label="Stage (fallback)"><select className="m-input" value={stage} onChange={(e) => setStage(e.target.value)}>{STAGES.map(x => <option key={x}>{x}</option>)}</select></MField>
+          <MField label="Geography"><select className="m-input" value={geo} onChange={(e) => setGeo(e.target.value)}><option value="">(None)</option>{["EU", "Nordics", "US", "UK", "Global"].map(x => <option key={x}>{x}</option>)}</select></MField>
+          <MField label="Priority"><select className="m-input" value={priority} onChange={(e) => setPriority(e.target.value)}>{["High", "Medium", "Low"].map(x => <option key={x}>{x}</option>)}</select></MField>
+        </MSection>
+        {status && <div className="m-small m-mt8">{status}</div>}
+        {err && <div className="m-err">{err}</div>}
+        <button className="m-btn pri m-full m-mt12" id="m-add-research" disabled={busy} onClick={research}>{busy ? "Researching…" : "Research & score"}</button>
+        <button className="m-btn ghost m-full m-mt8" disabled={busy} onClick={addBlank}>Add without research</button>
+      </div>) : (<div className="m-pad">
+        <div className="m-small">One per line. Columns (tab-separated): Website/Name, Status, Stage, Priority, Region, Notes.</div>
+        <textarea className="m-input m-mt8" rows={10} value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder="https://acme.ai	Active opportunity	Seed" />
+        <button className="m-btn pri m-full m-mt12" disabled={!bulkText.trim()} onClick={handleBulkImport}>Import</button>
+        {importLog && <div className="m-small m-mt8">{importLog}</div>}
+      </div>)}
+    </div>
+  );
   return (
     <div style={{ maxWidth: 640, margin: "0 auto" }}>
       {/* Tab select between Single and Bulk */}
