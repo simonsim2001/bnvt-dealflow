@@ -3140,7 +3140,7 @@ const PHONE_NAV = [["pipeline", "Pipeline"], ["voice", "Voice"], ["reading", "Re
 const PHONE_MENU = [
   ["reports", "Reports"], ["dtm", "Deal Team Meeting"], ["preemption", "Pre-emption Sandbox"], ["add", "Add opportunity"],
   ["deepdives", "Deep Dives"], ["talentDashboard", "Talent Sourcing"], ["founders", "LinkedIn · Founder Assessment"],
-  ["chat", "AI Assistant"], ["outreach", "Cold Reach"], ["assets", "Asset Library"], ["distribute", "Distribute (desktop view)"], ["settings", "Settings"],
+  ["chat", "AI Assistant"], ["outreach", "Cold Reach"], ["assets", "Asset Library"], ["distribute", "Distribute"], ["settings", "Settings"],
 ];
 const PhoneNav = ({ tab, go }) => (
   <nav className="m-root m-tabbar" id="m-tabbar">
@@ -3269,26 +3269,30 @@ const MShareFlow = ({ open, onClose, companies = [], investors = [], initialComp
 };
 
 // ---- Pipeline ----
-const PhonePipeline = ({ companies = [], setSelected, updateCompany, setTab }) => {
+const PhonePipeline = ({ companies = [], setSelected, updateCompany, setTab, queue, onScoreAll }) => {
+  const [scoreOpen, setScoreOpen] = useState(false);
+  const { openSearch } = usePhone();
+  const unscored = companies.filter(mIsUnscored).length;
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("new");
   const [limit, setLimit] = useState(50);
   const norm = (s) => String(s || "").toLowerCase();
-  const filters = [["all", "All"], ["starred", "★ Starred"], ["dtm", "DTM"], ...STATUSES.map(s => [s, s.replace("Active Opportunity", "Active")]), ["sort", sort === "new" ? "↓ Newest" : "↓ Top score"]];
+  const filters = [["all", "All"], ["starred", "★ Starred"], ["unscored", `Unscored (${unscored})`], ["dtm", "DTM"], ...STATUSES.map(s => [s, s.replace("Active Opportunity", "Active")]), ["sort", sort === "new" ? "↓ Newest" : "↓ Top score"]];
   const list = useMemo(() => {
     const t = norm(q).trim();
     return companies.filter(c => {
       if (filter === "starred" && !c.starred) return false;
       if (filter === "dtm" && !c.dtm) return false;
-      if (!["all", "starred", "dtm"].includes(filter) && norm(c.status) !== norm(filter)) return false;
+      if (filter === "unscored" && !mIsUnscored(c)) return false;
+      if (!["all", "starred", "dtm", "unscored"].includes(filter) && norm(c.status) !== norm(filter)) return false;
       return !t || norm([c.name, c.oneLiner, c.sector, c.stage, c.geo, (c.tags || []).join(" "), (c.founders || []).map(f => f && f.name).join(" ")].join(" ")).includes(t);
     }).sort((a, b) => sort === "score" ? (compositeScore(b.scores) || 0) - (compositeScore(a.scores) || 0) : (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
   }, [companies, q, filter, sort]);
   useEffect(() => { setLimit(50); }, [q, filter, sort]);
   return (
     <div className="m-root m-page" id="m-pipeline">
-      <MHeader title="Pipeline" sub={`${list.length} ${list.length === 1 ? "company" : "companies"}`} action={<MAction label="Add opportunity" id="m-add-btn" onClick={() => setTab("add")} />} />
+      <MHeader title="Pipeline" sub={`${list.length} ${list.length === 1 ? "company" : "companies"}`} action={<span className="m-acts"><MAction icon="search" label="Search everything" id="m-search-btn" onClick={openSearch} /><MAction label="Add opportunity" id="m-add-btn" onClick={() => setTab("add")} /></span>} />
       <div className="m-sticky2">
         <MSearch value={q} onChange={setQ} placeholder="Search companies, founders, sectors" />
         <MChips items={filters} value={filter} onChange={(k) => k === "sort" ? setSort(sort === "new" ? "score" : "new") : setFilter(k)} />
@@ -3300,12 +3304,21 @@ const PhonePipeline = ({ companies = [], setSelected, updateCompany, setTab }) =
       ))}
       {list.length > limit && <button className="m-btn ghost m-full" onClick={() => setLimit(limit + 50)}>Show more ({list.length - limit})</button>}
       {list.length === 0 && <MEmpty>No companies match.</MEmpty>}
+      {queue && (queue.active || (filter === "unscored" && unscored > 0)) && (<>
+        <div className="m-bspace" />
+        <div className="m-root m-bbar" id="m-score-bar">
+          {queue.active
+            ? <button className="m-btn m-full" id="m-score-progress" onClick={() => setScoreOpen(true)}>{`Scoring ${Math.min(Math.max(queue.index, 1), queue.total || 1)}/${queue.total || "…"}${mQueueName(queue.log) ? " · " + mQueueName(queue.log) : ""}`}</button>
+            : <button className="m-btn pri m-full" id="m-score-all" onClick={() => { onScoreAll(); setScoreOpen(true); }}>{`Score all unscored (${unscored})`}</button>}
+        </div>
+      </>)}
+      {queue && <MScoreSheet open={scoreOpen} onClose={() => setScoreOpen(false)} q={queue} />}
     </div>
   );
 };
 
 // ---- Deal view ----
-const MobileDeal = ({ company: c, investors = [], companies = [], update, back, remove, setTab }) => {
+const MobileDeal = ({ company: c, investors = [], companies = [], update, back, remove, setTab, onScore, scoring }) => {
   const [statusOpen, setStatusOpen] = useState(false);
   const [note, setNote] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
@@ -3320,6 +3333,7 @@ const MobileDeal = ({ company: c, investors = [], companies = [], update, back, 
     <div className="m-root m-page" id="m-deal">
       <MHeader title={c.name} onBack={back} action={<MMore title={c.name} items={[
         ["Open full view", openFull, "Memos, diligence, TAM, data room"],
+        onScore && [scoring ? "Scoring…" : (c.scores ? "Re-score" : "Score"), () => { if (!scoring) onScore(); }, "Run AI diligence on this company"],
         ["Delete company", () => { if (window.confirm(`Delete ${c.name}?`)) remove(); }],
       ]} />} />
       <div className="m-pad">
@@ -3333,6 +3347,7 @@ const MobileDeal = ({ company: c, investors = [], companies = [], update, back, 
         <button className={"m-chip" + (c.starred ? " on" : "")} onClick={() => update({ starred: !c.starred, starredAt: !c.starred ? Date.now() : null })}>★ Star</button>
         <button className={"m-chip" + (c.dtm ? " on" : "")} onClick={() => update({ dtm: !c.dtm })}>DTM</button>
         <button className={"m-chip" + (c.preemption ? " on" : "")} onClick={() => update({ preemption: !c.preemption })}>Pre-emption</button>
+        {onScore && <button className={"m-chip" + (scoring ? " on" : "")} id="m-score-btn" disabled={!!scoring} onClick={onScore}>{scoring ? "Scoring…" : (c.scores && !mIsUnscored(c) ? "Re-score" : "Score")}</button>}
       </div>
       <MSection title="Overview" id="m-sec-overview">
         {c.url && <MField label="Website"><a className="m-link" href={/^https?:/.test(c.url) ? c.url : "https://" + c.url} target="_blank" rel="noopener noreferrer">{c.url.replace(/^https?:\/\/(www\.)?/, "")}</a></MField>}
@@ -3342,7 +3357,8 @@ const MobileDeal = ({ company: c, investors = [], companies = [], update, back, 
         {c.createdAt && <MField label="Added"><div className="m-text">{mDay(c.createdAt)}</div></MField>}
       </MSection>
       <MSection title="Defensibility" count={sc ? sc + "/5" : null} id="m-sec-def">
-        {!c.scores && <MEmpty>Not scored yet. Open full view to run diligence.</MEmpty>}
+        {!c.scores && <MEmpty>{scoring ? "Scoring… this takes about a minute." : "Not scored yet."}</MEmpty>}
+        {!c.scores && onScore && !scoring && <button className="m-btn pri m-full" onClick={onScore}>Score now</button>}
         {c.scores && DIMS.map(d => {
           const v = Number(c.scores[d.key]) || 0;
           return (
@@ -3380,7 +3396,7 @@ const MobileDeal = ({ company: c, investors = [], companies = [], update, back, 
 // ---- Network: contact book with merged deal sharing (phone) ----
 const M_REGIONS = ["EU", "US", "UK", "Nordics", "Global"];
 const mInitials = (n) => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
-const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteInvestor }) => {
+const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteInvestor, focusId }) => {
   const { openFull } = usePhone();
   const [q, setQ] = useState("");
   const [chip, setChip] = useState("all");
@@ -3391,6 +3407,7 @@ const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteIn
   const [editing, setEditing] = useState(null); // investor | "new"
   const [share, setShare] = useState(null); // { companyIds, investorIds }
   const [limit, setLimit] = useState(80);
+  useEffect(() => { if (focusId) setOpenId(focusId); }, [focusId]);
   const norm = (s) => String(s || "").toLowerCase();
   const deal = companies.find(c => c.id === dealId);
   const list = useMemo(() => {
@@ -3407,7 +3424,7 @@ const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteIn
   useEffect(() => { setLimit(80); }, [q, chip, dealId]);
   const inv = investors.find(i => i.id === openId);
   const save = (f) => { setInvestors(l => { const ix = l.findIndex(i => i.id === f.id); return ix >= 0 ? l.map(i => i.id === f.id ? { ...i, ...f } : i) : [f, ...l]; }); setEditing(null); };
-  const chips = [["all", "All"], ["deal", deal ? "For " + deal.name : "For a deal…"], ["high", "High priority"], ...M_REGIONS.map(r => [r, r]), ...STAGES.slice(0, 3).map(s => [s, s])];
+  const chips = [["all", "All"], ["map", "Map"], ["deal", deal ? "For " + deal.name : "For a deal…"], ["high", "High priority"], ...M_REGIONS.map(r => [r, r]), ...STAGES.slice(0, 3).map(s => [s, s])];
   let lastLetter = "";
   const dealsForPicker = companies.filter(c => !dealQ || norm(c.name + " " + c.sector).includes(norm(dealQ))).sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)).slice(0, 60);
   return (
@@ -3415,7 +3432,7 @@ const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteIn
       <MHeader title="Network" sub={`${list.length} contacts`} action={<MMore title="Network" items={[
         ["Add contact", () => setEditing("new")],
         ["Share deals", () => setShare({ companyIds: [], investorIds: [] }), "Pick deals, rank contacts, write drafts"],
-        ["World map", openFull, "Opens the full Network view"],
+        ["World map", () => setChip("map"), "Pinch to zoom, tap a hub"],
         ["AI recalibrate", openFull, "Opens the full Network view"],
         ["Export TSV / bulk import", openFull, "Opens the full Network view"],
       ]} />} />
@@ -3427,7 +3444,8 @@ const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteIn
         }} />
       </div>
       {deal && <div className="m-pad m-small" id="m-net-dealbar">Ranked for <b>{deal.name}</b> · <button className="m-link" onClick={() => setShare({ companyIds: [deal.id], investorIds: list.filter(x => x[1] >= 2).slice(0, 10).map(x => x[0].id) })}>share with top matches</button></div>}
-      {list.slice(0, limit).map(([i, fit]) => {
+      {chip === "map" && <MNetMap investors={investors} onOpenInvestor={setOpenId} />}
+      {chip !== "map" && list.slice(0, limit).map(([i, fit]) => {
         const letter = (String(i.name || "#")[0] || "#").toUpperCase();
         const head = !deal && letter !== lastLetter ? (lastLetter = letter) : null;
         return (
@@ -3437,8 +3455,8 @@ const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteIn
           </React.Fragment>
         );
       })}
-      {list.length > limit && <button className="m-btn ghost m-full" onClick={() => setLimit(limit + 80)}>Show more ({list.length - limit})</button>}
-      {list.length === 0 && <MEmpty>No contacts match.</MEmpty>}
+      {chip !== "map" && list.length > limit && <button className="m-btn ghost m-full" onClick={() => setLimit(limit + 80)}>Show more ({list.length - limit})</button>}
+      {chip !== "map" && list.length === 0 && <MEmpty>No contacts match.</MEmpty>}
 
       <MSheet open={!!inv} onClose={() => setOpenId(null)} title={inv ? inv.name : ""} id="m-contact">
         {inv && (<>
@@ -3876,6 +3894,303 @@ const PhoneSandbox = ({ companies = [], updateCompany, setSelected, setTab }) =>
       <MSheet open={adding} onClose={() => setAdding(false)} title="Add to sandbox" tall>
         <MSearch value={q} onChange={setQ} placeholder="Search deals" id="m-sandbox-q" />
         {companies.filter(x => !x.preemption && (!q.trim() || (x.name || "").toLowerCase().includes(q.trim().toLowerCase()))).slice(0, 60).map(x => <MRow key={x.id} title={x.name} sub={x.stage || ""} onClick={() => { updateCompany(x.id, { preemption: true }); setAdding(false); setOpenId(x.id); }} />)}
+      </MSheet>
+    </div>
+  );
+};
+
+
+// ===================== PHONE ROUND 2 =====================
+const mIsUnscored = (c) => c.scores === null || !!(c.oneLiner && c.oneLiner.startsWith("Research failed:"));
+const mQueueName = (log) => { const m = String(log || "").match(/Analyzing (.+?)\.\.\./); return m ? m[1] : ""; };
+
+// Progress for the diligence queue (state lives in App).
+const MScoreSheet = ({ open, onClose, q }) => {
+  const done = Math.max(0, (q.index || 1) - 1);
+  const total = q.total || 0;
+  return (
+    <MSheet open={open} onClose={onClose} title="Scoring" id="m-score-sheet" footer={
+      q.active ? <button className="m-btn m-full" id="m-score-cancel" onClick={() => { q.cancel(); onClose(); }}>Cancel scoring</button>
+        : <button className="m-btn m-full" onClick={onClose}>Close</button>}>
+      <div className="m-h1">{q.active ? `${Math.min(done + 1, total || 1)} / ${total || "…"}` : "Idle"}</div>
+      <div className="m-bar m-mt8"><div style={{ width: (total ? (done / total) * 100 : 0) + "%" }} /></div>
+      <div className="m-small m-mt8">{q.active ? (mQueueName(q.log) ? "Now scoring " + mQueueName(q.log) : "Starting…") : (q.log || "Nothing running.")}</div>
+      {q.log && /\[Error\]/.test(q.log) && <div className="m-err">{q.log}</div>}
+    </MSheet>
+  );
+};
+
+// ---- Global search (replaces Cmd-K on phone) ----
+const M_SCOPES = [["all", "All"], ["deals", "Deals"], ["people", "People"], ["investors", "Investors"], ["dives", "Dives"], ["reading", "Reading"], ["actions", "Actions"]];
+const PhoneSearch = ({ open, onClose, companies = [], founderProfiles = [], investors = [], deepDives = [], readingItems = [], actions = [], onPick }) => {
+  const [q, setQ] = useState("");
+  const [scope, setScope] = useState("all");
+  const [recent, setRecent] = useState(() => { try { return JSON.parse(localStorage.getItem("m_recent_search") || "[]"); } catch (e) { return []; } });
+  const inputRef = useRef(null);
+  useEffect(() => { if (open) { setQ(""); setScope("all"); setTimeout(() => inputRef.current && inputRef.current.focus(), 50); } }, [open]);
+  const norm = (s) => String(s || "").toLowerCase();
+  const remember = (t) => { const v = String(t || "").trim(); if (!v) return; const next = [v, ...recent.filter(x => x !== v)].slice(0, 8); setRecent(next); try { localStorage.setItem("m_recent_search", JSON.stringify(next)); } catch (e) {} };
+  const t = norm(q).trim();
+  const groups = useMemo(() => {
+    if (!t) return [];
+    const has = (...xs) => norm(xs.join(" ")).includes(t);
+    return [
+      ["deals", "Deals", companies.filter(c => has(c.name, c.oneLiner, c.sector, c.stage, c.geo, (c.founders || []).map(f => f && f.name).join(" "))).map(c => ({ key: c.id, title: c.name, sub: [mStatus(c.status), c.stage, c.sector].filter(Boolean).join(" · "), pick: () => onPick("deal", c) }))],
+      ["people", "People", (founderProfiles || []).filter(p => p && has(p.name, p.company, p.title, p.location)).map(p => ({ key: p.id, title: p.name || "Unnamed", sub: [p.title, p.company].filter(Boolean).join(" · "), pick: () => onPick("person", p) }))],
+      ["investors", "Investors", investors.filter(i => has(i.name, i.fund, (i.focus || []).join(" "), i.city, i.geo)).map(i => ({ key: i.id, title: i.name || "(no name)", sub: [i.fund, i.city || i.geo].filter(Boolean).join(" · "), pick: () => onPick("investor", i) }))],
+      ["dives", "Deep Dives", (deepDives || []).filter(d => d && has(d.topic, d.opportunitySummary)).map(d => ({ key: d.id, title: d.topic || "Deep dive", sub: d.tam ? "TAM " + d.tam : "", pick: () => onPick("dive", d) }))],
+      ["reading", "Reading", (readingItems || []).filter(r => r && has(r.title, r.name, r.url, r.summary, r.source)).map((r, ix) => ({ key: r.id || ix, title: r.title || r.name || r.url || "Item", sub: r.source || (r.url ? String(r.url).replace(/^https?:\/\/(www\.)?/, "").split("/")[0] : ""), pick: () => onPick("reading", r) }))],
+      ["actions", "Actions", actions.filter(([l]) => has(l)).map(([l, fn], ix) => ({ key: "a" + ix, title: l, pick: () => { onClose(); fn(); } }))],
+    ].filter(g => g[2].length && (scope === "all" || scope === g[0]));
+  }, [t, scope, companies, founderProfiles, investors, deepDives, readingItems, actions]);
+  if (!open) return null;
+  return ReactDOM.createPortal(
+    <div className="m-root m-menu" id="m-search-page">
+      <div className="m-header m-searchbar">
+        <div className="m-search m-search-grow">
+          <span className="m-search-i"><MIcon d={M_ICONS.search} size={16} w={2} /></span>
+          <input ref={inputRef} id="m-global-q" type="search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") remember(q); }} placeholder="Search everything" autoComplete="off" />
+        </div>
+        <button className="m-textbtn" id="m-search-cancel" onClick={onClose}>Cancel</button>
+      </div>
+      <MChips items={M_SCOPES} value={scope} onChange={setScope} />
+      <div className="m-menu-b">
+        {!t && recent.length > 0 && (<>
+          <div className="m-letter m-letter-top">Recent</div>
+          {recent.map(r => <MRow key={r} title={r} onClick={() => setQ(r)} />)}
+          <button className="m-btn ghost m-full m-mt8" onClick={() => { setRecent([]); try { localStorage.removeItem("m_recent_search"); } catch (e) {} }}>Clear recent</button>
+        </>)}
+        {!t && recent.length === 0 && <MEmpty>Deals, people, investors, deep dives, reading and actions.</MEmpty>}
+        {t && groups.length === 0 && <MEmpty>No results for “{q}”.</MEmpty>}
+        {groups.map(([k, label, items]) => {
+          const max = scope === "all" ? 5 : 60;
+          return (
+            <React.Fragment key={k}>
+              <div className="m-letter m-letter-top">{label} · {items.length}</div>
+              {items.slice(0, max).map(it => <MRow key={it.key} title={it.title} sub={it.sub} onClick={() => { remember(q); it.pick(); }} />)}
+              {items.length > max && <button className="m-btn ghost m-full" onClick={() => setScope(k)}>See all {items.length}</button>}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>, document.body);
+};
+
+// ---- Touch map for the Network (pinch zoom, one-finger pan, tap a hub) ----
+const mCityGroups = (investors) => {
+  const groups = {};
+  investors.forEach(inv => {
+    let key = (inv.city || "").trim().toLowerCase(); let name = inv.city || ""; const country = inv.geo || ""; const cl = country.toLowerCase();
+    if (!key && country) {
+      if (cl.includes("us") || cl.includes("america") || cl.includes("united states")) { key = "new york"; name = "New York"; }
+      else if (cl.includes("uk") || cl.includes("united kingdom") || cl.includes("london")) { key = "london"; name = "London"; }
+      else if (cl.includes("sweden") || cl.includes("stockholm")) { key = "stockholm"; name = "Stockholm"; }
+      else if (cl.includes("france") || cl.includes("paris")) { key = "paris"; name = "Paris"; }
+      else { key = "unspecified"; name = "Other"; }
+    } else if (!key) { key = "unspecified"; name = "Other"; }
+    if (key === "unspecified") { (groups[key] ||= { name, x: 0, y: 0, investors: [] }).investors.push(inv); return; }
+    const entry = CITY_COORDS[key]; let lon, lat;
+    if (entry) { lon = entry.lon; lat = entry.lat; }
+    else {
+      let cap = COUNTRY_CAPITALS[cl];
+      if (!cap) cap = (cl.includes("us") || cl.includes("america")) ? COUNTRY_CAPITALS["united states"] : cl.includes("uk") ? COUNTRY_CAPITALS["united kingdom"] : (cl.includes("sweden") || cl.includes("nordic")) ? COUNTRY_CAPITALS["sweden"] : COUNTRY_CAPITALS[["france", "germany", "spain", "belgium"].find(n => cl.includes(n))] || { lon: 0, lat: 20 };
+      const off = (hashCode(key) % 40) / 10 - 2; lon = cap.lon + off; lat = cap.lat + off;
+    }
+    const [x, y] = project(lon, lat);
+    (groups[key] ||= { name: name || entry?.name || "Other", x, y, investors: [] }).investors.push(inv);
+  });
+  return groups;
+};
+const MNetMap = ({ investors, onOpenInvestor }) => {
+  const [geo, setGeo] = useState(window.__mGeo || null);
+  const [view, setView] = useState({ x: 0, y: 0, w: 100 });
+  const [hub, setHub] = useState(null);
+  const ref = useRef(null);
+  const pts = useRef(new Map());
+  const gesture = useRef(null);
+  const moved = useRef(0);
+  useEffect(() => { if (geo) return; fetch("https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json").then(r => r.json()).then(d => { window.__mGeo = d; setGeo(d); }).catch(() => {}); }, []);
+  const paths = useMemo(() => geo ? geo.features.map(f => geoJsonToSvgPath(f.geometry)) : [], [geo]);
+  const groups = useMemo(() => mCityGroups(investors), [investors]);
+  const H = 50;
+  const clamp = (v) => { const w = Math.max(6, Math.min(100, v.w)); const h = w * H / 100; return { w, x: Math.max(-10, Math.min(110 - w, v.x)), y: Math.max(-6, Math.min(56 - h, v.y)) }; };
+  const unit = () => { const r = ref.current.getBoundingClientRect(); return { r, k: view.w / (r.width || 1) }; };
+  const down = (e) => { pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved.current = 0; gesture.current = null; };
+  const move = (e) => {
+    if (!pts.current.has(e.pointerId)) return;
+    const prev = pts.current.get(e.pointerId); const cur = { x: e.clientX, y: e.clientY };
+    const { r, k } = unit();
+    if (pts.current.size === 1) {
+      moved.current += Math.abs(cur.x - prev.x) + Math.abs(cur.y - prev.y);
+      setView(v => clamp({ ...v, x: v.x - (cur.x - prev.x) * k, y: v.y - (cur.y - prev.y) * k }));
+    } else if (pts.current.size === 2) {
+      const other = [...pts.current.entries()].find(([id]) => id !== e.pointerId)[1];
+      const d0 = Math.hypot(prev.x - other.x, prev.y - other.y) || 1; const d1 = Math.hypot(cur.x - other.x, cur.y - other.y) || 1;
+      const mx = ((cur.x + other.x) / 2 - r.left) * k; const my = ((cur.y + other.y) / 2 - r.top) * k;
+      moved.current += 10;
+      setView(v => { const w = Math.max(6, Math.min(100, v.w * d0 / d1)); const s = w / v.w; return clamp({ w, x: v.x + mx * (1 - s), y: v.y + my * (1 - s) }); });
+    }
+    pts.current.set(e.pointerId, cur);
+  };
+  const up = (e) => { pts.current.delete(e.pointerId); };
+  const h = view.w * H / 100;
+  const sc = view.w / 100;
+  const entries = Object.entries(groups).filter(([k]) => k !== "unspecified").sort((a, b) => b[1].investors.length - a[1].investors.length);
+  const other = groups.unspecified;
+  const hubG = hub ? groups[hub] : null;
+  return (
+    <div id="m-net-map">
+      <div className="m-map" ref={ref} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up}>
+        <svg viewBox={`${view.x} ${view.y} ${view.w} ${h}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet">
+          <rect x={-20} y={-20} width={140} height={100} fill="#FAFAFA" />
+          {paths.map((d, i) => <path key={i} d={d} fill="#E9E9E9" stroke="#D4D4D4" strokeWidth={0.12 * sc} />)}
+          {entries.map(([k, g]) => {
+            const n = g.investors.length; const rr = (0.7 + Math.sqrt(n) * 0.35) * Math.max(sc, 0.12);
+            return (
+              <g key={k} onClick={() => { if (moved.current < 8) setHub(k); }} style={{ cursor: "pointer" }}>
+                <circle cx={g.x} cy={g.y} r={rr * 2.2} fill="transparent" />
+                <circle cx={g.x} cy={g.y} r={rr} fill={hub === k ? "#000" : "#fff"} stroke="#000" strokeWidth={0.18 * sc} />
+                <text x={g.x} y={g.y + rr * 0.36} textAnchor="middle" fontSize={rr * 1.05} fontWeight="700" fill={hub === k ? "#fff" : "#000"} fontFamily="Arial">{n}</text>
+                {view.w < 40 && <text x={g.x} y={g.y + rr + 1.6 * sc} textAnchor="middle" fontSize={1.5 * sc} fill="#000" fontFamily="Arial">{g.name}</text>}
+              </g>
+            );
+          })}
+        </svg>
+        <button className="m-mapbtn" id="m-map-reset" aria-label="Reset map" onClick={() => setView({ x: 0, y: 0, w: 100 })}><MIcon d="M12 3v3M12 18v3M3 12h3M18 12h3M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" size={20} /></button>
+      </div>
+      <div className="m-small m-pad">Pinch to zoom, drag to pan, tap a hub.</div>
+      {entries.slice(0, 40).map(([k, g]) => <MRow key={k} title={g.name} value={g.investors.length} onClick={() => setHub(k)} />)}
+      {other && <MRow title="No location" value={other.investors.length} onClick={() => setHub("unspecified")} />}
+      <MSheet open={!!hubG} onClose={() => setHub(null)} title={hubG ? `${hubG.name} · ${hubG.investors.length}` : ""} tall id="m-hub-sheet">
+        {hubG && hubG.investors.slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))).map(i => <MRow key={i.id} lead={mInitials(i.name)} title={i.name || "(no name)"} sub={[i.fund, (i.focus || []).slice(0, 2).join(", ")].filter(Boolean).join(" · ")} onClick={() => { setHub(null); onOpenInvestor(i.id); }} />)}
+      </MSheet>
+    </div>
+  );
+};
+
+// ---- Distribute (phone): the share flow as a page ----
+const PhoneDistribute = ({ companies = [], investors = [] }) => {
+  const [share, setShare] = useState(null);
+  const [q, setQ] = useState("");
+  const norm = (s) => String(s || "").toLowerCase();
+  const list = companies.filter(c => !q || norm(c.name + " " + c.sector + " " + c.oneLiner).includes(norm(q))).sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)).slice(0, 80);
+  return (
+    <div className="m-root m-page" id="m-distribute">
+      <MHeader title="Distribute" sub="Share deals with investors" action={<MAction label="Share several deals" id="m-dist-multi" onClick={() => setShare([])} />} />
+      <div className="m-sticky2"><MSearch value={q} onChange={setQ} placeholder="Pick a deal to share" id="m-dist-q" /></div>
+      {list.map(c => <MRow key={c.id} lead={mScore(c) || "–"} title={c.name} sub={[c.starred ? "★" : "", c.stage, c.sector].filter(Boolean).join(" · ")} onClick={() => setShare([c.id])} />)}
+      {list.length === 0 && <MEmpty>No deals match.</MEmpty>}
+      <MShareFlow open={!!share} onClose={() => setShare(null)} companies={companies} investors={investors} initialCompanyIds={share || []} />
+    </div>
+  );
+};
+
+// ---- Asset Library (phone) ----
+const PhoneAssets = ({ companies = [], updateCompany }) => {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(null);
+  const all = useMemo(() => {
+    const l = [];
+    companies.forEach(c => (c.assets || []).forEach((a, ix) => l.push({ ...a, companyId: c.id, companyName: c.name, assetIndex: ix })));
+    return l.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  }, [companies]);
+  const t = q.toLowerCase().trim();
+  const list = all.filter(a => !t || String(a.name || "").toLowerCase().includes(t) || String(a.companyName || "").toLowerCase().includes(t));
+  return (
+    <div className="m-root m-page" id="m-assets">
+      <MHeader title="Asset Library" sub={`${list.length} files`} />
+      <div className="m-sticky2"><MSearch value={q} onChange={setQ} placeholder="Search files or companies" id="m-assets-q" /></div>
+      {list.slice(0, 150).map((a, i) => <MRow key={a.companyId + "-" + a.assetIndex + "-" + i} title={a.name || "File"} sub={[a.companyName, mDay(a.ts)].filter(Boolean).join(" · ")} onClick={() => setOpen(a)} />)}
+      {list.length === 0 && <MEmpty>{q ? "No files match." : "Upload decks in a deal to see them here."}</MEmpty>}
+      <MSheet open={!!open} onClose={() => setOpen(null)} title={open ? open.name : ""} id="m-asset-sheet">
+        {open && (<>
+          <div className="m-small">{[open.companyName, open.ts ? new Date(open.ts).toLocaleString() : ""].filter(Boolean).join(" · ")}</div>
+          <div className="m-btns m-mt12">
+            {open.url ? <a className="m-btn sm pri" href={open.url} target="_blank" rel="noopener noreferrer" download={open.name}>Open</a> : <button className="m-btn sm" disabled>No file</button>}
+            <button className="m-btn sm" onClick={() => {
+              if (!window.confirm(`Remove "${open.name}" from ${open.companyName}?`)) return;
+              const comp = companies.find(c => c.id === open.companyId);
+              if (comp) updateCompany(open.companyId, { assets: (comp.assets || []).filter((_, i) => i !== open.assetIndex) });
+              setOpen(null);
+            }}>Remove</button>
+          </div>
+        </>)}
+      </MSheet>
+    </div>
+  );
+};
+
+// ---- Cold Reach (phone view; state stays in Outreach) ----
+const M_VARS = ["companyName", "founders", "sector", "productSummary", "tractionSummary"];
+const MOutDraft = ({ company, draft, updateCompany }) => {
+  const [copied, setCopied] = useState(false);
+  const [email, setEmail] = useState(company.email || "");
+  return (
+    <div className="m-card">
+      <div className="m-row-t">{company.name}</div>
+      <div className="m-small m-b">{draft.subject}</div>
+      <div className="m-text m-mt8">{draft.body}</div>
+      <input className="m-input m-mt8" type="email" placeholder="Founder email" value={email} onChange={(e) => { setEmail(e.target.value); updateCompany(company.id, { email: e.target.value }); }} />
+      <div className="m-btns m-mt8">
+        <button className="m-btn sm" onClick={async () => { if (await mCopy(`Subject: ${draft.subject}\n\n${draft.body}`)) { setCopied(true); setTimeout(() => setCopied(false), 1500); } }}>{copied ? "Copied" : "Copy"}</button>
+        <a className="m-btn sm pri" href={`mailto:${email}?subject=${encodeURIComponent(draft.subject || "")}&body=${encodeURIComponent(draft.body || "")}`}>Email</a>
+      </div>
+    </div>
+  );
+};
+const PhoneOutreachView = (p) => {
+  const [tplOpen, setTplOpen] = useState(false);
+  const [view, setView] = useState("targets");
+  const [limit, setLimit] = useState(60);
+  const taRef = useRef(null);
+  const selCount = Object.values(p.selectedIds).filter(Boolean).length;
+  const draftIds = Object.keys(p.drafts);
+  const allOn = p.filteredCompanies.length > 0 && p.filteredCompanies.every(c => p.selectedIds[c.id]);
+  useEffect(() => { if (p.generating) setView("drafts"); }, [p.generating]);
+  const insertVar = (v) => {
+    const el = taRef.current; const tok = "{{" + v + "}}";
+    if (!el) { p.setTemplate(p.template + tok); return; }
+    const s = el.selectionStart ?? p.template.length; const e = el.selectionEnd ?? s;
+    p.setTemplate(p.template.slice(0, s) + tok + p.template.slice(e));
+    setTimeout(() => { el.focus(); el.selectionStart = el.selectionEnd = s + tok.length; }, 0);
+  };
+  return (
+    <div className="m-root m-page" id="m-outreach">
+      <MHeader title="Cold Reach" sub={`${selCount} selected · ${draftIds.length} drafts`} />
+      <div className="m-pad">
+        <button className="m-card m-tplcard" id="m-tpl-open" onClick={() => setTplOpen(true)}>
+          <span className="m-label">Template · tap to edit</span>
+          <span className="m-small m-clamp3">{p.template}</span>
+        </button>
+      </div>
+      <MChips items={[["targets", `Targets · ${selCount}`], ["drafts", `Drafts · ${draftIds.length}`]]} value={view} onChange={setView} />
+      {view === "targets" && (<>
+        <div className="m-sticky2">
+          <MSearch value={p.search} onChange={p.setSearch} placeholder="Search companies" id="m-out-q" />
+          <MChips items={[["all", "All"], ...STATUSES.map(s => [s, mStatus(s)])]} value={p.statusFilter} onChange={p.setStatusFilter} />
+        </div>
+        <MRow title={allOn ? "Clear filtered" : `Select all filtered (${p.filteredCompanies.length})`} chevron={false} onClick={allOn ? p.handleDeselectAll : p.handleSelectAll} right={<span className={"m-check" + (allOn ? " on" : "")} />} id="m-out-all" />
+        {p.filteredCompanies.slice(0, limit).map(c => <MRow key={c.id} title={c.name} sub={[mStatus(c.status), c.stage, (c.founders || []).map(f => f && f.name).filter(Boolean).join(", ")].filter(Boolean).join(" · ")} chevron={false} selected={!!p.selectedIds[c.id]} onClick={() => p.handleToggle(c.id)} right={<span className={"m-check" + (p.selectedIds[c.id] ? " on" : "")} />} />)}
+        {p.filteredCompanies.length > limit && <button className="m-btn ghost m-full" onClick={() => setLimit(limit + 60)}>Show more ({p.filteredCompanies.length - limit})</button>}
+        {p.filteredCompanies.length === 0 && <MEmpty>No companies match.</MEmpty>}
+      </>)}
+      {view === "drafts" && (
+        <div className="m-pad">
+          {p.log && <div className={p.log.includes("fail") ? "m-err" : "m-small"}>{p.log}</div>}
+          {draftIds.length === 0 && !p.generating && <MEmpty>Select targets, then write drafts.</MEmpty>}
+          {draftIds.map(id => { const c = p.companies.find(x => x.id === id); return c ? <MOutDraft key={id} company={c} draft={p.drafts[id]} updateCompany={p.updateCompany} /> : null; })}
+        </div>
+      )}
+      <div className="m-bspace" />
+      <div className="m-root m-bbar">
+        {p.generating
+          ? <div className="m-btns"><div className="m-small m-grow">{`Writing ${Math.min(p.queueIndex + 1, p.queueList.length)} of ${p.queueList.length}`}</div><button className="m-btn sm" onClick={() => p.setGenerating(false)}>Stop</button></div>
+          : <button className="m-btn pri m-full" id="m-out-go" disabled={!selCount} onClick={p.handleStartGeneration}>{selCount ? `Write ${selCount} draft${selCount > 1 ? "s" : ""}` : "Select targets"}</button>}
+      </div>
+      <MSheet open={tplOpen} onClose={() => setTplOpen(false)} title="Template" tall id="m-tpl-sheet" footer={<button className="m-btn pri m-full" onClick={() => setTplOpen(false)}>Done</button>}>
+        <div className="m-label">Insert variable</div>
+        <div className="m-chips no-scrollbar">{M_VARS.map(v => <button key={v} className="m-chip" onClick={() => insertVar(v)}>{v}</button>)}</div>
+        <textarea ref={taRef} className="m-input m-tpl" value={p.template} onChange={(e) => p.setTemplate(e.target.value)} />
       </MSheet>
     </div>
   );
@@ -7379,14 +7694,35 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   const [phoneFull, setPhoneFull] = useState(false);
   const [phoneMenu, setPhoneMenu] = useState(false);
   useEffect(() => { setPhoneFull(false); }, [tab, selected]);
+  useEffect(() => { if (tab !== "network") setPhoneFocus(null); }, [tab]);
   const phoneGo = (k) => { setTab(k); setSelected(null); setPhoneMenu(false); window.scrollTo && window.scrollTo(0, 0); };
-  const phoneCtx = { openMenu: () => setPhoneMenu(true), openFull: () => { setPhoneFull(true); window.scrollTo && window.scrollTo(0, 0); }, setTab: phoneGo };
+  const [phoneFocus, setPhoneFocus] = useState(null);
+  const phoneQueue = { active: queueActive, index: queueIndex, total: queueTotal, log: queueLog, cancel: () => setQueueActive(false) };
+  const phoneScoreAll = () => {
+    setCompanies(cs => cs.map(c => (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? { ...c, scores: null, rationale: {}, oneLiner: "" } : c));
+    setSelectedQueueIds(null); setQueueTotal(0); setQueueLog("Starting diligence queue..."); setQueueActive(true);
+  };
+  const phonePick = (kind, item) => {
+    setCmdKOpen(false); setPhoneMenu(false);
+    if (kind === "deal") { setTab("pipeline"); setSelected(item.id); }
+    else if (kind === "investor") { phoneGo("network"); setPhoneFocus(item.id); }
+    else phoneGo({ person: "founders", dive: "deepdives", reading: "reading" }[kind] || "pipeline");
+    window.scrollTo && window.scrollTo(0, 0);
+  };
+  const phoneActions = [
+    ["Add opportunity", () => phoneGo("add")], ["Score all unscored", () => { phoneGo("pipeline"); phoneScoreAll(); }],
+    ["Pipeline", () => phoneGo("pipeline")], ["Network", () => phoneGo("network")], ["Reports", () => phoneGo("reports")],
+    ["Deep Dives", () => phoneGo("deepdives")], ["Cold Reach", () => phoneGo("outreach")], ["Distribute", () => phoneGo("distribute")],
+    ["Deal Team Meeting", () => phoneGo("dtm")], ["Settings", () => phoneGo("settings")],
+    ["Export database (Excel)", () => exportWholeDatabaseExcel()], ["Push all to Affinity", () => runBulkAffinityPush()],
+  ];
+  const phoneCtx = { openSearch: () => setCmdKOpen(true), openMenu: () => setPhoneMenu(true), openFull: () => { setPhoneFull(true); window.scrollTo && window.scrollTo(0, 0); }, setTab: phoneGo };
   const markDeletedId = (id) => setDeletedIds(prev => Array.from(new Set([...(prev || []), String(id)])));
   const renderPhoneTab = () => {
     if (tab === "pipeline") {
       const sel = companies.find(c => c.id === selected);
-      if (sel) return <MobileDeal company={sel} investors={investors} companies={companies} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => { setCompanies((cs) => cs.filter((c) => c.id !== sel.id)); setDeletedIds((prev) => [...prev, sel.id]); setSelected(null); }} setTab={phoneGo} />;
-      return <PhonePipeline companies={companies} setSelected={setSelected} updateCompany={updateCompany} setTab={phoneGo} />;
+      if (sel) return <MobileDeal company={sel} investors={investors} companies={companies} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => { setCompanies((cs) => cs.filter((c) => c.id !== sel.id)); setDeletedIds((prev) => [...prev, sel.id]); setSelected(null); }} setTab={phoneGo} onScore={() => runDiligenceForId(sel.id)} scoring={!!researchingIds[sel.id] || (queueActive && mQueueName(queueLog) === sel.name)} />;
+      return <PhonePipeline companies={companies} setSelected={setSelected} updateCompany={updateCompany} setTab={phoneGo} queue={phoneQueue} onScoreAll={phoneScoreAll} />;
     }
     if (tab === "voice") return <VoiceAgent companies={companies} readingItems={readingItems} voiceSessions={voiceSessions} setVoiceSessions={setVoiceSessions} updateCompany={updateCompany} setReadingItems={setReadingItems} />;
     if (tab === "chat") return <AIAssistant companies={companies} />;
@@ -7397,7 +7733,10 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     if (tab === "deepdives") return <PhoneDives deepDives={deepDives} setDeepDives={setDeepDives} setDeletedIds={setDeletedIds} />;
     if (tab === "dtm") return <PhoneDTM companies={companies} updateCompany={updateCompany} setSelected={setSelected} setTab={setTab} />;
     if (tab === "preemption") return <PhoneSandbox companies={companies} updateCompany={updateCompany} setSelected={setSelected} setTab={setTab} />;
-    if (tab === "network") return <PhoneNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} />;
+    if (tab === "network") return <PhoneNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} focusId={phoneFocus} />;
+    if (tab === "outreach") return <Outreach companies={companies} updateCompany={updateCompany} apiKey={apiKey} />;
+    if (tab === "distribute") return <PhoneDistribute companies={companies} investors={investors} />;
+    if (tab === "assets") return <PhoneAssets companies={companies} updateCompany={updateCompany} />;
     return null;
   };
   const phoneView = isPhone && !phoneFull ? renderPhoneTab() : null;
@@ -7757,7 +8096,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       </PhoneCtx.Provider>
       </div>
 
-      <CmdKModal
+      {isPhone ? <PhoneSearch open={isCmdKOpen} onClose={() => setCmdKOpen(false)} companies={companies} founderProfiles={founderProfiles} investors={investors} deepDives={deepDives} readingItems={readingItems} actions={phoneActions} onPick={phonePick} /> : <CmdKModal
         isOpen={isCmdKOpen}
         onClose={() => setCmdKOpen(false)}
         companies={companies}
@@ -7787,7 +8126,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           else if (actKey === "export_excel") exportWholeDatabaseExcel();
           else if (actKey === "affinity_push_all") runBulkAffinityPush();
         }}
-      />
+      />}
 
       <RecontactNotificationModal
         isOpen={isReminderModalOpen}
@@ -22885,6 +23224,8 @@ Return ONLY the raw JSON object, no explanation, no markdown fences:
   };
 
   const hasApiKey = !!localStorage.getItem("anthropic_api_key");
+  const isPhoneO = useIsPhone();
+  if (isPhoneO) return <PhoneOutreachView {...{ template, setTemplate, search, setSearch, statusFilter, setStatusFilter, selectedIds, drafts, generating, setGenerating, log, queueIndex, queueList, filteredCompanies, handleSelectAll, handleDeselectAll, handleToggle, handleStartGeneration, companies, updateCompany }} />;
 
   return (
     <div>

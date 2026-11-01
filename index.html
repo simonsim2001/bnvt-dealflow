@@ -354,6 +354,18 @@
         .m-letter-top { position: static; }
         .m-slider { padding: 8px 0; }
         #root .m-root .m-slider input[type=range], body > .m-root .m-slider input[type=range] { width: 100%; accent-color: #000; margin-top: 8px; }
+        .m-acts { display: flex; flex-wrap: nowrap; }
+        .m-bbar { position: fixed; left: 0; right: 0; bottom: calc(53px + env(safe-area-inset-bottom)); z-index: 1900; padding: 8px 12px; background: #fff; border-top: 1px solid #E8E8E8; }
+        .m-bspace { height: 68px; }
+        .m-grow { flex: 1 1 auto; min-width: 0; align-self: center; }
+        .m-searchbar { gap: 0; padding-right: 4px; }
+        .m-searchbar .m-search { flex: 1 1 auto; min-width: 0; }
+        #root .m-root .m-textbtn, body > .m-root .m-textbtn { height: 44px !important; padding: 0 12px !important; font-size: 15px !important; background: none; border: none; color: #000; }
+        .m-map { position: relative; aspect-ratio: 2 / 1; border-bottom: 1px solid #E8E8E8; touch-action: none; overflow: hidden; background: #FAFAFA; user-select: none; -webkit-user-select: none; }
+        #root .m-root .m-mapbtn, body > .m-root .m-mapbtn { position: absolute; right: 12px; bottom: 12px; width: 44px; height: 44px !important; border-radius: 22px; background: #fff; border: 1px solid #D6D6D6; color: #000; }
+        #root .m-root .m-tplcard { display: flex !important; flex-direction: column; align-items: flex-start !important; justify-content: flex-start !important; white-space: normal !important; width: 100%; text-align: left; margin: 0; background: #fff; }
+        .m-clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+        #root .m-root .m-tpl, body > .m-root .m-tpl { min-height: 340px; font-size: 15px; line-height: 1.45; margin-top: 8px; }
         .m-fullbar { position: sticky; top: 0; z-index: 1600; margin: -14px -14px 12px; }
     </style>
 </head>
@@ -446,7 +458,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=75.9"></script>
+    <script src="bnvt-dealflow.js?v=75.12"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {
