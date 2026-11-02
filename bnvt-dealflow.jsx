@@ -6989,7 +6989,7 @@ window.App = function App() {
   // Poll server for external updates (e.g. from WhatsApp API) safely without overwriting local memory
   useEffect(() => {
     if (!loaded) return;
-    const interval = setInterval(async () => {
+    const sync = async () => {
       try {
         const r = await window.storage.get("bnvt-dealflow-v1");
         if (r?.value) {
@@ -7021,8 +7021,12 @@ window.App = function App() {
       } catch (e) {
         console.warn("Storage polling sync check:", e.message);
       }
-    }, 15000);
-    return () => clearInterval(interval);
+    };
+    const interval = setInterval(sync, 15000);
+    const onVisible = () => { if (document.visibilityState === "visible") sync(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
   }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions, loaded]);
 
   // AI Diligence Queue Runner

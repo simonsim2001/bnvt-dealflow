@@ -1141,7 +1141,7 @@ def _record_count(db):
 
 def read_db():
     db = read_local_db()
-    if time.time() - _remote_cache["at"] < 20 and _remote_cache["db"] is not None:
+    if time.time() - _remote_cache["at"] < 3 and _remote_cache["db"] is not None:
         remote = _remote_cache["db"]
     else:
         remote = fetch_remote_db()
