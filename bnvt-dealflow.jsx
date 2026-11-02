@@ -176,13 +176,24 @@ async function callClaude(prompt, useSearch = false, costTier = "heavy") {
     headers["anthropic-beta"] = betas.join(",");
   }
 
-  // Request forwarded to the local proxy to bypass browser CORS
-  const res = await fetch("/api/anthropic", {
-    method: "POST",
-    headers: headers,
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
+  // Request forwarded to the local proxy to bypass browser CORS.
+  // Retries: iPhone Safari drops long requests ("Load failed") when the screen locks or the app
+  // is backgrounded, and Anthropic can be briefly overloaded (429/529).
+  let data = null, lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 2500 * attempt));
+    try {
+      const res = await fetch("/api/anthropic", { method: "POST", headers: headers, body: JSON.stringify(body) });
+      if ([429, 500, 502, 503, 504, 529].includes(res.status)) { lastErr = new Error("Anthropic busy (HTTP " + res.status + ")"); continue; }
+      data = await res.json();
+      const et = data && data.error && (data.error.type || "");
+      if (et === "overloaded_error" || et === "rate_limit_error") { lastErr = new Error(data.error.message || et); data = null; continue; }
+      break;
+    } catch (e) {
+      lastErr = new Error(/load failed|failed to fetch|network/i.test(e.message || "") ? "Connection dropped (keep the app open and the screen on while scoring)" : e.message);
+    }
+  }
+  if (!data) throw lastErr || new Error("API error");
   if (data.error) throw new Error(data.error.message || "API error");
   return (data.content || [])
     .filter((b) => b.type === "text")
