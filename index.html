@@ -367,6 +367,122 @@
         .m-clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
         #root .m-root .m-tpl, body > .m-root .m-tpl { min-height: 340px; font-size: 15px; line-height: 1.45; margin-top: 8px; }
         .m-fullbar { position: sticky; top: 0; z-index: 1600; margin: -14px -14px 12px; }
+        /* ===================== DESKTOP SYSTEM (.d-app, non-phone only) ===================== */
+        .d-app { padding-left: 216px; box-sizing: border-box; }
+        .d-app p, .d-app li, .d-app span, .d-app div, .d-app h1, .d-app h2, .d-app h3, .d-app h4, .d-app button, .d-app label { word-break: normal; overflow-wrap: break-word; }
+        .d-app .app-body { padding: 16px 24px 40px !important; max-width: 1320px !important; }
+        .d-side { position: fixed; left: 0; top: 0; bottom: 0; width: 216px; z-index: 1700; background: #FAFAFA; border-right: 1px solid #E8E8E8; display: flex; flex-direction: column; box-sizing: border-box; padding: 12px 8px; overflow-y: auto; }
+        .d-brand { display: flex; align-items: center; gap: 8px; padding: 4px 8px 12px; }
+        .d-brand-mark { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 8px; background: #000; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+        .d-brand-t { font-size: 15px; font-weight: 700; white-space: nowrap; }
+        .d-nav { flex: 1 1 auto; }
+        .d-group { margin-bottom: 12px; }
+        .d-group-t { font-size: 11px; color: #8A8A8A; text-transform: uppercase; letter-spacing: .06em; padding: 4px 10px; white-space: nowrap; }
+        .d-item { display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 10px; border: none; border-radius: 8px; background: none; color: #444; font-size: 13px; cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; }
+        .d-item:hover { background: #EFEFEF; color: #000; }
+        .d-item.on { background: #000; color: #fff; font-weight: 700; }
+        .d-item svg { flex: 0 0 18px; }
+        .d-item-bottom { margin-top: 8px; }
+        .d-top { position: sticky; top: 0; z-index: 1600; height: 52px; display: flex; align-items: center; gap: 16px; padding: 0 24px; background: rgba(255,255,255,.96); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-bottom: 1px solid #E8E8E8; box-sizing: border-box; }
+        .d-top-t { margin: 0; font-size: 17px; font-weight: 700; white-space: nowrap; flex: 0 0 auto; }
+        .d-searchbtn { flex: 1 1 auto; max-width: 440px; margin: 0 auto; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid #E2E2E2; border-radius: 8px; background: #F6F6F6; color: #8A8A8A; font-size: 13px; cursor: text; white-space: nowrap; overflow: hidden; }
+        .d-searchbtn span { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+        .d-searchbtn kbd { font-size: 11px; border: 1px solid #DDD; border-radius: 4px; padding: 1px 5px; background: #fff; color: #666; }
+        .d-top-r { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+        .d-iconbtn { position: relative; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 8px; background: none; color: #000; cursor: pointer; padding: 0; }
+        .d-iconbtn:hover { background: #F0F0F0; }
+        .d-badge { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: #000; color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+        .d-menu-wrap { position: relative; display: inline-flex; }
+        .d-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 3000; min-width: 220px; background: #fff; border: 1px solid #E2E2E2; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; display: flex; flex-direction: column; }
+        .d-pop-pad { padding: 12px; min-width: 300px; gap: 4px; }
+        .d-pop-i { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; border: none; border-radius: 6px; background: none; font-size: 13px; color: #000; cursor: pointer; text-align: left; white-space: nowrap; }
+        .d-pop-i:hover { background: #F2F2F2; }
+        .d-pop-i:disabled { color: #AAA; cursor: default; background: none; }
+        .d-pop-s { font-size: 11px; color: #8A8A8A; }
+        .d-label { font-size: 11px; color: #8A8A8A; text-transform: uppercase; letter-spacing: .05em; margin: 8px 0 4px; }
+        .d-chips { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+        .d-pop .d-chips { flex-wrap: wrap; }
+        .d-chips::-webkit-scrollbar { display: none; }
+        .d-chip { flex: 0 0 auto; height: 30px; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 15px; background: #fff; color: #444; font-size: 13px; cursor: pointer; white-space: nowrap; }
+        .d-chip:hover { border-color: #000; color: #000; }
+        .d-chip.on { background: #000; border-color: #000; color: #fff; }
+        .d-btn { height: 34px; padding: 0 14px; border: 1px solid #000; border-radius: 8px; background: #fff; color: #000; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+        .d-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+        .d-btn.pri { background: #000; color: #fff; }
+        .d-btn:disabled { opacity: .4; cursor: default; }
+        .d-link { border: none; background: none; padding: 4px 0; font-size: 13px; text-decoration: underline; cursor: pointer; color: #000; text-align: left; }
+        .d-err { color: #C00000; font-size: 12px; }
+        .d-small { font-size: 11px; color: #8A8A8A; }
+        .d-grow { flex: 1 1 auto; }
+        .d-note { font-size: 12px; padding: 8px 12px; border-radius: 8px; background: #F4F4F4; margin-bottom: 12px; }
+        .d-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid #E8E8E8; border-radius: 10px; background: #FAFAFA; font-size: 13px; }
+        .d-strip-i { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .d-strip-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+        .d-strip-sep { width: 1px; height: 18px; background: #E0E0E0; }
+        .d-prog { width: 80px; height: 4px; border-radius: 2px; background: #E6E6E6; overflow: hidden; display: inline-block; }
+        .d-prog > span { display: block; height: 100%; background: #000; }
+        .d-filterrow { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; min-width: 0; }
+        .d-filterrow > .d-chips { flex: 1 1 auto; }
+        .d-search { flex: 0 0 220px; height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #E0E0E0; border-radius: 8px; background: #fff; color: #8A8A8A; box-sizing: border-box; }
+        .d-search input { flex: 1; min-width: 0; border: none !important; outline: none !important; background: none; font-size: 13px; padding: 0 !important; height: 28px; color: #000; }
+        .d-select { flex: 0 0 auto; height: 32px; padding: 0 8px; border: 1px solid #E0E0E0; border-radius: 8px; background: #fff; font-size: 13px; }
+        .d-seg { flex: 0 0 auto; display: inline-flex; padding: 2px; border-radius: 8px; background: #F0F0F0; }
+        .d-seg button { height: 28px; padding: 0 10px; border: none; border-radius: 6px; background: none; font-size: 12px; color: #666; cursor: pointer; }
+        .d-seg button.on { background: #fff; color: #000; font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+        .d-count { flex: 0 0 auto; font-size: 12px; color: #8A8A8A; min-width: 24px; text-align: right; }
+        .d-selbar { position: sticky; top: 60px; z-index: 50; display: flex; align-items: center; gap: 8px; padding: 6px 12px; margin-bottom: 12px; border-radius: 10px; background: #000; color: #fff; font-size: 13px; }
+        .d-selbar .d-btn { background: #fff; color: #000; border-color: #fff; }
+        .d-selbar .d-link { color: #fff; }
+        .d-selbar-c { display: flex; align-items: center; gap: 8px; font-weight: 700; white-space: nowrap; margin-right: 8px; }
+        .d-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+        .d-card { background: #fff; border: 1px solid #E6E6E6; border-radius: 12px; }
+        .d-deal { position: relative; display: flex; gap: 12px; padding: 12px; cursor: pointer; transition: border-color .15s, box-shadow .15s; min-width: 0; }
+        .d-deal:hover { border-color: #BDBDBD; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+        .d-deal.sel { border-color: #000; box-shadow: 0 0 0 1px #000; }
+        .d-deal-check { position: absolute; top: 8px; left: 8px; opacity: 0; transition: opacity .15s; }
+        .d-deal:hover .d-deal-check, .d-deal.sel .d-deal-check { opacity: 1; }
+        .d-deal-score { flex: 0 0 44px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 10px; }
+        .d-deal-n { font-size: 13px; font-weight: 700; }
+        .d-deal-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+        .d-deal-h { display: flex; align-items: center; gap: 6px; min-width: 0; }
+        .d-deal-name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .d-badge-s { flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 9px; border: 1px solid #DDD; color: #555; white-space: nowrap; }
+        .d-badge-s.err { color: #C00000; border-color: #E8B4B4; }
+        .d-meta { font-size: 11px; color: #8A8A8A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .d-deal-s { font-size: 13px; color: #444; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .d-deal-s.err { color: #C00000; }
+        .d-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+        .d-tag { font-size: 10px; padding: 1px 6px; border-radius: 9px; background: #F2F2F2; color: #555; white-space: nowrap; }
+        .d-deal-f { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+        .d-pill-select { height: 24px; padding: 0 8px; border: 1px solid #DDD; border-radius: 12px; background: #fff; font-size: 11px; max-width: 150px; cursor: pointer; }
+        .d-mini { height: 24px; min-width: 24px; padding: 0 8px; border: 1px solid #E0E0E0; border-radius: 12px; background: #fff; font-size: 11px; color: #666; cursor: pointer; white-space: nowrap; }
+        .d-mini.on { border-color: #000; color: #000; font-weight: 700; }
+        .d-mini.pri { background: #000; border-color: #000; color: #fff; }
+        .d-deal-f .d-iconbtn { width: 26px; height: 24px; opacity: 0; }
+        .d-deal:hover .d-deal-f .d-iconbtn, .d-deal-f .d-menu-wrap:focus-within .d-iconbtn { opacity: 1; }
+        /* Generic restyle of legacy desktop components */
+        .d-app .app-body .bnvt-btn { border-radius: 8px !important; }
+        .d-app .app-body .bnvt-input, .d-app .app-body textarea, .d-app .app-body select, .d-app .app-body input[type="text"], .d-app .app-body input[type="search"], .d-app .app-body input[type="email"], .d-app .app-body input[type="url"], .d-app .app-body input[type="number"], .d-app .app-body input:not([type]) { border-radius: 8px !important; }
+        .d-app .app-body div[style*="solid rgb(221, 221, 221)"], .d-app .app-body div[style*="solid rgb(17, 17, 17)"][style*="padding"], .d-app .app-body div[style*="solid rgb(0, 0, 0)"][style*="padding"] { border-radius: 10px; }
+        .d-app .app-body div[style*="padding: 20px"] { padding: 14px 16px !important; }
+        .d-app .app-body div[style*="padding: 24px"], .d-app .app-body div[style*="padding: 28px"] { padding: 16px !important; }
+        .d-app .app-body div[style*="margin-bottom: 20px"], .d-app .app-body div[style*="margin-bottom: 24px"] { margin-bottom: 12px !important; }
+        .d-app .app-body h2 { font-size: 22px !important; }
+        .d-app .app-body h3 { font-size: 15px !important; }
+        .d-app .app-body .bnvt-label { font-size: 11px !important; }
+        .d-app .app-body th, .d-app .app-body td { padding-top: 6px !important; padding-bottom: 6px !important; }
+        .d-app .app-body p[style*="color: rgb(119, 119, 119)"] { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+        .d-app .app-body p[style*="color: rgb(119, 119, 119)"]:hover { -webkit-line-clamp: unset; }
+        @media (max-width: 1199px) {
+            .d-app { padding-left: 60px; }
+            .d-side { width: 60px; padding: 12px 8px; }
+            .d-side .d-lbl { display: none; }
+            .d-group { margin-bottom: 8px; padding-top: 8px; border-top: 1px solid #EEE; }
+            .d-group:first-child { border-top: none; padding-top: 0; }
+            .d-item { justify-content: center; padding: 0; }
+            .d-brand { justify-content: center; padding: 4px 0 12px; }
+            .d-search { flex-basis: 180px; }
+        }
     </style>
 </head>
 <body>
@@ -458,7 +574,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=75.12"></script>
+    <script src="bnvt-dealflow.js?v=75.15"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {

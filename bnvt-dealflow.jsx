@@ -4196,6 +4196,161 @@ const PhoneOutreachView = (p) => {
   );
 };
 
+
+// ===================== DESKTOP LAYER (sidebar shell + compact primitives) =====================
+const D_ICONS = {
+  pipeline: "M4 6h16M4 12h16M4 18h10", dtm: "M8 7V3M16 7V3M4 11h16M5 5h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z",
+  preemption: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z", add: "M12 5v14M5 12h14",
+  voice: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zM5 10v1a7 7 0 0 0 14 0v-1M12 18v4", chat: "M4 5h16v11H8l-4 4z",
+  reports: "M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8", reading: "M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z",
+  deepdives: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3", network: "M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 20c0-3 3-5 6-5s6 2 6 5M14 15c3 0 8 1 8 5",
+  distribute: "M4 12l16-8-6 16-2-7z", outreach: "M3 6h18v12H3zM3 6l9 7 9-7", talentDashboard: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 4-6 8-6s8 2 8 6",
+  founders: "M4 4h16v16H4zM8 10v6M8 7v.01M12 16v-4a2 2 0 0 1 4 0v4", assets: "M3 7h6l2 2h10v10H3z",
+  settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z",
+  bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4", search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3", more: "M5 12h.01M12 12h.01M19 12h.01",
+};
+const DIcon = ({ k, d, size = 18, w = 1.8 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d || D_ICONS[k]} /></svg>;
+const D_GROUPS = [
+  ["Deals", [["pipeline", "Pipeline"], ["dtm", "Deal Team Meeting"], ["preemption", "Pre-emption Sandbox"], ["add", "Add opportunity"]]],
+  ["Intelligence", [["voice", "Voice"], ["chat", "AI Assistant"], ["reports", "Reports"], ["reading", "Reading"], ["deepdives", "Deep Dives"]]],
+  ["People", [["network", "Network"], ["distribute", "Distribute"], ["outreach", "Cold Reach"], ["talentDashboard", "Talent Sourcing"], ["founders", "Founder Assessment"]]],
+  ["Library", [["assets", "Asset Library"]]],
+];
+const D_TITLES = Object.fromEntries([...D_GROUPS.flatMap(g => g[1]), ["settings", "Settings"]]);
+
+const DSidebar = ({ tab, go }) => (
+  <aside className="d-side" id="d-sidebar">
+    <div className="d-brand"><span className="d-brand-mark">SL</span><span className="d-lbl d-brand-t">SL Deals</span></div>
+    <nav className="d-nav">
+      {D_GROUPS.map(([g, items]) => (
+        <div key={g} className="d-group">
+          <div className="d-group-t d-lbl">{g}</div>
+          {items.map(([k, l]) => (
+            <button key={k} id={"d-nav-" + k} className={"d-item" + (tab === k ? " on" : "")} title={l} onClick={() => go(k)}>
+              <DIcon k={k} /><span className="d-lbl">{l}</span>
+            </button>
+          ))}
+        </div>
+      ))}
+    </nav>
+    <button id="d-nav-settings" className={"d-item d-item-bottom" + (tab === "settings" ? " on" : "")} title="Settings" onClick={() => go("settings")}>
+      <DIcon k="settings" /><span className="d-lbl">Settings</span>
+    </button>
+  </aside>
+);
+
+// Small popover menu: items = [[label, fn, sub]]
+const DMenu = ({ items, label = "More", icon = "more", id }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  return (
+    <div className="d-menu-wrap" ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button className="d-iconbtn" id={id} aria-label={label} title={label} onClick={() => setOpen(!open)}><DIcon k={icon} w={icon === "more" ? 3 : 1.8} /></button>
+      {open && (
+        <div className="d-pop">
+          {items.filter(Boolean).map(([l, fn, sub, disabled], i) => (
+            <button key={i} className="d-pop-i" disabled={disabled} onClick={() => { setOpen(false); fn(); }}>
+              <span>{l}</span>{sub && <span className="d-pop-s">{sub}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const DTopbar = ({ title, onSearch, reminders = 0, onReminders, onExport, onSettings }) => (
+  <header className="d-top" id="d-topbar">
+    <h1 className="d-top-t">{title}</h1>
+    <button className="d-searchbtn" id="d-search" onClick={onSearch} title="Search (⌘K)">
+      <DIcon k="search" size={16} w={2} /><span>Search deals, people, investors…</span><kbd>⌘K</kbd>
+    </button>
+    <div className="d-top-r">
+      <button className="d-iconbtn d-bell" id="d-reminders" aria-label="Reminders" title="Recontact reminders" onClick={onReminders}>
+        <DIcon k="bell" />{reminders > 0 && <span className="d-badge">{reminders > 99 ? "99+" : reminders}</span>}
+      </button>
+      <DMenu id="d-top-more" items={[["Export database (Excel)", onExport], ["Settings", onSettings]]} />
+    </div>
+  </header>
+);
+
+// Compact pill chips for desktop filter rows.
+const DChips = ({ items, value, onChange }) => (
+  <div className="d-chips">
+    {items.map(([k, l]) => <button key={k} className={"d-chip" + (value === k ? " on" : "")} onClick={() => onChange(k)}>{l}</button>)}
+  </div>
+);
+
+// Compact deal card for the desktop Pipeline grid.
+const DDealCard = ({ c, founderProfiles, selected, onToggle, onOpen, updateCompany, researching, researchingTam, runTam, runDiligence, onPushAffinity, pushing }) => {
+  const comp = compositeScore(c.scores);
+  const failed = !!(c.oneLiner && c.oneLiner.startsWith("Research failed:"));
+  const tam = getTamValue(c);
+  const tags = getCompanyTags(c, founderProfiles);
+  const isInd = c.entityType === "Individual";
+  return (
+    <div className={"d-card d-deal" + (selected ? " sel" : "")} onClick={onOpen} id={"d-deal-" + c.id}>
+      <label className="d-deal-check" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected} onChange={onToggle} /></label>
+      <div className="d-deal-score">
+        {researching ? <span className="d-small">Scoring…</span> : (<>
+          <RadarSeal scores={c.scores} size={40} stroke={scoreColor(comp)} />
+          <span className="d-deal-n">{comp != null ? comp.toFixed(1) : "–"}</span>
+        </>)}
+      </div>
+      <div className="d-deal-main">
+        <div className="d-deal-h">
+          <span className="d-deal-name">{c.name}</span>
+          {isInd && <span className="d-badge-s">Individual</span>}
+          {c.preemption && <span className="d-badge-s">Pre-emption</span>}
+          {c.priority === "High" && <span className="d-badge-s err">High</span>}
+        </div>
+        <div className="d-meta">{[c.geo, c.stage, c.sector, tam > 0 ? "TAM " + formatCompactUSD(tam) : ""].filter(Boolean).join(" · ")}</div>
+        <div className={"d-deal-s" + (failed ? " err" : "")}>{c.oneLiner || "Waiting for AI research…"}</div>
+        {tags.length > 0 && <div className="d-tags">{tags.slice(0, 3).map(t => <span key={t} className="d-tag">{t}</span>)}</div>}
+        <div className="d-deal-f" onClick={(e) => e.stopPropagation()}>
+          <select className="d-pill-select" value={c.status} onChange={(e) => updateCompany(c.id, { status: e.target.value })}>
+            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button className={"d-mini" + (c.starred ? " on" : "")} title={c.starred ? "Unstar" : "Star"} onClick={() => updateCompany(c.id, { starred: !c.starred, starredAt: !c.starred ? Date.now() : null })}>{c.starred ? "★" : "☆"}</button>
+          <button className={"d-mini" + (c.dtm ? " on" : "")} title="Deal Team Meeting" onClick={() => updateCompany(c.id, { dtm: !c.dtm })}>DTM</button>
+          {c.affinityUrl && <span className="d-small">Affinity ✓</span>}
+          <span className="d-grow" />
+          {(c.scores === null || failed) && !researching && <button className="d-mini pri" onClick={() => runDiligence(c.id)}>{failed ? "Retry" : "Score"}</button>}
+          <DMenu id={"d-deal-more-" + c.id} items={[
+            [researching ? "Scoring…" : (c.scores && !failed ? "Re-score" : "Score now"), () => runDiligence(c.id), "Web research + matrix", researching],
+            [researchingTam ? "Sizing TAM…" : (tam > 0 ? "Re-size TAM" : "Size TAM"), () => runTam(c.id), tam > 0 ? "Now " + formatCompactUSD(tam) : "", researchingTam],
+            [pushing ? "Pushing…" : (c.affinityUrl ? "Re-push to Affinity" : "Push to Affinity"), (e) => onPushAffinity(c, { stopPropagation() {} }), "", pushing],
+            [c.preemption ? "Remove pre-emption" : "Mark pre-emption", () => updateCompany(c.id, { preemption: !c.preemption })],
+            [isInd ? "Mark as company" : "Mark as individual", () => updateCompany(c.id, { entityType: isInd ? "Company" : "Individual" })],
+          ]} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DPopover = ({ label, children, id, active }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  return (
+    <div className="d-menu-wrap" ref={ref}>
+      <button className={"d-chip" + (active ? " on" : "")} id={id} onClick={() => setOpen(!open)}>{label} ▾</button>
+      {open && <div className="d-pop d-pop-pad">{children}</div>}
+    </div>
+  );
+};
+// ===================== END DESKTOP LAYER =====================
+
 // ===================== END PHONE LAYER =====================
 
 
@@ -7761,136 +7916,9 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   ];
 
   return (
-    <div className="app-container" style={{ minHeight: "100vh", background: PAPER, color: INK, fontFamily: fontStack.ui }}>
-      {/* Header */}
-      {!isPhone && (<div className="app-header" style={{ borderBottom: `1px solid ${INK}`, padding: "18px 28px 0 28px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          
-          <div style={{ display: "flex", alignItems: "baseline", gap: 24, flexWrap: "wrap" }}>
-            <div className="app-title" style={{ fontFamily: fontStack.display, fontSize: 30, lineHeight: 1.1, marginBottom: 14 }}>
-              SL Deals
-            </div>
-            
-            <div className="header-actions" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-              <Btn 
-                small 
-                onClick={() => setCmdKOpen(true)} 
-                style={{ 
-                  borderColor: "rgba(0, 0, 0, 0.35)", 
-                  color: INK, 
-                  fontFamily: fontStack.mono, 
-                  fontSize: 11, 
-                  padding: "4px 12px",
-                  background: "rgba(0, 0, 0, 0.06)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  borderRadius: 4
-                }}
-                title="Press ⌘K or Ctrl+K to search anything in SL Deals"
-              >
-                <span>🔍 Search</span>
-                <kbd style={{
-                  background: "rgba(0, 0, 0, 0.08)",
-                  padding: "1px 5px",
-                  borderRadius: 3,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  fontFamily: fontStack.mono
-                }}>⌘K</kbd>
-              </Btn>
-              <Btn 
-                small 
-                onClick={() => { setTab("settings"); setSelected(null); }} 
-                style={{ 
-                  borderColor: tab === "settings" ? BLUE : "rgba(0, 0, 0, 0.35)", 
-                  color: tab === "settings" ? "#FFFFFF" : INK, 
-                  background: tab === "settings" ? BLUE : "rgba(0, 0, 0, 0.06)",
-                  fontFamily: fontStack.mono, 
-                  fontSize: 11, 
-                  padding: "4px 12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  borderRadius: 4
-                }}
-                title="Manage & Test Anthropic, Affinity CRM & Granola API Keys"
-              >
-                <span>⚙️ Settings</span>
-              </Btn>
-              <Btn 
-                small 
-                onClick={() => setIsReminderModalOpen(true)} 
-                style={{ 
-                  borderColor: reminders.length > 0 ? "#000000" : "rgba(0, 0, 0, 0.35)", 
-                  color: reminders.length > 0 ? "#000000" : INK, 
-                  background: reminders.length > 0 ? "rgba(0, 0, 0, 0.1)" : "rgba(0, 0, 0, 0.06)",
-                  fontFamily: fontStack.mono, 
-                  fontSize: 11, 
-                  padding: "4px 12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  borderRadius: 4,
-                  position: "relative"
-                }}
-                title="Recontact Reminders for entities added 2+ weeks ago"
-              >
-                <span>🔔 Reminders</span>
-                {reminders.length > 0 && (
-                  <span style={{
-                    background: "#C00000",
-                    color: "#FFFFFF",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    padding: "1px 6px",
-                    borderRadius: 10,
-                    lineHeight: 1
-                  }}>
-                    {reminders.length}
-                  </span>
-                )}
-              </Btn>
-              <Btn 
-                small 
-                onClick={exportWholeDatabaseExcel} 
-                className="desktop-only"
-                style={{ 
-                  borderColor: BLUE, 
-                  color: BLUE, 
-                  fontFamily: fontStack.mono, 
-                  fontSize: 11, 
-                  padding: "4px 10px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4
-                }}
-              >
-                📥 Export Database (Excel)
-              </Btn>
-            </div>
-          </div>
-        </div>
-        <div className="tab-bar-container desktop-only" style={{ display: "flex", gap: 0 }}>
-          {tabs.map(([k, label]) => (
-            <button
-              key={k}
-              className={`tab-button ${tab === k ? "active" : ""}`}
-              onClick={() => { setTab(k); setSelected(null); }}
-              style={{
-                fontFamily: fontStack.ui, fontSize: 13, fontWeight: 500, cursor: "pointer",
-                background: "transparent", border: "none",
-                borderBottom: tab === k ? `3px solid ${BLUE}` : "3px solid transparent",
-                color: tab === k ? INK : FADE, padding: "10px 16px",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      )}
+    <div className={"app-container" + (isPhone ? "" : " d-app")} style={{ minHeight: "100vh", background: PAPER, color: INK, fontFamily: fontStack.ui }}>
+      {!isPhone && <DSidebar tab={tab} go={(k) => { setTab(k); setSelected(null); }} />}
+      {!isPhone && <DTopbar title={D_TITLES[tab] || "SL Deals"} onSearch={() => setCmdKOpen(true)} reminders={reminders.length} onReminders={() => setIsReminderModalOpen(true)} onExport={exportWholeDatabaseExcel} onSettings={() => { setTab("settings"); setSelected(null); }} />}
 
       {isPhone ? (<><PhoneNav tab={tab} go={phoneGo} /><PhoneCtx.Provider value={phoneCtx}><PhoneMenu open={phoneMenu} onClose={() => setPhoneMenu(false)} tab={tab} go={phoneGo} extra={[["Search everything", () => setCmdKOpen(true)], ["Reminders", () => setIsReminderModalOpen(true), reminders.length ? String(reminders.length) : ""]]} /></PhoneCtx.Provider></>)
         : <MobileNav tab={tab} setTab={setTab} tabs={tabs} setSelected={setSelected} />}
@@ -9003,360 +9031,84 @@ Construct the final email now. Maintain the exact formatting of the examples abo
   const hasApiKey = !!localStorage.getItem("anthropic_api_key");
 
   return (
-    <div>
-      {/* Diligence Queue Panel */}
-      {(unscoredCount > 0 || queueActive) && (
-        <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: "16px 20px", marginBottom: 20, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-            <div>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>AI Diligence Scorer Queue</span>
-              <span style={{ fontSize: 12, color: FADE, marginLeft: 10 }}>
-                {unscoredCount} of {companies.length} companies require web research & matrix scoring.
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {!queueActive ? (
-                <Btn 
-                  small 
-                  primary 
-                  onClick={() => {
-                    // Reset scores of failed companies to null to pick them up in queue
-                    setCompanies(cs => cs.map(c => {
-                      if (c.oneLiner && c.oneLiner.startsWith("Research failed:")) {
-                        return {
-                          ...c,
-                          scores: null,
-                          rationale: {},
-                          oneLiner: ""
-                        };
-                      }
-                      return c;
-                    }));
-                    setShouldStartQueue(true);
-                  }} 
-                  disabled={!hasApiKey || unscoredCount === 0}
-                >
-                  ▶ Start Diligence Queue
-                </Btn>
-              ) : (
-                <Btn small onClick={() => setQueueActive(false)}>
-                  ⏸ Pause Queue
-                </Btn>
-              )}
-            </div>
+    <div className="d-pipe">
+      {(unscoredCount > 0 || queueActive || unSizedTamCount > 0 || tamQueueActive) && (
+        <div className="d-strip" id="d-queue-strip">
+          <div className="d-strip-i">
+            <span className="d-strip-t">{queueActive ? (queueLog || "Scoring…") : `${unscoredCount} unscored`}</span>
+            {queueActive && queueTotal > 0 && <span className="d-prog"><span style={{ width: `${((queueTotal - unscoredCount) / queueTotal) * 100}%` }} /></span>}
+            {!queueActive
+              ? <button className="d-btn sm" id="d-start-diligence" disabled={!hasApiKey || unscoredCount === 0} onClick={() => {
+                  setCompanies(cs => cs.map(c => (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? { ...c, scores: null, rationale: {}, oneLiner: "" } : c));
+                  setShouldStartQueue(true);
+                }}>Start scoring</button>
+              : <button className="d-btn sm" onClick={() => setQueueActive(false)}>Pause</button>}
           </div>
-          
-          {queueActive && queueTotal > 0 && (
-            <div style={{ width: "100%", height: 6, background: PAPER, borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ width: `${((queueTotal - unscoredCount) / queueTotal) * 100}%`, height: "100%", background: BLUE, transition: "width 0.3s" }} />
-            </div>
-          )}
-
-          {queueLog && (
-            <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: queueLog.includes("[Error]") ? RUST : BLUE }}>
-              {queueLog}
-            </div>
-          )}
-          
-          {!hasApiKey && (
-            <div style={{ fontSize: 11.5, color: RUST, fontWeight: 500 }}>
-              * Paste your Claude API Key in the header input to enable the automatic diligence queue.
-            </div>
-          )}
+          <span className="d-strip-sep" />
+          <div className="d-strip-i">
+            <span className="d-strip-t">{tamQueueActive ? (tamQueueLog || "Sizing…") : `${unSizedTamCount} need TAM`}</span>
+            {tamQueueActive && tamQueueTotal > 0 && <span className="d-prog"><span style={{ width: `${((tamQueueTotal - unSizedTamCount) / tamQueueTotal) * 100}%` }} /></span>}
+            {!tamQueueActive
+              ? <button className="d-btn sm" id="d-start-tam" disabled={!hasApiKey || unSizedTamCount === 0} onClick={() => {
+                  setCompanies(cs => cs.map(c => (c.marketStudy && c.marketStudy.problemThesis && c.marketStudy.problemThesis.startsWith("TAM calculation failed:")) ? { ...c, marketStudy: null } : c));
+                  setShouldStartTamQueue(true);
+                }}>Start TAM</button>
+              : <button className="d-btn sm" onClick={() => setTamQueueActive(false)}>Pause</button>}
+          </div>
+          {!hasApiKey && <span className="d-err">Add a Claude API key in Settings to run queues.</span>}
+          {(/\[Error\]/.test(queueLog || "") || /\[Error\]/.test(tamQueueLog || "")) && <span className="d-err">{/\[Error\]/.test(queueLog || "") ? queueLog : tamQueueLog}</span>}
         </div>
       )}
 
-      {/* AI TAM Sizer Queue Panel */}
-      {(unSizedTamCount > 0 || tamQueueActive) && (
-        <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: "16px 20px", marginBottom: 20, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-            <div>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>AI TAM Sizer Queue</span>
-              <span style={{ fontSize: 12, color: FADE, marginLeft: 10 }}>
-                {unSizedTamCount} of {companies.length} companies require TAM sizing & explanation refinement.
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {!tamQueueActive ? (
-                <Btn 
-                  small 
-                  primary 
-                  onClick={() => {
-                    // Reset failed TAM sizings to pick them up in queue
-                    setCompanies(cs => cs.map(c => {
-                      if (c.marketStudy && c.marketStudy.problemThesis && c.marketStudy.problemThesis.startsWith("TAM calculation failed:")) {
-                        return {
-                          ...c,
-                          marketStudy: null
-                        };
-                      }
-                      return c;
-                    }));
-                    setShouldStartTamQueue(true);
-                  }} 
-                  disabled={!hasApiKey || unSizedTamCount === 0}
-                  style={{
-                    background: "linear-gradient(135deg, #000000 0%, #000000 100%)",
-                    borderColor: "#000000",
-                    color: "#FFFFFF"
-                  }}
-                >
-                  ▶ Start TAM Sizer Queue
-                </Btn>
-              ) : (
-                <Btn small onClick={() => setTamQueueActive(false)}>
-                  ⏸ Pause TAM Queue
-                </Btn>
-              )}
-            </div>
-          </div>
-          
-          {tamQueueActive && tamQueueTotal > 0 && (
-            <div style={{ width: "100%", height: 6, background: PAPER, borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ width: `${((tamQueueTotal - unSizedTamCount) / tamQueueTotal) * 100}%`, height: "100%", background: "#000000", transition: "width 0.3s" }} />
-            </div>
-          )}
-
-          {tamQueueLog && (
-            <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: tamQueueLog.includes("[Error]") ? RUST : "#000000" }}>
-              {tamQueueLog}
-            </div>
-          )}
-          
-          {!hasApiKey && (
-            <div style={{ fontSize: 11.5, color: RUST, fontWeight: 500 }}>
-              * Paste your Claude API Key in the header input to enable the automatic TAM sizer queue.
-            </div>
-          )}
+      <div className="d-filterrow" id="d-pipe-filters">
+        <div className="d-search">
+          <DIcon k="search" size={15} w={2} />
+          <input placeholder="Search companies, sectors…" value={q} onChange={(e) => setQ(e.target.value)} id="d-pipe-q" />
         </div>
-      )}
-
-      {/* Filter and Search Bar */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
-        <Input placeholder="Search companies, sectors..." value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 220 }} />
-        {["All", ...STATUSES, "Deal Team Meeting", "Starred", "Pre-emption"].map((s) => (
-          <Btn 
-            key={s} 
-            small 
-            onClick={() => setStatusFilter(s === "All" ? "all" : s)} 
-            style={{ 
-              borderColor: statusFilter === (s === "All" ? "all" : s) 
-                ? (s === "Deal Team Meeting" ? "#000000" : s === "Starred" ? "#000000" : s === "Pre-emption" ? "#000000" : INK) 
-                : LINE,
-              color: statusFilter === (s === "All" ? "all" : s) 
-                ? (s === "Deal Team Meeting" ? "#000000" : s === "Starred" ? "#000000" : s === "Pre-emption" ? "#000000" : INK) 
-                : FADE,
-              background: statusFilter === (s === "All" ? "all" : s) 
-                ? (s === "Deal Team Meeting" ? "rgba(0, 0, 0, 0.05)" : s === "Starred" ? "rgba(0, 0, 0, 0.05)" : s === "Pre-emption" ? "rgba(0, 0, 0, 0.05)" : "transparent") 
-                : "transparent",
-              fontWeight: statusFilter === (s === "All" ? "all" : s) ? 600 : 400
-            }}
-          >
-            {s === "Starred" ? "★ Starred" : s}
-          </Btn>
-        ))}
-        
-        <div style={{ display: "flex", gap: 3, background: PAPER, border: `1px solid ${LINE}`, borderRadius: 3, padding: 3 }}>
-          <Btn 
-            small 
-            onClick={() => setTypeFilter("all")} 
-            style={{ 
-              background: typeFilter === "all" ? INK : "transparent", 
-              color: typeFilter === "all" ? "#FFFFFF" : FADE,
-              borderColor: "transparent",
-              padding: "4px 9px",
-              fontWeight: typeFilter === "all" ? 600 : 400
-            }}
-          >
-            All Entities ({companies.length})
-          </Btn>
-          <Btn 
-            small 
-            onClick={() => setTypeFilter("Company")} 
-            style={{ 
-              background: typeFilter === "Company" ? BLUE : "transparent", 
-              color: typeFilter === "Company" ? "#FFFFFF" : FADE,
-              borderColor: "transparent",
-              padding: "4px 9px",
-              fontWeight: typeFilter === "Company" ? 600 : 400
-            }}
-          >
-            🏢 Companies ({companyCount})
-          </Btn>
-          <Btn 
-            small 
-            onClick={() => setTypeFilter("Individual")} 
-            style={{ 
-              background: typeFilter === "Individual" ? "#DDDDDD" : "transparent", 
-              color: typeFilter === "Individual" ? "#FFFFFF" : FADE,
-              borderColor: "transparent",
-              padding: "4px 9px",
-              fontWeight: typeFilter === "Individual" ? 600 : 400
-            }}
-          >
-            👤 Individuals ({individualCount})
-          </Btn>
-        </div>
-
-        <select 
-          value={geoFilter} 
-          onChange={(e) => setGeoFilter(e.target.value)} 
-          style={{ padding: 8, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2 }}
-        >
-          <option value="all">All Regions</option>
-          <option value="EU">EU</option>
-          <option value="Nordics">Nordics</option>
-          <option value="US">US</option>
-          <option value="UK">UK</option>
-          <option value="Global">Global</option>
+        <DChips items={[["all", "All"], ...STATUSES.map(s => [s, s])]} value={statusFilter} onChange={setStatusFilter} />
+        {(() => {
+          const nActive = (typeFilter !== "all" ? 1 : 0) + (geoFilter !== "all" ? 1 : 0) + (["Deal Team Meeting", "Starred", "Pre-emption"].includes(statusFilter) ? 1 : 0);
+          return (
+            <DPopover label={nActive ? `Filters · ${nActive}` : "Filters"} id="d-pipe-filter-btn" active={nActive > 0}>
+              <div className="d-label">Entity</div>
+              <DChips items={[["all", `All (${companies.length})`], ["Company", `Companies (${companyCount})`], ["Individual", `Individuals (${individualCount})`]]} value={typeFilter} onChange={setTypeFilter} />
+              <div className="d-label">Region</div>
+              <DChips items={[["all", "All"], ["EU", "EU"], ["Nordics", "Nordics"], ["US", "US"], ["UK", "UK"], ["Global", "Global"]]} value={geoFilter} onChange={setGeoFilter} />
+              <div className="d-label">Flags</div>
+              <DChips items={[["Starred", "★ Starred"], ["Deal Team Meeting", "DTM"], ["Pre-emption", "Pre-emption"]]} value={statusFilter} onChange={(k) => setStatusFilter(statusFilter === k ? "all" : k)} />
+              {nActive > 0 && <button className="d-link" onClick={() => { setTypeFilter("all"); setGeoFilter("all"); if (["Deal Team Meeting", "Starred", "Pre-emption"].includes(statusFilter)) setStatusFilter("all"); }}>Clear filters</button>}
+            </DPopover>
+          );
+        })()}
+        <select className="d-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)} id="d-pipe-sort">
+          <option value="newest">Newest</option>
+          <option value="score_desc">Score ↓</option>
+          <option value="score_asc">Score ↑</option>
         </select>
-
-        <select 
-          value={sortBy} 
-          onChange={(e) => setSortBy(e.target.value)} 
-          style={{ padding: 8, fontFamily: fontStack.ui, fontSize: 13, border: `1px solid ${LINE}`, background: "#FFFFFF", borderRadius: 2, marginLeft: "auto" }}
-        >
-          <option value="newest">Sort: Newest</option>
-          <option value="score_desc">Sort: Score (High → Low)</option>
-          <option value="score_asc">Sort: Score (Low → High)</option>
-        </select>
-
-        <div style={{ display: "flex", gap: 2, background: "#EEEEEE", border: `1px solid ${LINE}`, borderRadius: 2, padding: 2 }}>
-          <Btn 
-            small 
-            onClick={() => setViewMode("grid")}
-            style={{ 
-              background: viewMode === "grid" ? BLUE : "transparent", 
-              color: viewMode === "grid" ? "#FFFFFF" : FADE,
-              borderColor: "transparent",
-              padding: "4px 8px",
-              fontWeight: viewMode === "grid" ? 600 : 400
-            }}
-          >
-            Grid
-          </Btn>
-          <Btn 
-            small 
-            onClick={() => setViewMode("table")}
-            style={{ 
-              background: viewMode === "table" ? BLUE : "transparent", 
-              color: viewMode === "table" ? "#FFFFFF" : FADE,
-              borderColor: "transparent",
-              padding: "4px 8px",
-              fontWeight: viewMode === "table" ? 600 : 400
-            }}
-          >
-            Table
-          </Btn>
+        <div className="d-seg">
+          <button className={viewMode === "grid" ? "on" : ""} onClick={() => setViewMode("grid")}>Grid</button>
+          <button className={viewMode === "table" ? "on" : ""} onClick={() => setViewMode("table")}>Table</button>
         </div>
-        
-        <div style={{ fontFamily: fontStack.mono, fontSize: 11, color: FADE }}>
-          {list.length} {list.length === 1 ? "opportunity" : "opportunities"}
-        </div>
+        <span className="d-count">{list.length}</span>
+        <DMenu id="d-pipe-more" items={[
+          [list.length > 0 && list.every(c => selectedCompanyIds.includes(c.id)) ? "Deselect all in view" : "Select all in view", toggleSelectAll],
+          ["Export view (Excel)", () => exportStageExcel(`Pipeline Stage: ${statusFilter}`, list), `${list.length} rows`, list.length === 0],
+        ]} />
       </div>
 
-      {/* Selection & Bulk Actions Panel */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: selectedCompanyIds.length > 0 ? "rgba(0, 0, 0, 0.03)" : CARD,
-        border: `1px solid ${selectedCompanyIds.length > 0 ? BLUE : LINE}`,
-        padding: "10px 16px",
-        marginBottom: 16,
-        borderRadius: 4,
-        flexWrap: "wrap",
-        gap: 12
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, userSelect: "none" }}>
-            <input 
-              type="checkbox"
-              checked={list.length > 0 && list.every(c => selectedCompanyIds.includes(c.id))}
-              onChange={toggleSelectAll}
-              style={{ cursor: "pointer", width: 15, height: 15 }}
-            />
-            <span style={{ fontWeight: 500 }}>Select All in Current View</span>
-          </label>
-          <span style={{ fontSize: 12, color: FADE, fontFamily: fontStack.mono }}>
-            ({selectedCompanyIds.length} selected overall)
-          </span>
-        </div>
+      {affinityBulkLog && <div className="d-note">{affinityBulkLog}</div>}
 
-      {affinityBulkLog && (
-        <div style={{
-          fontFamily: fontStack.mono,
-          fontSize: 11.5,
-          color: "#000000",
-          background: "rgba(0, 0, 0, 0.06)",
-          border: "1px solid rgba(0, 0, 0, 0.2)",
-          padding: "8px 14px",
-          marginBottom: 16,
-          borderRadius: 4,
-          fontWeight: 600
-        }}>
-          {affinityBulkLog}
+      {selectedCompanyIds.length > 0 && (
+        <div className="d-selbar" id="d-selbar">
+          <label className="d-selbar-c"><input type="checkbox" checked={list.length > 0 && list.every(c => selectedCompanyIds.includes(c.id))} onChange={toggleSelectAll} /> {selectedCompanyIds.length} selected</label>
+          <button className="d-btn sm" onClick={runDiligenceOnSelection} disabled={!hasApiKey || queueActive}>Score</button>
+          <button className="d-btn sm" onClick={runTamOnSelection} disabled={!hasApiKey || tamQueueActive}>Size TAM</button>
+          <button className="d-btn sm" onClick={runBulkAffinityPush} disabled={pushingBulkAffinity}>{pushingBulkAffinity ? "Syncing…" : "Push to Affinity"}</button>
+          <button className="d-btn sm" onClick={() => exportStageExcel(`Selected Companies Export`, companies.filter(c => selectedCompanyIds.includes(c.id)))}>Export</button>
+          <span className="d-grow" />
+          <button className="d-link" onClick={() => setSelectedCompanyIds([])}>Clear</button>
         </div>
       )}
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {selectedCompanyIds.length > 0 && (
-            <>
-              <Btn 
-                small 
-                onClick={runBulkAffinityPush}
-                disabled={pushingBulkAffinity}
-                style={{ borderColor: "#000000", color: "#000000", fontWeight: 600, background: "rgba(0, 0, 0, 0.05)" }}
-              >
-                {pushingBulkAffinity ? "⏳ Syncing..." : "🌐 Push Selected to Affinity"}
-              </Btn>
-              <Btn 
-                small 
-                onClick={runDiligenceOnSelection}
-                disabled={!hasApiKey || queueActive}
-                style={{ borderColor: BLUE, color: BLUE, fontWeight: 600 }}
-              >
-                ⚡ Run AI Diligence
-              </Btn>
-              <Btn 
-                small 
-                onClick={runTamOnSelection}
-                disabled={!hasApiKey || tamQueueActive}
-                style={{ borderColor: "#000000", color: "#000000", fontWeight: 600 }}
-              >
-                🔮 Run Market Sizing
-              </Btn>
-              <Btn 
-                small 
-                onClick={() => {
-                  const selectedList = companies.filter(c => selectedCompanyIds.includes(c.id));
-                  exportStageExcel(`Selected Companies Export`, selectedList);
-                }}
-                style={{ borderColor: "#000000", color: "#000000", fontWeight: 600 }}
-              >
-                📥 Export Selected
-              </Btn>
-              <Btn 
-                small 
-                onClick={() => setSelectedCompanyIds([])}
-                style={{ borderColor: RUST, color: RUST }}
-              >
-                🚫 Clear Selection
-              </Btn>
-              <span style={{ color: LINE, margin: "0 4px" }}>|</span>
-            </>
-          )}
-          
-          <Btn 
-            small 
-            onClick={() => exportStageExcel(`Pipeline Stage: ${statusFilter}`, list)}
-            disabled={list.length === 0}
-            style={{ borderColor: INK, color: INK, display: "inline-flex", alignItems: "center", gap: 4 }}
-          >
-            📥 Export Entire Stage (Excel)
-          </Btn>
-        </div>
-      </div>
 
       {/* Deal Team Meeting Email Builder Console */}
       {statusFilter === "Deal Team Meeting" && (
@@ -9956,443 +9708,12 @@ Construct the final email now. Maintain the exact formatting of the examples abo
       )}
 
       {viewMode === "grid" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 14 }}>
-        {list.map((c) => {
-          const comp = compositeScore(c.scores);
-          return (
-            <div
-              key={c.id}
-              onClick={() => setSelected(c.id)}
-              style={{ 
-                background: CARD, 
-                border: selectedCompanyIds.includes(c.id) 
-                  ? `2.5px solid ${BLUE}` 
-                  : c.entityType === "Individual" 
-                    ? `1px solid rgba(221, 221, 221, 0.4)` 
-                    : `1px solid ${LINE}`, 
-                borderLeft: c.entityType === "Individual" ? `4px solid #DDDDDD` : `1px solid ${selectedCompanyIds.includes(c.id) ? BLUE : LINE}`,
-                padding: 16, 
-                cursor: "pointer", 
-                display: "flex", 
-                gap: 14,
-                boxShadow: selectedCompanyIds.includes(c.id) ? "0 4px 12px rgba(0, 0, 0, 0.08)" : "none",
-                position: "relative"
-              }}
-            >
-              <div 
-                style={{ display: "flex", alignItems: "center", paddingRight: 4 }} 
-                onClick={(e) => e.stopPropagation()}
-              >
-                <input 
-                  type="checkbox" 
-                  checked={selectedCompanyIds.includes(c.id)} 
-                  onChange={() => toggleSelectCompany(c.id)} 
-                  style={{ cursor: "pointer", width: 17, height: 17 }}
-                />
-              </div>
-              <div style={{ textAlign: "center", width: 56, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                {researchingIds[c.id] ? (
-                  <div style={{ height: 56, width: 56, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: BLUE, fontWeight: 600 }}>
-                    Scoring...
-                  </div>
-                ) : (
-                  <>
-                    <RadarSeal scores={c.scores} stroke={scoreColor(comp)} />
-                    <div style={{ fontFamily: fontStack.mono, fontSize: 13, fontWeight: 500, color: scoreColor(comp) }}>
-                      {comp != null ? comp.toFixed(1) : "—"}
-                    </div>
-                  </>
-                )}
-              </div>
-              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>
-                      <span>{c.name}</span>
-                      {c.entityType === "Individual" ? (
-                        <span 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateCompany(c.id, { entityType: "Company" });
-                          }}
-                          title="Click to toggle to Company"
-                          style={{
-                            marginLeft: 6,
-                            fontSize: 9,
-                            fontFamily: fontStack.mono,
-                            padding: "1px 6px",
-                            borderRadius: 3,
-                            background: "rgba(221, 221, 221, 0.12)",
-                            color: "#DDDDDD",
-                            border: "1px solid rgba(221, 221, 221, 0.3)",
-                            fontWeight: 700,
-                            lineHeight: 1,
-                            cursor: "pointer",
-                            transition: "all 0.15s"
-                          }}
-                        >
-                          👤 INDIVIDUAL ⇄
-                        </span>
-                      ) : (
-                        <span 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateCompany(c.id, { entityType: "Individual" });
-                          }}
-                          title="Click to toggle to Individual"
-                          style={{
-                            marginLeft: 6,
-                            fontSize: 9,
-                            fontFamily: fontStack.mono,
-                            padding: "1px 6px",
-                            borderRadius: 3,
-                            background: "rgba(0, 0, 0, 0.08)",
-                            color: BLUE,
-                            border: "1px solid rgba(0, 0, 0, 0.2)",
-                            fontWeight: 600,
-                            lineHeight: 1,
-                            cursor: "pointer",
-                            transition: "all 0.15s"
-                          }}
-                        >
-                          🏢 COMPANY ⇄
-                        </span>
-                      )}
-                      {c.preemption && (
-                        <span style={{
-                          marginLeft: 6,
-                          fontSize: 9,
-                          fontFamily: fontStack.mono,
-                          padding: "1px 4px",
-                          borderRadius: 2,
-                          background: "rgba(0, 0, 0, 0.1)",
-                          color: "#000000",
-                          border: "1px solid rgba(0, 0, 0, 0.2)",
-                          fontWeight: 700,
-                          lineHeight: 1
-                        }}>
-                          🎯 PRE-EMPTION
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      {c.geo && (
-                        <span style={{ 
-                          fontSize: 9.5, 
-                          fontFamily: fontStack.mono, 
-                          padding: "1px 4px", 
-                          borderRadius: 2, 
-                          background: "rgba(0, 0, 0, 0.06)",
-                          color: BLUE,
-                          border: `1px solid rgba(0, 0, 0, 0.12)`,
-                          fontWeight: 500
-                        }}>
-                          {c.geo}
-                        </span>
-                      )}
-                      <span style={{ fontFamily: fontStack.mono, fontSize: 10, color: FADE }}>{c.stage}</span>
-                      {getTamValue(c) > 0 && (
-                        <span style={{ 
-                          fontSize: 9.5, 
-                          fontFamily: fontStack.mono, 
-                          padding: "1px 4px", 
-                          borderRadius: 2, 
-                          background: "rgba(0, 0, 0, 0.06)",
-                          color: "rgb(0, 0, 0)",
-                          border: `1px solid rgba(0, 0, 0, 0.12)`,
-                          fontWeight: 600
-                        }}>
-                          TAM: {formatCompactUSD(getTamValue(c))}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {c.url && (
-                    <div style={{ marginTop: 2, marginBottom: 4 }}>
-                      <a 
-                        href={c.url} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        onClick={(e) => e.stopPropagation()} 
-                        style={{ 
-                          fontFamily: fontStack.mono, 
-                          fontSize: 11, 
-                          color: BLUE, 
-                          textDecoration: "none", 
-                          display: "inline-flex", 
-                          alignItems: "center", 
-                          gap: 3, 
-                          opacity: 0.8
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                        onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
-                      >
-                        <span>↗</span> {c.url.replace(/^https?:\/\/(www\.)?/, "")}
-                      </a>
-                    </div>
-                  )}
-                  <div style={{ fontSize: 12.5, color: FADE, margin: "4px 0 8px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                    {c.oneLiner || "Waiting for AI research queue..."}
-                  </div>
-                  {(() => {
-                    const dynamicTags = getCompanyTags(c, founderProfiles);
-                    if (dynamicTags.length === 0) return null;
-                    return (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                        {dynamicTags.map(tag => {
-                          const style = TAG_STYLES[tag] || { bg: "rgba(119, 119, 119, 0.08)", text: "#777777", border: "rgba(119, 119, 119, 0.2)" };
-                          return (
-                            <span key={tag} style={{
-                              fontSize: 9,
-                              fontFamily: fontStack.mono,
-                              padding: "1px 5px",
-                              borderRadius: 3,
-                              background: style.bg,
-                              color: style.text,
-                              border: `1px solid ${style.border}`,
-                              fontWeight: 600
-                            }}>
-                              {tag}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
-                  <select
-                    value={c.status}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      updateCompany(c.id, { status: e.target.value });
-                    }}
-                    style={{
-                      fontFamily: fontStack.mono,
-                      fontSize: 10,
-                      padding: "2px 20px 2px 7px",
-                      border: `1px solid ${statusColor(c.status)}`,
-                      color: statusColor(c.status),
-                      borderRadius: 999,
-                      background: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(statusColor(c.status))}' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 6px center`,
-                      backgroundSize: "8px 8px",
-                      appearance: "none",
-                      WebkitAppearance: "none",
-                      cursor: "pointer",
-                      outline: "none",
-                      marginRight: 5,
-                      fontWeight: 500,
-                      transition: "all 0.15s ease-in-out",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "rgba(0, 0, 0, 0.03)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    {STATUSES.map((status) => (
-                      <option key={status} value={status} style={{ color: INK }}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateCompany(c.id, { dtm: !c.dtm });
-                    }}
-                    style={{
-                      fontFamily: fontStack.mono,
-                      fontSize: 9.5,
-                      padding: "2px 7px",
-                      borderRadius: 999,
-                      border: `1px solid ${c.dtm ? "#000000" : LINE}`,
-                      background: c.dtm ? "rgba(0, 0, 0, 0.08)" : "transparent",
-                      color: c.dtm ? "#000000" : FADE,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      marginRight: 5,
-                      transition: "all 0.15s ease-in-out",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 3,
-                      outline: "none",
-                    }}
-                  >
-                    <span>{c.dtm ? "⚡ DTM" : "◇ DTM"}</span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateCompany(c.id, { starred: !c.starred, starredAt: !c.starred ? Date.now() : null });
-                    }}
-                    style={{
-                      fontFamily: fontStack.mono,
-                      fontSize: 9.5,
-                      padding: "2px 7px",
-                      borderRadius: 999,
-                      border: `1px solid ${c.starred ? "#000000" : LINE}`,
-                      background: c.starred ? "rgba(0, 0, 0, 0.08)" : "transparent",
-                      color: c.starred ? "#000000" : FADE,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      marginRight: 5,
-                      transition: "all 0.15s ease-in-out",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 3,
-                      outline: "none",
-                    }}
-                  >
-                    <span>{c.starred ? "★ Starred" : "☆ Star"}</span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateCompany(c.id, { preemption: !c.preemption });
-                    }}
-                    style={{
-                      fontFamily: fontStack.mono,
-                      fontSize: 9.5,
-                      padding: "2px 7px",
-                      borderRadius: 999,
-                      border: `1px solid ${c.preemption ? "#000000" : LINE}`,
-                      background: c.preemption ? "rgba(0, 0, 0, 0.08)" : "transparent",
-                      color: c.preemption ? "#000000" : FADE,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      marginRight: 5,
-                      transition: "all 0.15s ease-in-out",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 3,
-                      outline: "none",
-                    }}
-                  >
-                    <span>{c.preemption ? "🎯 Pre-emption" : "◇ Pre-emption"}</span>
-                  </button>
-                  
-                  {c.priority && c.priority !== "Medium" && (
-                    <span style={{ 
-                      fontSize: 9.5, 
-                      fontFamily: fontStack.mono, 
-                      padding: "1px 5px", 
-                      borderRadius: 3, 
-                      background: c.priority === "High" ? "rgba(192, 0, 0, 0.08)" : "rgba(119, 119, 119, 0.08)",
-                      color: c.priority === "High" ? RUST : FADE,
-                      border: `1px solid ${c.priority === "High" ? "rgba(192, 0, 0, 0.15)" : "rgba(119, 119, 119, 0.15)"}`,
-                      fontWeight: 500,
-                      marginRight: 2
-                    }}>
-                      {c.priority}
-                    </span>
-                  )}
-                  {c.sector && <Tag>{c.sector}</Tag>}
-
-                  {!researchingIds[c.id] && (
-                    <>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!localStorage.getItem("anthropic_api_key")) {
-                            alert("Please set your Anthropic API Key in the header first.");
-                            return;
-                          }
-                          runTamForId(c.id);
-                        }}
-                        disabled={researchingTamIds[c.id] || !localStorage.getItem("anthropic_api_key")}
-                        style={{
-                          marginLeft: "auto",
-                          fontFamily: fontStack.mono,
-                          fontSize: 9,
-                          padding: "2px 6px",
-                          background: researchingTamIds[c.id] ? "rgba(0, 0, 0, 0.08)" : (getTamValue(c) > 0 ? "transparent" : "#000000"),
-                          color: researchingTamIds[c.id] ? "#000000" : (getTamValue(c) > 0 ? "#000000" : "#FFFFFF"),
-                          border: getTamValue(c) > 0 ? "1px solid #000000" : "none",
-                          borderRadius: 2,
-                          cursor: "pointer",
-                          opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1,
-                          fontWeight: 600,
-                        }}
-                        title={researchingTamIds[c.id] ? "Sizing TAM using AI..." : "Run AI TAM Sizer calculation"}
-                      >
-                        {researchingTamIds[c.id] ? "⏳ SIZING TAM" : (getTamValue(c) > 0 ? `📊 TAM: ${formatCompactUSD(getTamValue(c))}` : "📊 SIZE TAM")}
-                      </button>
-
-                      {c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            runDiligenceForId(c.id);
-                          }}
-                          disabled={!localStorage.getItem("anthropic_api_key")}
-                          style={{
-                            marginLeft: 6,
-                            fontFamily: fontStack.mono,
-                            fontSize: 9,
-                            padding: "2px 6px",
-                            background: (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? RUST : BLUE,
-                            color: "#FFFFFF",
-                            border: "none",
-                            borderRadius: 2,
-                            cursor: "pointer",
-                            opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1
-                          }}
-                          title={!localStorage.getItem("anthropic_api_key") ? "Enter API Key in header to enable" : "Run web research & score now"}
-                        >
-                          {c.oneLiner && c.oneLiner.startsWith("Research failed:") ? "🔄 RETRY" : "⚡ SCORE"}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            runDiligenceForId(c.id);
-                          }}
-                          disabled={!localStorage.getItem("anthropic_api_key")}
-                          style={{
-                            marginLeft: 6,
-                            fontFamily: fontStack.mono,
-                            fontSize: 9,
-                            padding: "2px 6px",
-                            background: "transparent",
-                            color: BLUE,
-                            border: `1px solid ${BLUE}`,
-                            borderRadius: 2,
-                            cursor: "pointer",
-                            opacity: !localStorage.getItem("anthropic_api_key") ? 0.5 : 1
-                          }}
-                          title="Rerun web research & rescore"
-                        >
-                          🧠 RESCORE
-                        </button>
-                      )}
-                    </>
-                  )}
-                  <button
-                    onClick={(e) => handlePushSingleAffinity(c, e)}
-                    disabled={pushingSingleAffinity[c.id]}
-                    style={{
-                      marginLeft: 6,
-                      fontFamily: fontStack.mono,
-                      fontSize: 9,
-                      padding: "2px 6px",
-                      background: c.affinityUrl ? "rgba(0, 0, 0, 0.08)" : "rgba(0, 0, 0, 0.08)",
-                      color: c.affinityUrl ? "#000000" : "#000000",
-                      border: `1px solid ${c.affinityUrl ? "rgba(0, 0, 0, 0.3)" : "rgba(0, 0, 0, 0.3)"}`,
-                      borderRadius: 2,
-                      cursor: "pointer",
-                      fontWeight: 600
-                    }}
-                    title={c.affinityUrl ? "Synced to Affinity Deals list" : "Push to Affinity Deals list"}
-                  >
-                    {pushingSingleAffinity[c.id] ? "⏳" : c.affinityUrl ? "✓ AFFINITY" : "🌐 PUSH"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        <div className="d-grid">
+        {list.map((c) => (
+          <DDealCard key={c.id} c={c} founderProfiles={founderProfiles} selected={selectedCompanyIds.includes(c.id)} onToggle={() => toggleSelectCompany(c.id)} onOpen={() => setSelected(c.id)}
+            updateCompany={updateCompany} researching={!!researchingIds[c.id]} researchingTam={!!researchingTamIds[c.id]} runTam={runTamForId} runDiligence={runDiligenceForId}
+            onPushAffinity={handlePushSingleAffinity} pushing={!!pushingSingleAffinity[c.id]} />
+        ))}
       </div>
       ) : (
         <div style={{ overflowX: "auto", border: `1px solid ${LINE}`, background: CARD, borderRadius: 4, fontFamily: fontStack.ui }}>
@@ -24627,14 +23948,15 @@ CRITICAL INSTRUCTIONS FOR EXPERT DIRECTORY LIST:
           )}
 
           {/* Pipeline grid list cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 10 }}>
             {deepDives.map((dive, idx) => (
               <div 
                 key={dive.id} 
                 style={{ 
                   background: CARD, 
                   border: `1px solid ${LINE}`, 
-                  borderRadius: 3, 
+                  borderRadius: 10, 
+                  minWidth: 0,
                   padding: 18, 
                   display: "flex", 
                   justifyContent: "space-between", 
