@@ -87,7 +87,16 @@ def init_postgres():
     finally:
         conn.close()
 
+def _rest_configured():
+    return bool((os.environ.get("SUPABASE_URL") or get_stored_value_file("supabase_url")) and
+                (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
+                 or os.environ.get("SUPABASE_ANON_KEY") or get_stored_value_file("supabase_key")))
+
 def get_sql_value(key):
+    # Single source of truth: when the Supabase REST project is configured, a separate
+    # DATABASE_URL Postgres (e.g. an old database on Render) is ignored.
+    if _rest_configured():
+        return None
     conn = get_db_connection()
     if not conn:
         return None
@@ -104,6 +113,8 @@ def get_sql_value(key):
     return None
 
 def set_sql_value(key, value):
+    if _rest_configured():
+        return False
     conn = get_db_connection()
     if not conn:
         return False
@@ -180,21 +191,31 @@ def set_supabase_rest_value(key, value):
         print(f"[Supabase REST Set Error for {key}] {e}")
         return False
 
-def get_stored_value(key):
-    # 1. Local file first: always present for this machine and never blocked by the network.
-    val = get_stored_value_file(key)
+_kv_memo = {}
 
-    # 2. Remote copies (fresh deployments with no local files yet)
+def get_stored_value(key):
+    # 1. Supabase first when configured, so every server (Mac, Render) shares the same settings.
+    val = None
+    if _rest_configured() and key not in ("supabase_url", "supabase_key"):
+        hit = _kv_memo.get(key)
+        if hit and time.time() - hit[0] < 30:
+            val = hit[1]
+        else:
+            val = get_supabase_rest_value(key)
+            _kv_memo[key] = (time.time(), val)
+    # 2. Local file (offline fallback / bootstrap), then a separate SQL database if no REST.
+    if val is None:
+        val = get_stored_value_file(key)
     if val is None:
         val = get_sql_value(key)
-    if val is None:
-        val = get_supabase_rest_value(key)
 
     # 4. Fallback to Environment Variables
     if val is None or val == "":
         env_map = {
             "anthropic_api_key": "ANTHROPIC_API_KEY",
+            "affinity_api_key": "AFFINITY_API_KEY",
             "granola_api_key": "GRANOLA_API_KEY",
+            "gradium_api_key": "GRADIUM_API_KEY",
             "groq_api_key": "GROQ_API_KEY",
             "openrouter_api_key": "OPENROUTER_API_KEY",
             "deepseek_api_key": "DEEPSEEK_API_KEY",
@@ -806,7 +827,16 @@ def safe_storage_key(key):
     return bool(key) and bool(SAFE_KEY_RE.match(key)) and ".." not in key
 
 def client_api_key(handler, header="X-Anthropic-API-Key"):
-    """A key sent by the browser is ignored if it is just the masked placeholder."""
+    """Server-saved key wins (one source of truth). The browser's key is only used when the
+    server has none, so an old key cached on a phone can no longer break scoring."""
+    stored_name = {"X-Anthropic-API-Key": "anthropic_api_key", "X-Granola-API-Key": "granola_api_key"}.get(header)
+    if stored_name:
+        try:
+            server_val = get_stored_value(stored_name)
+        except Exception:
+            server_val = None
+        if server_val and server_val != "configured_via_provider":
+            return server_val
     v = handler.headers.get(header)
     if not v or is_masked(v) or v == "configured_via_provider" or not v.isascii():
         return None
@@ -2467,7 +2497,7 @@ GRADIUM_BASE = "https://api.gradium.ai/api"
 GRADIUM_DEFAULT_VOICE = "YTpq7expH9539ERJ"
 
 def gradium_key():
-    return (os.environ.get("GRADIUM_API_KEY") or get_stored_value_file("gradium_api_key") or "").strip()
+    return (os.environ.get("GRADIUM_API_KEY") or get_stored_value("gradium_api_key") or "").strip()
 
 def gradium_tts(text, voice_id=None):
     body = {"text": text[:4000], "voice_id": (voice_id or GRADIUM_DEFAULT_VOICE), "output_format": "wav", "only_audio": True}
@@ -4283,6 +4313,7 @@ Respond ONLY with valid JSON.
                     
                 else:
                     # Write key directly to file (e.g. granola_api_key, groq_api_key, supabase_url, etc.)
+                    _kv_memo.pop(key, None)
                     set_sql_value(key, value)
                     set_supabase_rest_value(key, value)
                         
