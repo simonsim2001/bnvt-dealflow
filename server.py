@@ -1067,7 +1067,7 @@ def snapshot_db_if_due():
     except Exception as e:
         print(f"[Backup snapshot error] {e}")
 
-def read_db():
+def read_local_db():
     empty = {"companies": [], "investors": [], "deepDives": [], "founderProfiles": []}
     # 1. Local file is the primary copy (always written on every save).
     if os.path.exists(DB_PATH):
@@ -1097,6 +1097,63 @@ def read_db():
         except Exception as e:
             print(f"[Error parsing remote DB JSON] {e}")
     return empty
+
+# ---- Supabase as shared source of truth ----------------------------------------
+# Several servers (this Mac, Render) write to the same Supabase copy. Each one used to
+# upload its own full snapshot, so the last writer silently erased records added elsewhere.
+# Now every read merges the cloud copy in, and every upload merges the newest cloud copy first.
+_remote_cache = {"at": 0.0, "db": None}
+
+class RemoteUnavailable(Exception):
+    pass
+
+def fetch_remote_db(strict=False):
+    """Return the Supabase copy as a dict, None if none exists. strict=True raises on errors."""
+    if not supabase_configured():
+        return None
+    try:
+        has_sql = bool(os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DATABASE_URL") or os.environ.get("SUPABASE_DB_URL") or get_stored_value_file("supabase_db_url"))
+        val = get_sql_value(DB_KEY) if has_sql else None
+        if val is None:
+            sb_url = os.environ.get("SUPABASE_URL") or get_stored_value_file("supabase_url")
+            sb_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
+                      or os.environ.get("SUPABASE_ANON_KEY") or get_stored_value_file("supabase_key"))
+            if not sb_url or not sb_key:
+                return None
+            url = f"{sb_url.rstrip('/')}/rest/v1/key_value_store?key=eq.{quote(DB_KEY)}&select=value"
+            req = urllib.request.Request(url, headers=sb_headers(sb_key, {"Accept": "application/json"}), method="GET")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                rows = json.loads(resp.read().decode('utf-8'))
+            val = rows[0].get("value") if isinstance(rows, list) and rows else None
+        if not val:
+            return None
+        db = json.loads(val) if isinstance(val, str) else val
+        _remote_cache.update(at=time.time(), db=db)
+        return db
+    except Exception as e:
+        print(f"[Supabase fetch error] {e}")
+        if strict:
+            raise RemoteUnavailable(str(e))
+        return None
+
+def _record_count(db):
+    return sum(len(db.get(k) or []) for k in ("companies", "investors", "deepDives", "founderProfiles", "readingItems", "reports", "voiceSessions"))
+
+def read_db():
+    db = read_local_db()
+    if time.time() - _remote_cache["at"] < 20 and _remote_cache["db"] is not None:
+        remote = _remote_cache["db"]
+    else:
+        remote = fetch_remote_db()
+    if not remote:
+        return db
+    merged = merge_databases(db, remote)
+    if _record_count(merged) != _record_count(db) or len(merged.get("deletedIds") or []) != len(db.get("deletedIds") or []):
+        try:  # keep the local copy complete too (no upload needed: it came from Supabase)
+            atomic_write_json(DB_PATH, {"key": DB_KEY, "value": json.dumps(merged, ensure_ascii=False)})
+        except Exception as e:
+            print(f"[Local refresh from Supabase failed] {e}")
+    return merged
 
 def write_db(db):
     db_str = json.dumps(db, ensure_ascii=False)
@@ -1142,6 +1199,24 @@ def _mirror_worker():
                 _mirror_cond.wait()
             payload = _mirror_pending["payload"]
             _mirror_pending["payload"] = None
+        # Merge the newest cloud copy first so records added on another server are never erased.
+        try:
+            remote = fetch_remote_db(strict=True)
+        except RemoteUnavailable as e:
+            mirror_status["lastError"] = f"Supabase unreachable, upload postponed: {e}"
+            with _mirror_cond:
+                if _mirror_pending["payload"] is None:
+                    _mirror_pending["payload"] = payload
+            time.sleep(30)
+            continue
+        if remote:
+            try:
+                local = json.loads(payload)
+                merged = merge_databases(local, remote)
+                payload = json.dumps(merged, ensure_ascii=False)
+            except Exception as e:
+                print(f"[Mirror merge error] {e}")
+        _remote_cache.update(at=time.time(), db=json.loads(payload))
         ok_sql = set_sql_value(DB_KEY, payload)
         ok_rest = False if ok_sql else set_supabase_rest_value(DB_KEY, payload)
         try:
