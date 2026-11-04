@@ -201,6 +201,23 @@ async function callClaude(prompt, useSearch = false, costTier = "heavy") {
     .join("\n");
 }
 
+
+// True when a key exists in this browser OR on the server (Settings / Supabase / Render env).
+function hasServerKey(name) {
+  try { if (localStorage.getItem(name)) return true; } catch (e) {}
+  window.__srvKeys = window.__srvKeys || {};
+  if (window.__srvKeys[name] === undefined) {
+    try {
+      const x = new XMLHttpRequest();
+      x.open("GET", "/api/storage?key=" + encodeURIComponent(name), false);
+      x.send();
+      window.__srvKeys[name] = !!(JSON.parse(x.responseText) || {}).value;
+    } catch (e) { window.__srvKeys[name] = false; }
+  }
+  return window.__srvKeys[name];
+}
+function hasClaudeKey() { return hasServerKey("anthropic_api_key"); }
+
 function parseJSON(text) {
   let clean = text.replace(/```json|```/g, "").trim();
   
@@ -3506,6 +3523,134 @@ const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteIn
   );
 };
 
+// ---- Network (desktop): contact book + map + deal sharing in one screen ----
+const DesktopNetwork = ({ investors = [], setInvestors, companies = [], onDeleteInvestor, renderClassic }) => {
+  const [classic, setClassic] = useState(false);
+  const [q, setQ] = useState("");
+  const [chip, setChip] = useState("all");
+  const [view, setView] = useState("contact"); // contact | map
+  const [hub, setHub] = useState(null);
+  const [dealId, setDealId] = useState(null);
+  const [dealQ, setDealQ] = useState("");
+  const [dealOpen, setDealOpen] = useState(false);
+  const [openId, setOpenId] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [share, setShare] = useState(null);
+  const [limit, setLimit] = useState(150);
+  const norm = (s) => String(s || "").toLowerCase();
+  const deal = companies.find(c => c.id === dealId);
+  const hubs = useMemo(() => mCityGroups(investors), [investors]);
+  const hubIds = useMemo(() => hub && hubs[hub] ? new Set(hubs[hub].investors.map(i => i.id)) : null, [hub, hubs]);
+  const list = useMemo(() => {
+    const t = norm(q).trim();
+    let arr = investors.filter(i => {
+      if (hubIds && !hubIds.has(i.id)) return false;
+      if (chip === "high" && i.priority !== "High") return false;
+      if (M_REGIONS.includes(chip) && !norm(i.geo + " " + i.city).includes(norm(chip))) return false;
+      if (STAGES.includes(chip) && !norm(i.stage).includes(norm(chip))) return false;
+      return !t || norm([i.name, i.fund, (i.focus || []).join(" "), i.stage, i.geo, i.city, i.sweetSpot, (i.tags || []).join(" ")].join(" ")).includes(t);
+    });
+    if (deal) return arr.map(i => [i, investorFit(i, [deal])]).sort((a, b) => b[1] - a[1]);
+    return arr.sort((a, b) => norm(a.name).localeCompare(norm(b.name))).map(i => [i, null]);
+  }, [investors, q, chip, deal, hubIds]);
+  useEffect(() => { setLimit(150); }, [q, chip, dealId, hub]);
+  useEffect(() => { if (!openId && list.length) setOpenId(list[0][0].id); }, [list.length]);
+  const inv = investors.find(i => i.id === openId);
+  const save = (f) => { setInvestors(l => { const ix = l.findIndex(i => i.id === f.id); return ix >= 0 ? l.map(i => i.id === f.id ? { ...i, ...f } : i) : [f, ...l]; }); setEditing(null); };
+  const chips = [["all", "All"], ["high", "High priority"], ...M_REGIONS.map(r => [r, r]), ...STAGES.slice(0, 3).map(s => [s, s])];
+  const dealsForPicker = companies.filter(c => !dealQ || norm(c.name + " " + c.sector).includes(norm(dealQ))).sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)).slice(0, 40);
+  const fits = inv ? companies.map(c => [c, investorFit(inv, [c])]).filter(x => x[1] >= 4).sort((a, b) => b[1] - a[1]).slice(0, 6) : [];
+  if (classic) return (<div><div className="dn-back"><button className="d-btn sm" onClick={() => setClassic(false)}>← Back to contact book</button></div>{renderClassic && renderClassic()}</div>);
+  let lastLetter = "";
+  return (
+    <div className="dn" id="d-network">
+      <div className="dn-top">
+        <div className="dn-search"><MIcon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3" size={16} /><input id="dn-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, fund, sector, stage, city…" />{q && <button onClick={() => setQ("")} aria-label="Clear">×</button>}</div>
+        <div className="dn-dealpick">
+          <button className={"d-mini" + (deal ? " on" : "")} onClick={() => setDealOpen(o => !o)} id="dn-deal-btn">{deal ? "Ranked for " + deal.name : "Rank for a deal…"}</button>
+          {deal && <button className="d-mini" onClick={() => setDealId(null)} aria-label="Clear deal">×</button>}
+          {dealOpen && (<div className="dn-pop">
+            <input autoFocus value={dealQ} onChange={(e) => setDealQ(e.target.value)} placeholder="Search deals" />
+            <div className="dn-pop-l">{dealsForPicker.map(c => <button key={c.id} onClick={() => { setDealId(c.id); setDealOpen(false); }}><b>{c.starred ? "★ " : ""}{c.name}</b><span>{[c.stage, c.sector].filter(Boolean).join(" · ")}</span></button>)}</div>
+          </div>)}
+        </div>
+        <span className="d-grow" />
+        <div className="dn-seg"><button className={view === "contact" ? "on" : ""} onClick={() => setView("contact")}>Contact</button><button className={view === "map" ? "on" : ""} onClick={() => setView("map")} id="dn-map-btn">Map</button></div>
+        <button className="d-btn sm" onClick={() => setShare({ companyIds: deal ? [deal.id] : [], investorIds: [] })}>Share deals</button>
+        <button className="d-btn sm pri" onClick={() => setEditing("new")}>+ Add contact</button>
+        <DMenu id="dn-more" items={[
+          ["Bulk AI import", () => setClassic(true), "LinkedIn URLs or names"],
+          ["AI recalibrate geo / stage", () => setClassic(true), "Classic view"],
+          ["Export TSV for Excel", () => setClassic(true), "Classic view"],
+          ["Classic view", () => setClassic(true), "Previous Network layout"],
+        ]} />
+      </div>
+      <div className="dn-chips">
+        {chips.map(([k, l]) => <button key={k} className={"d-chip" + (chip === k ? " on" : "")} onClick={() => setChip(chip === k ? "all" : k)}>{l}</button>)}
+        {hub && hubs[hub] && <button className="d-chip on" onClick={() => setHub(null)}>{hubs[hub].name} ×</button>}
+        <span className="d-grow" /><span className="d-small">{list.length} contacts</span>
+      </div>
+      <div className="dn-body">
+        <div className="dn-list" id="dn-list">
+          {deal && <div className="dn-dealbar">Best matches for <b>{deal.name}</b> · <button className="dn-link" onClick={() => setShare({ companyIds: [deal.id], investorIds: list.filter(x => x[1] >= 2).slice(0, 10).map(x => x[0].id) })}>share with top 10</button></div>}
+          {list.slice(0, limit).map(([i, fit]) => {
+            const letter = (String(i.name || "#")[0] || "#").toUpperCase();
+            const head = !deal && letter !== lastLetter ? (lastLetter = letter) : null;
+            return (<React.Fragment key={i.id}>
+              {head && <div className="dn-letter">{head}</div>}
+              <button className={"dn-row" + (openId === i.id ? " on" : "")} onClick={() => { setOpenId(i.id); setView("contact"); }}>
+                <span className="dn-av">{mInitials(i.name)}</span>
+                <span className="dn-rt"><b>{i.name || "(no name)"}</b><span>{[i.fund, i.city || i.geo].filter(Boolean).join(" · ")}</span></span>
+                {deal ? <span className="dn-fit">{fitLabel(fit)}</span> : (i.priority === "High" ? <span className="dn-fit">High</span> : null)}
+              </button>
+            </React.Fragment>);
+          })}
+          {list.length > limit && <button className="d-btn sm dn-more" onClick={() => setLimit(limit + 150)}>Show more ({list.length - limit})</button>}
+          {list.length === 0 && <div className="dn-empty">No contacts match.</div>}
+        </div>
+        <div className="dn-main">
+          {view === "map" ? (
+            <div className="dn-map">
+              <MNetMap investors={investors} onOpenInvestor={(id) => { setOpenId(id); setView("contact"); }} onHub={setHub} selectedHub={hub} hideList />
+              <div className="d-small dn-hint">Scroll or use +/− to zoom, drag to pan. Click a city to filter the list on the left.</div>
+              <div className="dn-cities">{Object.entries(hubs).filter(([k]) => k !== "unspecified").sort((a, b) => b[1].investors.length - a[1].investors.length).slice(0, 24).map(([k, g]) => <button key={k} className={"d-chip" + (hub === k ? " on" : "")} onClick={() => setHub(hub === k ? null : k)}>{g.name}<b>{g.investors.length}</b></button>)}</div>
+            </div>
+          ) : inv ? (
+            <div className="dn-card" id="dn-contact">
+              <div className="dn-card-h">
+                <span className="dn-av lg">{mInitials(inv.name)}</span>
+                <div className="dn-rt"><h2>{inv.name}</h2><span>{[inv.fund, inv.city, inv.geo].filter(Boolean).join(" · ")}</span></div>
+                {inv.priority && <span className="dn-badge">{inv.priority}</span>}
+              </div>
+              <div className="dn-actions">
+                <button className="d-btn sm pri" onClick={() => setShare({ companyIds: deal ? [deal.id] : [], investorIds: [inv.id] })}>Share a deal</button>
+                {inv.email ? <a className="d-btn sm" href={"mailto:" + inv.email}>Email</a> : null}
+                {inv.linkedin ? <a className="d-btn sm" href={inv.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a> : null}
+                {inv.phone ? <a className="d-btn sm" href={"tel:" + inv.phone}>Call</a> : null}
+                <button className="d-btn sm" onClick={() => setEditing(inv)}>Edit</button>
+              </div>
+              <div className="dn-facts">
+                {deal && <div><label>Fit for {deal.name}</label><span>{fitLabel(investorFit(inv, [deal])) || "Low fit"}</span></div>}
+                {inv.sweetSpot && <div><label>Check size</label><span>{inv.sweetSpot}</span></div>}
+                {inv.stage && !/^https?:/.test(inv.stage) && <div><label>Stage</label><span>{inv.stage}</span></div>}
+                {(inv.focus || []).length > 0 && <div className="wide"><label>Focus</label><span className="dn-tags">{(inv.focus || []).map(f => <i key={f}>{f}</i>)}</span></div>}
+                {notesToText(inv.notes) && <div className="wide"><label>Notes</label><span className="dn-notes">{notesToText(inv.notes)}</span></div>}
+              </div>
+              {fits.length > 0 && (<div className="dn-fits"><label>Deals that fit</label>
+                {fits.map(([c, f]) => <button key={c.id} className="dn-fitrow" onClick={() => setShare({ companyIds: [c.id], investorIds: [inv.id] })}><b>{c.name}</b><span>{[c.stage, c.sector].filter(Boolean).join(" · ")}</span><em>{fitLabel(f)} · Share</em></button>)}
+              </div>)}
+            </div>
+          ) : <div className="dn-empty">Select a contact.</div>}
+        </div>
+      </div>
+      <MSheet open={!!editing} onClose={() => setEditing(null)} title={editing === "new" ? "New contact" : "Edit contact"} tall id="dn-edit">
+        {editing && <div className="m-embed"><InvestorForm companies={companies} initial={editing === "new" ? null : editing} onSave={save} onCancel={() => setEditing(null)} onDelete={(id) => { onDeleteInvestor && onDeleteInvestor(id); setEditing(null); setOpenId(null); }} setTab={() => {}} setDistributePicked={() => {}} setDistributeCompanyIds={() => {}} /></div>}
+      </MSheet>
+      <MShareFlow open={!!share} onClose={() => setShare(null)} companies={companies} investors={investors} initialCompanyIds={share ? share.companyIds : []} initialInvestorIds={share ? share.investorIds : []} />
+    </div>
+  );
+};
+
 // ---- Reports (phone) ----
 const PhoneReports = ({ companies = [], readingItems = [], reports = [], setReports, markDeleted = () => {} }) => {
   const [viewId, setViewId] = useState(null);
@@ -4012,7 +4157,7 @@ const mCityGroups = (investors) => {
   });
   return groups;
 };
-const MNetMap = ({ investors, onOpenInvestor }) => {
+const MNetMap = ({ investors, onOpenInvestor, onHub, selectedHub, hideList }) => {
   const [geo, setGeo] = useState(window.__mGeo || null);
   const [view, setView] = useState({ x: 0, y: 0, w: 100 });
   const [hub, setHub] = useState(null);
@@ -4044,6 +4189,15 @@ const MNetMap = ({ investors, onOpenInvestor }) => {
     pts.current.set(e.pointerId, cur);
   };
   const up = (e) => { pts.current.delete(e.pointerId); };
+  const zoomAt = (f, cx, cy) => { const { r, k } = unit(); const mx = (cx === undefined ? r.width / 2 : cx - r.left) * k; const my = (cy === undefined ? r.height / 2 : cy - r.top) * k; setView(v => { const w = Math.max(6, Math.min(100, v.w * f)); const s = w / v.w; return clamp({ w, x: v.x + mx * (1 - s), y: v.y + my * (1 - s) }); }); };
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const onWheel = (e) => { e.preventDefault(); zoomAt(e.deltaY > 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  });
+  const pickHub = (k) => { if (onHub) onHub(selectedHub === k ? null : k); else setHub(k); };
+  const activeHub = onHub ? selectedHub : hub;
   const h = view.w * H / 100;
   const sc = view.w / 100;
   const entries = Object.entries(groups).filter(([k]) => k !== "unspecified").sort((a, b) => b[1].investors.length - a[1].investors.length);
@@ -4058,20 +4212,22 @@ const MNetMap = ({ investors, onOpenInvestor }) => {
           {entries.map(([k, g]) => {
             const n = g.investors.length; const rr = (0.7 + Math.sqrt(n) * 0.35) * Math.max(sc, 0.12);
             return (
-              <g key={k} onClick={() => { if (moved.current < 8) setHub(k); }} style={{ cursor: "pointer" }}>
+              <g key={k} onClick={() => { if (moved.current < 8) pickHub(k); }} style={{ cursor: "pointer" }}>
+                <title>{g.name} · {n}</title>
                 <circle cx={g.x} cy={g.y} r={rr * 2.2} fill="transparent" />
-                <circle cx={g.x} cy={g.y} r={rr} fill={hub === k ? "#000" : "#fff"} stroke="#000" strokeWidth={0.18 * sc} />
-                <text x={g.x} y={g.y + rr * 0.36} textAnchor="middle" fontSize={rr * 1.05} fontWeight="700" fill={hub === k ? "#fff" : "#000"} fontFamily="Arial">{n}</text>
+                <circle cx={g.x} cy={g.y} r={rr} fill={activeHub === k ? "#000" : "#fff"} stroke="#000" strokeWidth={0.18 * sc} />
+                <text x={g.x} y={g.y + rr * 0.36} textAnchor="middle" fontSize={rr * 1.05} fontWeight="700" fill={activeHub === k ? "#fff" : "#000"} fontFamily="Arial">{n}</text>
                 {view.w < 40 && <text x={g.x} y={g.y + rr + 1.6 * sc} textAnchor="middle" fontSize={1.5 * sc} fill="#000" fontFamily="Arial">{g.name}</text>}
               </g>
             );
           })}
         </svg>
+        {onHub && <div className="dn-zoom"><button aria-label="Zoom in" onClick={() => zoomAt(1 / 1.4)}>+</button><button aria-label="Zoom out" onClick={() => zoomAt(1.4)}>−</button></div>}
         <button className="m-mapbtn" id="m-map-reset" aria-label="Reset map" onClick={() => setView({ x: 0, y: 0, w: 100 })}><MIcon d="M12 3v3M12 18v3M3 12h3M18 12h3M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" size={20} /></button>
       </div>
-      <div className="m-small m-pad">Pinch to zoom, drag to pan, tap a hub.</div>
-      {entries.slice(0, 40).map(([k, g]) => <MRow key={k} title={g.name} value={g.investors.length} onClick={() => setHub(k)} />)}
-      {other && <MRow title="No location" value={other.investors.length} onClick={() => setHub("unspecified")} />}
+      {!hideList && <div className="m-small m-pad">Pinch to zoom, drag to pan, tap a hub.</div>}
+      {!hideList && entries.slice(0, 40).map(([k, g]) => <MRow key={k} title={g.name} value={g.investors.length} onClick={() => setHub(k)} />)}
+      {!hideList && other && <MRow title="No location" value={other.investors.length} onClick={() => setHub("unspecified")} />}
       <MSheet open={!!hubG} onClose={() => setHub(null)} title={hubG ? `${hubG.name} · ${hubG.investors.length}` : ""} tall id="m-hub-sheet">
         {hubG && hubG.investors.slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))).map(i => <MRow key={i.id} lead={mInitials(i.name)} title={i.name || "(no name)"} sub={[i.fund, (i.focus || []).slice(0, 2).join(", ")].filter(Boolean).join(" · ")} onClick={() => { setHub(null); onOpenInvestor(i.id); }} />)}
       </MSheet>
@@ -4818,13 +4974,13 @@ function getMatchTokens(name) {
 
 async function callGranola(url, method = "GET") {
   const apiKey = (localStorage.getItem("granola_api_key") || "").trim();
-  if (!apiKey) return null;
+  if (!apiKey && !hasServerKey("granola_api_key")) return null;
   
   const response = await fetch("/api/granola", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Granola-API-Key": apiKey
+      ...(apiKey ? { "X-Granola-API-Key": apiKey } : {})
     },
     body: JSON.stringify({ url, method })
   });
@@ -7472,7 +7628,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
     setResearchingIds(prev => ({ ...prev, [id]: true }));
     try {
       let granolaContext = "";
-      if (localStorage.getItem("granola_api_key")) {
+      if (hasServerKey("granola_api_key")) {
         try {
           setQueueLog(prev => prev ? prev + `\n[Granola] Checking meetings for ${comp.name}...` : `[Granola] Checking meetings for ${comp.name}...`);
           granolaContext = await getGranolaContextForCompany(comp.name, comp.url, comp.granolaNotes);
@@ -8037,6 +8193,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           />
         )}
         {tab === "network" && (
+          <DesktopNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} renderClassic={() => (
           <Network 
             companies={companies}
             investors={investors} 
@@ -8065,6 +8222,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
             defaultNotes={investorDefaultNotes}
             setDefaultNotes={setInvestorDefaultNotes}
           />
+          )} />
         )}
         {tab === "distribute" && (
           <Distribute 
@@ -9043,7 +9201,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
            !c.marketStudy.problemThesis || 
            (c.marketStudy.problemThesis && c.marketStudy.problemThesis.startsWith("TAM calculation failed:"));
   }).length;
-  const hasApiKey = !!localStorage.getItem("anthropic_api_key");
+  const hasApiKey = hasClaudeKey();
 
   return (
     <div className="d-pipe">
@@ -9667,7 +9825,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                 <Btn
                   primary
                   onClick={handleStartBulkRejection}
-                  disabled={bulkRejectionGenerating || !localStorage.getItem("anthropic_api_key") || consoleCompanies.length === 0}
+                  disabled={bulkRejectionGenerating || !hasClaudeKey() || consoleCompanies.length === 0}
                   style={{ width: "100%", padding: "10px 0", fontWeight: 600 }}
                 >
                   {bulkRejectionGenerating ? `⚡ Generating ${bulkRejectionQueueIndex + 1}/${bulkRejectionQueueList.length}...` : "⚡ Generate Rejection Emails"}
@@ -9679,7 +9837,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                   </div>
                 )}
 
-                {!localStorage.getItem("anthropic_api_key") && (
+                {!hasClaudeKey() && (
                   <div style={{ fontSize: 11, color: RUST, fontWeight: 500, marginTop: 8, textAlign: "center" }}>
                     * Paste your Claude API Key in the header to run batch generation.
                   </div>
@@ -9843,9 +10001,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                           <span style={{ fontSize: 9.5, color: BLUE, fontWeight: 600, fontFamily: fontStack.mono }}>Scoring...</span>
                         ) : (
                           c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? (
-                            <Btn small onClick={() => runDiligenceForId(c.id)} disabled={!localStorage.getItem("anthropic_api_key")} style={{ padding: "2px 6px", fontSize: 9 }}>⚡ Score</Btn>
+                            <Btn small onClick={() => runDiligenceForId(c.id)} disabled={!hasClaudeKey()} style={{ padding: "2px 6px", fontSize: 9 }}>⚡ Score</Btn>
                           ) : (
-                            <Btn small onClick={() => runDiligenceForId(c.id)} disabled={!localStorage.getItem("anthropic_api_key")} style={{ padding: "2px 6px", fontSize: 9, borderColor: BLUE, color: BLUE }}>🧠 Rescore</Btn>
+                            <Btn small onClick={() => runDiligenceForId(c.id)} disabled={!hasClaudeKey()} style={{ padding: "2px 6px", fontSize: 9, borderColor: BLUE, color: BLUE }}>🧠 Rescore</Btn>
                           )
                         )}
                         
@@ -9855,7 +10013,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
                           <Btn 
                             small 
                             onClick={() => runTamForId(c.id)} 
-                            disabled={!localStorage.getItem("anthropic_api_key")} 
+                            disabled={!hasClaudeKey()} 
                             style={{ 
                               padding: "2px 6px", 
                               fontSize: 9, 
@@ -10281,7 +10439,7 @@ function CompanyDetail({ company: c, investors, update, back, remove, founderPro
 
   const loadGranolaNotes = useCallback(async (queryOverride) => {
     const key = (localStorage.getItem("granola_api_key") || "").trim();
-    if (!key) {
+    if (!key && !hasServerKey("granola_api_key")) {
       setGranolaNotes([]);
       return;
     }
@@ -15286,7 +15444,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   };
 
   const runFullDiligencePack = async () => {
-    if (!localStorage.getItem("anthropic_api_key")) {
+    if (!hasClaudeKey()) {
       setErr("API Key required to generate documents.");
       return;
     }
@@ -15330,7 +15488,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   };
 
   const regenerateReportSubSegment = async (reportKey, fieldPath, sectionName, promptInstructions) => {
-    if (!localStorage.getItem("anthropic_api_key")) {
+    if (!hasClaudeKey()) {
       setErr("API Key required to regenerate sections.");
       return;
     }
@@ -15340,7 +15498,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     
     try {
       let granolaContext = "";
-      if (localStorage.getItem("granola_api_key")) {
+      if (hasServerKey("granola_api_key")) {
         try {
           granolaContext = await getGranolaContextForCompany(c.name, c.url, c.granolaNotes);
         } catch (e) {
@@ -16004,7 +16162,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   <span 
                     onClick={() => {
                       if (getTamValue(c) === 0 && !generatingStudy) {
-                        if (!localStorage.getItem("anthropic_api_key")) {
+                        if (!hasClaudeKey()) {
                           alert("Please set your Anthropic API Key in the header first.");
                           return;
                         }
@@ -16083,7 +16241,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       {c.rationale?.error || c.oneLiner.replace("Research failed: ", "")}
                     </div>
                     <div style={{ marginTop: 10 }}>
-                      <Btn small onClick={runFullDiligence} disabled={rescoring || !localStorage.getItem("anthropic_api_key")} style={{ borderColor: RUST, color: RUST }}>
+                      <Btn small onClick={runFullDiligence} disabled={rescoring || !hasClaudeKey()} style={{ borderColor: RUST, color: RUST }}>
                         {rescoring ? "Retrying..." : "🔄 Rerun Diligence"}
                       </Btn>
                     </div>
@@ -16155,16 +16313,16 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   {voice.listening ? "● Listening... tap to stop" : "🎙 Dictate"}
                 </Btn>
               )}
-              <Btn small onClick={runFullDiligence} disabled={rescoring || !localStorage.getItem("anthropic_api_key")}>
+              <Btn small onClick={runFullDiligence} disabled={rescoring || !hasClaudeKey()}>
                 {rescoring ? "Running AI Diligence..." : "🔍 Run AI Diligence (Web)"}
               </Btn>
-              <Btn small onClick={rescore} disabled={rescoring || !localStorage.getItem("anthropic_api_key")}>
+              <Btn small onClick={rescore} disabled={rescoring || !hasClaudeKey()}>
                 {rescoring ? "Analyzing Notes..." : "🧠 Analyze Notes & Score"}
               </Btn>
               <Btn 
                 small 
                 onClick={runFullDiligencePack} 
-                disabled={generatingFullPack || !localStorage.getItem("anthropic_api_key")}
+                disabled={generatingFullPack || !hasClaudeKey()}
                 style={{ borderColor: AMBER, color: AMBER }}
               >
                 {generatingFullPack ? "⚡ Generating Pack..." : "⚡ Generate Full Diligence Pack"}
@@ -16193,7 +16351,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
           <div style={{ background: CARD, border: `1px solid ${LINE}`, padding: 22, marginTop: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
               <Label style={{ margin: 0 }}>Granola Meeting Notes</Label>
-              {localStorage.getItem("granola_api_key") && (
+              {hasServerKey("granola_api_key") && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 10.5, fontFamily: fontStack.mono, color: FADE }}>
                     API Connected
@@ -16219,7 +16377,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             </div>
 
             {/* Keyword Search Override */}
-            {localStorage.getItem("granola_api_key") && (
+            {hasServerKey("granola_api_key") && (
               <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                 <Input 
                   style={{ flex: 1, height: 32, fontSize: 12, padding: "0 8px" }}
@@ -16260,7 +16418,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
               </div>
             )}
 
-            {!localStorage.getItem("granola_api_key") && (
+            {!hasServerKey("granola_api_key") && (
               <div style={{ 
                 background: "rgba(0, 0, 0, 0.05)", 
                 borderLeft: `3px solid ${AMBER}`, 
@@ -16273,7 +16431,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
               </div>
             )}
 
-            {localStorage.getItem("granola_api_key") && !loadingGranola && granolaNotes.length === 0 && (
+            {hasServerKey("granola_api_key") && !loadingGranola && granolaNotes.length === 0 && (
               <div style={{ fontSize: 13, color: FADE, padding: "8px 0" }}>
                 No meeting notes or transcripts found in Granola matching "{granolaSearchQuery || c.name}" or its website domain. Try searching for a different keyword using the input above.
               </div>
@@ -16295,7 +16453,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             )}
 
             {/* Search Results / Unpinned Notes Section */}
-            {localStorage.getItem("granola_api_key") && (
+            {hasServerKey("granola_api_key") && (
               <div>
                 {(c.granolaNotes || []).length > 0 && granolaNotes.filter(n => !(c.granolaNotes || []).some(pn => pn.id === n.id)).length > 0 && (
                   <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: INK, letterSpacing: "0.05em", marginTop: 16, marginBottom: 10 }}>
@@ -16547,7 +16705,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 {c.diligenceMemo && !isEditingMemo && (
                   <>
                     <Btn small onClick={() => setIsEditingMemo(true)}>✏ Edit Memo</Btn>
-                    <Btn small onClick={runDiligenceMemo} disabled={generatingMemo || !localStorage.getItem("anthropic_api_key")}>
+                    <Btn small onClick={runDiligenceMemo} disabled={generatingMemo || !hasClaudeKey()}>
                       {generatingMemo ? "🔄 Regenerating..." : "🔄 Rerun AI"}
                     </Btn>
                     <Btn small onClick={downloadMemoPDF} style={{ borderColor: BLUE, color: BLUE }}>PDF</Btn>
@@ -16580,7 +16738,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   No first call diligence prep memo has been generated for this company yet.
                 </p>
                 <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-                  <Btn onClick={runDiligenceMemo} disabled={generatingMemo || !localStorage.getItem("anthropic_api_key")}>
+                  <Btn onClick={runDiligenceMemo} disabled={generatingMemo || !hasClaudeKey()}>
                     {generatingMemo ? "📋 Generating Diligence Memo..." : "📋 Generate Diligence Prep Memo"}
                   </Btn>
                   <Btn onClick={createDiligenceMemoManually} style={{ borderColor: BLUE, color: BLUE }}>
@@ -16999,7 +17157,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 {c.credsDeck && !isEditingCreds && (
                   <>
                     <Btn small onClick={() => setIsEditingCreds(true)}>✏ Edit Deck</Btn>
-                    <Btn small onClick={runCredsDeck} disabled={generatingCreds || !localStorage.getItem("anthropic_api_key")}>
+                    <Btn small onClick={runCredsDeck} disabled={generatingCreds || !hasClaudeKey()}>
                       {generatingCreds ? "🔄 Regenerating..." : "🔄 Rerun AI"}
                     </Btn>
                     <Btn small onClick={downloadCredsPDF} style={{ borderColor: BLUE, color: BLUE }}>PDF</Btn>
@@ -17027,7 +17185,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 <p style={{ fontSize: 13, color: FADE, marginBottom: 12 }}>
                   No credentials deck has been generated for this company yet.
                 </p>
-                <Btn onClick={runCredsDeck} disabled={generatingCreds || !localStorage.getItem("anthropic_api_key")}>
+                <Btn onClick={runCredsDeck} disabled={generatingCreds || !hasClaudeKey()}>
                   {generatingCreds ? "📋 Generating Creds Deck..." : "📋 Generate BNVT Creds Deck"}
                 </Btn>
               </div>
@@ -17410,7 +17568,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 {c.icMemo && !isEditingIc && (
                   <>
                     <Btn small onClick={() => setIsEditingIc(true)}>✏ Edit Memo</Btn>
-                    <Btn small onClick={runIcMemo} disabled={generatingIc || !localStorage.getItem("anthropic_api_key")}>
+                    <Btn small onClick={runIcMemo} disabled={generatingIc || !hasClaudeKey()}>
                       {generatingIc ? "🔄 Regenerating..." : "🔄 Rerun AI"}
                     </Btn>
                     <Btn small onClick={downloadIcMemoPDF} style={{ borderColor: BLUE, color: BLUE }}>PDF</Btn>
@@ -17597,7 +17755,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                   No BNVT Investment Committee Memo has been compiled for this company yet.
                 </p>
                 <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-                  <Btn onClick={runIcMemo} disabled={generatingIc || !localStorage.getItem("anthropic_api_key")}>
+                  <Btn onClick={runIcMemo} disabled={generatingIc || !hasClaudeKey()}>
                     {generatingIc ? "📋 Compiling IC Memo..." : "⚡ Compile Investment Committee Memo"}
                   </Btn>
                   <Btn onClick={createIcMemoManually} style={{ borderColor: BLUE, color: BLUE }}>
@@ -18136,7 +18294,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
               <TextArea rows={2} placeholder="e.g. 'Founder notes from reference call: team has 2 patents pending, shipping beta next month...'" value={ingestContext} onChange={(e) => setIngestContext(e.target.value)} />
             </div>
 
-            <Btn small primary onClick={ingestAndReanalyze} disabled={rescoring || !localStorage.getItem("anthropic_api_key")}>
+            <Btn small primary onClick={ingestAndReanalyze} disabled={rescoring || !hasClaudeKey()}>
               {rescoring ? "Ingesting & Analyzing..." : "📥 Ingest & Re-Analyze Profile"}
             </Btn>
             
@@ -18450,7 +18608,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 {c.marketStudy && !isEditingStudy && (
                   <>
                     <Btn small onClick={() => setIsEditingStudy(true)}>✏ Edit Study</Btn>
-                    <Btn small onClick={() => runMarketStudy()} disabled={generatingStudy || !localStorage.getItem("anthropic_api_key")}>
+                    <Btn small onClick={() => runMarketStudy()} disabled={generatingStudy || !hasClaudeKey()}>
                       {generatingStudy ? "⏳ Rerunning AI..." : "🔄 Rerun AI"}
                     </Btn>
                     <Btn small onClick={downloadPDF} style={{ borderColor: BLUE, color: BLUE }}>PDF</Btn>
@@ -18479,7 +18637,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 <p style={{ fontSize: 13, color: FADE, marginBottom: 12 }}>
                   No market sizing or TAM study has been generated for this company yet.
                 </p>
-                <Btn onClick={runMarketStudy} disabled={generatingStudy || !localStorage.getItem("anthropic_api_key")}>
+                <Btn onClick={runMarketStudy} disabled={generatingStudy || !hasClaudeKey()}>
                   {generatingStudy ? "📊 Generating AI Market Study..." : "📊 Generate AI Market Study"}
                 </Btn>
               </div>
@@ -18727,7 +18885,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 {c.competitiveMapping && !isEditingMapping && (
                   <>
                     <Btn small onClick={() => setIsEditingMapping(true)}>✏ Edit Mapping</Btn>
-                    <Btn small onClick={runCompetitiveMapping} disabled={generatingMapping || !localStorage.getItem("anthropic_api_key")}>
+                    <Btn small onClick={runCompetitiveMapping} disabled={generatingMapping || !hasClaudeKey()}>
                       {generatingMapping ? "🔄 Regenerating..." : "🔄 Rerun AI"}
                     </Btn>
                     <Btn small onClick={downloadMappingPDF} style={{ borderColor: BLUE, color: BLUE }}>PDF</Btn>
@@ -18756,7 +18914,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 <p style={{ fontSize: 13, color: FADE, marginBottom: 12 }}>
                   No competitive mapping study has been generated for this company yet.
                 </p>
-                <Btn onClick={runCompetitiveMapping} disabled={generatingMapping || !localStorage.getItem("anthropic_api_key")}>
+                <Btn onClick={runCompetitiveMapping} disabled={generatingMapping || !hasClaudeKey()}>
                   {generatingMapping ? "🔍 Generating Competitive Mapping..." : "🔍 Generate AI Competitive Mapping"}
                 </Btn>
               </div>
@@ -19072,7 +19230,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                       const list = isEditingTracker ? editContacts : (c.referenceTracker?.contacts || []);
                       verifyContacts(list.map(item => item.id));
                     }}
-                    disabled={verifyingAll || !localStorage.getItem("anthropic_api_key")}
+                    disabled={verifyingAll || !hasClaudeKey()}
                     style={{ borderColor: verifyingAll ? BLUE : LINE, color: verifyingAll ? BLUE : FADE }}
                   >
                     {verifyingAll ? `⏳ Verifying (${verifiedCount}/${(isEditingTracker ? editContacts : c.referenceTracker.contacts).length})...` : "🔍 Verify URLs"}
@@ -19081,7 +19239,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 {c.referenceTracker && !isEditingTracker && (
                   <>
                     <Btn small onClick={() => setIsEditingTracker(true)}>✏ Edit Tracker</Btn>
-                    <Btn small onClick={runReferenceTracker} disabled={generatingTracker || !localStorage.getItem("anthropic_api_key")}>
+                    <Btn small onClick={runReferenceTracker} disabled={generatingTracker || !hasClaudeKey()}>
                       {generatingTracker ? "🔄 Regenerating..." : "🔄 Rerun AI"}
                     </Btn>
                     <Btn small onClick={exportTrackerExcel} style={{ borderColor: BLUE, color: BLUE }}>Excel</Btn>
@@ -19108,7 +19266,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 <p style={{ fontSize: 13, color: FADE, marginBottom: 12 }}>
                   No reference tracker has been generated for this company yet.
                 </p>
-                <Btn onClick={runReferenceTracker} disabled={generatingTracker || !localStorage.getItem("anthropic_api_key")}>
+                <Btn onClick={runReferenceTracker} disabled={generatingTracker || !hasClaudeKey()}>
                   {generatingTracker ? "🔍 Generating Reference Tracker..." : "🔍 Generate Reference Tracker"}
                 </Btn>
               </div>
@@ -19231,7 +19389,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 </div>
                 <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
                   <Btn small onClick={addTrackerContact}>➕ Add Row</Btn>
-                  <Btn small onClick={runReferenceTracker} disabled={generatingTracker || verifyingAll || !localStorage.getItem("anthropic_api_key")} style={{ marginLeft: "auto" }}>
+                  <Btn small onClick={runReferenceTracker} disabled={generatingTracker || verifyingAll || !hasClaudeKey()} style={{ marginLeft: "auto" }}>
                     {generatingTracker ? "🔄 Regenerating via AI..." : "🔄 Rerun AI Research"}
                   </Btn>
                 </div>
@@ -19362,7 +19520,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     {d.key === "tam" && !isEditing && getTamValue(c) === 0 && (
                       <span 
                         onClick={() => {
-                          if (!localStorage.getItem("anthropic_api_key")) {
+                          if (!hasClaudeKey()) {
                             alert("Please set your Anthropic API Key in the header first.");
                             return;
                           }
@@ -19441,7 +19599,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
               <Btn 
                 small 
                 onClick={rescore} 
-                disabled={rescoring || !localStorage.getItem("anthropic_api_key")}
+                disabled={rescoring || !hasClaudeKey()}
                 style={{ width: "100%", justifyContent: "center" }}
               >
                 {rescoring ? "🧠 Analyzing & Rescoring..." : "🧠 Rescore via AI"}
@@ -19732,10 +19890,10 @@ Provide ONLY the raw text of the email. Do not include subject line or any markd
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <Btn primary onClick={generate} disabled={busy || !localStorage.getItem("anthropic_api_key")}>
+        <Btn primary onClick={generate} disabled={busy || !hasClaudeKey()}>
           {busy ? "Generating draft..." : "Generate Rejection Email"}
         </Btn>
-        {!localStorage.getItem("anthropic_api_key") && (
+        {!hasClaudeKey() && (
           <span style={{ fontSize: 11.5, color: RUST, marginLeft: 10 }}>* Paste API Key in header</span>
         )}
       </div>
@@ -20828,7 +20986,7 @@ function NetworkMap({ investors, onEdit, recalibrateSingleInvestor, recalibrateS
                 <Btn 
                   small 
                   onClick={() => recalibrateSingleInvestor(inv)}
-                  disabled={recalibratingIds[inv.id] || !localStorage.getItem("anthropic_api_key")}
+                  disabled={recalibratingIds[inv.id] || !hasClaudeKey()}
                   style={{ padding: "2px 6px", fontSize: 10, height: "auto" }}
                 >
                   {recalibratingIds[inv.id] ? "⏳ Calibrating..." : "🔄 AI Recal"}
@@ -21370,7 +21528,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 setQueueIndex(0);
                 setQueueLog("Queue initialized...");
                 setQueueActive(true);
-              }} disabled={!bulkText.trim() || !localStorage.getItem("anthropic_api_key")}>
+              }} disabled={!bulkText.trim() || !hasClaudeKey()}>
                 ▶ Start Bulk AI Import
               </Btn>
             ) : (
@@ -21378,7 +21536,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
             )}
             <Btn onClick={() => { setBulkMode(false); setQueueActive(false); setQueueLog(""); }}>Close</Btn>
           </div>
-          {!localStorage.getItem("anthropic_api_key") && (
+          {!hasClaudeKey() && (
             <div style={{ fontSize: 11.5, color: RUST, marginTop: 10 }}>
               * Paste your Claude API Key in the top header input to enable the bulk importer.
             </div>
@@ -21445,7 +21603,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                     setRecalibrating(true);
                   }
                 }}
-                disabled={!localStorage.getItem("anthropic_api_key")}
+                disabled={!hasClaudeKey()}
                 style={{ borderColor: recalibrating ? RUST : BLUE, color: recalibrating ? RUST : BLUE }}
               >
                 {recalibrating ? "⏹ Stop AI Calibrate" : "🔄 AI Recalibrate Geo/City/Stage"}
@@ -21780,7 +21938,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                         <Btn 
                           small 
                           onClick={() => recalibrateSingleInvestor(inv)}
-                          disabled={recalibratingIds[inv.id] || !localStorage.getItem("anthropic_api_key")}
+                          disabled={recalibratingIds[inv.id] || !hasClaudeKey()}
                           style={{ padding: "3px 8px", fontSize: 11 }}
                         >
                           {recalibratingIds[inv.id] ? "⏳..." : "🔄 Recal"}
@@ -22037,7 +22195,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
     <div style={{ maxWidth: 560, margin: "0 auto", background: CARD, border: `1px solid ${LINE}`, padding: 26 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ fontFamily: fontStack.display, fontSize: 20 }}>{initial ? "Edit investor" : "New investor"}</div>
-        <Btn small onClick={researchInvestor} disabled={busy || !localStorage.getItem("anthropic_api_key")}>
+        <Btn small onClick={researchInvestor} disabled={busy || !hasClaudeKey()}>
           {busy ? "Researching..." : "🔍 AI Research & Enrich"}
         </Btn>
       </div>
@@ -22559,7 +22717,7 @@ Return ONLY the raw JSON object, no explanation, no markdown fences:
     setGenerating(true);
   };
 
-  const hasApiKey = !!localStorage.getItem("anthropic_api_key");
+  const hasApiKey = hasClaudeKey();
   const isPhoneO = useIsPhone();
   if (isPhoneO) return <PhoneOutreachView {...{ template, setTemplate, search, setSearch, statusFilter, setStatusFilter, selectedIds, drafts, generating, setGenerating, log, queueIndex, queueList, filteredCompanies, handleSelectAll, handleDeselectAll, handleToggle, handleStartGeneration, companies, updateCompany }} />;
 
@@ -26040,7 +26198,7 @@ Respond ONLY with valid JSON, no fences:
       <Btn 
         primary 
         onClick={generateMessages} 
-        disabled={busy || !localStorage.getItem("anthropic_api_key")}
+        disabled={busy || !hasClaudeKey()}
         style={{ width: "100%", justifyContent: "center" }}
       >
         {busy ? "⚡ Writing outreach emails..." : `⚡ Generate ${selectedInvestorIds.length || ""} Custom Outreach Message${selectedInvestorIds.length === 1 ? "" : "s"}`}
@@ -26500,7 +26658,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                 small 
                 primary 
                 onClick={() => handleGenerate(p.id, p.name, p.company, p.title, p.rawProfile)} 
-                disabled={isGenerating || !localStorage.getItem("anthropic_api_key")}
+                disabled={isGenerating || !hasClaudeKey()}
               >
                 {isGenerating ? "⏳ Scoring..." : "🧠 Score"}
               </Btn>
@@ -26534,7 +26692,7 @@ function FounderAssessmentRow({ p, setFounderProfiles, isGenerating, handleGener
                   ) : (
                     <>
                       <Btn small onClick={() => setIsEditing(true)}>✏ Edit</Btn>
-                      <Btn small onClick={handleRerunAI} disabled={generatingRow || !localStorage.getItem("anthropic_api_key")}>
+                      <Btn small onClick={handleRerunAI} disabled={generatingRow || !hasClaudeKey()}>
                         {generatingRow ? "⏳ Rerunning..." : "🔄 Rerun AI"}
                       </Btn>
                       <Btn small onClick={handleDownloadPDF} style={{ borderColor: BLUE, color: BLUE }}>⬇ Download PDF</Btn>
@@ -27026,7 +27184,7 @@ function FounderAssessmentDashboard({ founderProfiles, setFounderProfiles, apiKe
               primary
               disabled={isIngesting}
               onClick={async () => {
-                if (!localStorage.getItem("anthropic_api_key")) {
+                if (!hasClaudeKey()) {
                   alert("Please configure your Anthropic API Key in the top header first.");
                   return;
                 }
@@ -27047,7 +27205,7 @@ function FounderAssessmentDashboard({ founderProfiles, setFounderProfiles, apiKe
             </Btn>
           </div>
         </div>
-        {!localStorage.getItem("anthropic_api_key") && (
+        {!hasClaudeKey() && (
           <div style={{ fontSize: 11.5, color: RUST, marginTop: 10, fontFamily: fontStack.mono }}>
             ⚠️ Anthropic API key is not configured. Please enter it in the CLAUDE API KEY field in the top header.
           </div>

@@ -453,8 +453,12 @@
         .d-deal-s.err { color: #C00000; }
         .d-tags { display: flex; gap: 4px; flex-wrap: wrap; }
         .d-tag { font-size: 10px; padding: 1px 6px; border-radius: 9px; background: #F2F2F2; color: #555; white-space: nowrap; }
-        .d-deal-f { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
-        .d-pill-select { height: 24px; padding: 0 8px; border: 1px solid #DDD; border-radius: 12px; background: #fff; font-size: 11px; max-width: 150px; cursor: pointer; }
+        .d-deal-f { display: flex; align-items: center; gap: 6px; row-gap: 6px; margin-top: 6px; min-width: 0; flex-wrap: wrap; }
+        .d-pill-select { height: 26px; padding: 0 8px; border: 1px solid #DDD; border-radius: 13px; background: #fff; font-size: 11px; flex: 0 1 140px; min-width: 104px; max-width: 170px; cursor: pointer; text-overflow: ellipsis; }
+        .d-deal-f .d-mini { flex: 0 0 auto; height: 26px; min-width: 26px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; max-width: none; overflow: visible; text-overflow: clip; font-size: 11px; }
+        .d-deal-f .d-mini.pri { font-weight: 700; }
+        .d-deal-f .d-small { flex: 0 0 auto; white-space: nowrap; font-size: 10px; }
+        .d-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important; }
         .d-mini { height: 24px; min-width: 24px; padding: 0 8px; border: 1px solid #E0E0E0; border-radius: 12px; background: #fff; font-size: 11px; color: #666; cursor: pointer; white-space: nowrap; }
         .d-mini.on { border-color: #000; color: #000; font-weight: 700; }
         .d-mini.pri { background: #000; border-color: #000; color: #fff; }
@@ -482,6 +486,79 @@
             .d-item { justify-content: center; padding: 0; }
             .d-brand { justify-content: center; padding: 4px 0 12px; }
             .d-search { flex-basis: 180px; }
+        }
+        /* ---- Desktop Network (contact book + map) ---- */
+        .dn { display: flex; flex-direction: column; gap: 10px; height: calc(100vh - 110px); min-height: 520px; }
+        .dn-top { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .dn-search { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid #DADADA; border-radius: 18px; background: #fff; flex: 0 1 380px; min-width: 220px; color: #888; }
+        .dn-search input { border: 0; outline: 0; flex: 1; font: 14px Arial; color: #000; background: transparent; min-width: 0; height: 32px; padding: 0; }
+        .dn-search button { border: 0; background: none; font-size: 18px; color: #888; cursor: pointer; }
+        .dn-dealpick { position: relative; display: flex; gap: 4px; }
+        .dn-dealpick .d-mini { height: 32px; padding: 0 12px; border-radius: 16px; font-size: 12px; }
+        .dn-pop { position: absolute; top: 38px; left: 0; z-index: 50; width: 320px; background: #fff; border: 1px solid #DDD; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.12); padding: 8px; }
+        .dn-pop input { width: 100%; height: 32px; border: 1px solid #DDD; border-radius: 8px; padding: 0 10px; font: 13px Arial; box-sizing: border-box; }
+        .dn-pop-l { max-height: 320px; overflow-y: auto; margin-top: 6px; }
+        .dn-pop-l button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; border: 0; background: none; padding: 7px 8px; border-radius: 8px; cursor: pointer; text-align: left; font: 13px Arial; }
+        .dn-pop-l button:hover { background: #F4F4F4; }
+        .dn-pop-l span { color: #888; font-size: 11px; }
+        .dn-seg { display: inline-flex; border: 1px solid #DADADA; border-radius: 16px; overflow: hidden; height: 32px; }
+        .dn-seg button { border: 0; background: #fff; padding: 0 14px; font: 13px Arial; cursor: pointer; color: #444; }
+        .dn-seg button.on { background: #000; color: #fff; font-weight: 700; }
+        .dn-chips { flex: 0 0 auto; min-height: 32px; display: flex; gap: 6px; align-items: center; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+        .dn-chips .d-chip { height: 28px; font-size: 12px; }
+        .dn-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); border: 1px solid #E6E6E6; border-radius: 12px; overflow: hidden; background: #fff; }
+        .dn-list { overflow-y: auto; border-right: 1px solid #EEE; }
+        .dn-letter { position: sticky; top: 0; background: #FAFAFA; font-size: 11px; font-weight: 700; color: #888; padding: 4px 14px; border-bottom: 1px solid #F0F0F0; z-index: 1; }
+        .dn-row { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid #F3F3F3; background: #fff; padding: 9px 14px; cursor: pointer; text-align: left; font-family: Arial; }
+        .dn-row:hover { background: #F7F7F7; }
+        .dn-row.on { background: #F0F0F0; box-shadow: inset 3px 0 0 #000; }
+        .dn-av { flex: 0 0 32px; width: 32px; height: 32px; border-radius: 16px; background: #EFEFEF; color: #333; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+        .dn-av.lg { flex-basis: 52px; width: 52px; height: 52px; border-radius: 26px; font-size: 18px; }
+        .dn-rt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+        .dn-rt b { font-size: 13px; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dn-rt span { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dn-rt h2 { margin: 0; font-size: 22px; }
+        .dn-rt h2 + span { font-size: 13px; white-space: normal; }
+        .dn-fit { flex: 0 0 auto; font-size: 10px; font-weight: 700; border: 1px solid #000; border-radius: 9px; padding: 1px 7px; }
+        .dn-dealbar { padding: 8px 14px; font-size: 12px; background: #FAFAFA; border-bottom: 1px solid #EEE; }
+        .dn-link { border: 0; background: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+        .dn-more { margin: 10px auto; display: block; }
+        .dn-empty { padding: 40px; text-align: center; color: #888; font-size: 13px; }
+        .dn-main { overflow-y: auto; min-width: 0; }
+        .dn-card { padding: 24px 28px; max-width: 760px; }
+        .dn-card-h { display: flex; align-items: center; gap: 14px; }
+        .dn-badge { font-size: 11px; font-weight: 700; border: 1px solid #000; border-radius: 10px; padding: 2px 9px; }
+        .dn-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 6px; }
+        .dn-actions a { text-decoration: none; display: inline-flex; align-items: center; }
+        .dn-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px 20px; margin-top: 16px; }
+        .dn-facts .wide { grid-column: 1 / -1; }
+        .dn-facts label, .dn-fits > label { display: block; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+        .dn-facts span { font-size: 13px; color: #000; line-height: 1.45; }
+        .dn-notes { white-space: pre-wrap; }
+        .dn-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+        .dn-tags i { font-style: normal; font-size: 11px; background: #F2F2F2; border-radius: 9px; padding: 2px 8px; }
+        .dn-fits { margin-top: 22px; }
+        .dn-fitrow { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; width: 100%; text-align: left; border: 1px solid #EEE; border-radius: 10px; background: #fff; padding: 9px 12px; margin-bottom: 6px; cursor: pointer; font-family: Arial; }
+        .dn-fitrow:hover { border-color: #000; }
+        .dn-fitrow b { font-size: 13px; } .dn-fitrow span { font-size: 11px; color: #888; grid-column: 1; }
+        .dn-fitrow em { grid-row: 1 / 3; grid-column: 2; align-self: center; font-style: normal; font-size: 11px; font-weight: 700; }
+        .dn-map { padding: 14px; }
+        .dn-map .m-map { border: 1px solid #EEE; border-radius: 10px; aspect-ratio: 2 / 1; cursor: grab; }
+        .dn-map .m-map:active { cursor: grabbing; }
+        .dn-zoom { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; border: 1px solid #D6D6D6; border-radius: 10px; overflow: hidden; background: #fff; }
+        .dn-zoom button { width: 34px; height: 34px; border: 0; background: #fff; font-size: 18px; cursor: pointer; }
+        .dn-zoom button + button { border-top: 1px solid #E6E6E6; }
+        .dn-map .m-mapbtn { position: absolute; right: 12px; bottom: 12px; width: 38px; height: 38px; border-radius: 19px; background: #fff; border: 1px solid #D6D6D6; cursor: pointer; }
+        .dn-hint { margin-top: 8px; }
+        .dn-cities { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .dn-cities .d-chip { height: 28px; font-size: 12px; }
+        .dn-cities .d-chip b { margin-left: 6px; }
+        .dn-back { margin-bottom: 10px; }
+        /* Sheets open as a right-side panel on desktop */
+        @media (min-width: 769px) {
+            .m-sheet { left: auto; top: 0; bottom: 0; width: min(520px, 92vw); max-height: none; border-radius: 12px 0 0 12px; transform: translateX(100%); }
+            .m-sheet.tall { height: 100vh; max-height: 100vh; }
+            .m-sheet.on { transform: none; }
         }
     </style>
 </head>
@@ -574,7 +651,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=75.17"></script>
+    <script src="bnvt-dealflow.js?v=75.20"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {
