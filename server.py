@@ -2495,7 +2495,7 @@ def handle_healthz(handler):
 
 # ---------------- Fast parallel scoring (Linkup research + Claude Haiku) ----------------
 # Runs on the server, several deals at a time, and keeps going if the browser is closed.
-SCORE_WORKERS = int(os.environ.get("SCORE_WORKERS", "8"))
+SCORE_WORKERS = int(os.environ.get("SCORE_WORKERS", "12"))
 SCORE_MODEL = os.environ.get("SCORE_MODEL", "claude-haiku-4-5")
 score_job = {"running": False, "total": 0, "done": 0, "failed": 0, "active": [], "errors": [],
              "startedAt": None, "finishedAt": None, "engine": None, "stop": False}
@@ -2578,17 +2578,43 @@ def _research(comp):
         return "\n\n".join(out), "linkup"
     return None, "claude-web"
 
+def _find_score_json(text):
+    """Pull the score object out of a reply even with prose or ```json fences around it."""
+    text = text or ""
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S)
+    cands = [m.group(1)] if m else []
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch == "{":
+            try:
+                obj, _ = dec.raw_decode(text[i:])
+                if isinstance(obj, dict) and "scores" in obj:
+                    return obj
+            except Exception:
+                pass
+    for c in cands:
+        try:
+            return json.loads(c)
+        except Exception:
+            pass
+    return None
+
 def score_one(comp):
     research, engine = _research(comp)
     prompt = _score_prompt(comp, research)
     if engine == "linkup":
-        text = _anthropic({"model": SCORE_MODEL, "max_tokens": 2500, "messages": [{"role": "user", "content": prompt}]})
-    else:  # no Linkup key: Claude does its own web search (slower)
-        text = _anthropic({"model": "claude-sonnet-4-6", "max_tokens": 4000, "messages": [{"role": "user", "content": prompt}],
-                           "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 4}]}, timeout=300)
-    out = extract_json(text)
-    if isinstance(out, str):
-        out = json.loads(out)
+        text = _anthropic({"model": SCORE_MODEL, "max_tokens": 3000, "messages": [{"role": "user", "content": prompt}]})
+    else:  # no Linkup key: Claude Haiku does a short web search itself (~10-15 s)
+        text = _anthropic({"model": SCORE_MODEL, "max_tokens": 3000, "messages": [{"role": "user", "content": prompt}],
+                           "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}]}, timeout=120)
+    out = _find_score_json(text)
+    if not isinstance(out, dict) or not isinstance(out.get("scores"), dict):
+        # Second, quick pass: force the JSON (no tools). Unknown profiles get conservative estimates.
+        fix = _anthropic({"model": SCORE_MODEL, "max_tokens": 2500, "messages": [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": (text or "(no answer)")[:6000]},
+            {"role": "user", "content": "Now output ONLY the JSON object in the exact schema, nothing else. If information is missing, give conservative 1-2 scores, say 'Unknown / not enough public information' in the text fields, and keep the name from our CRM."}]})
+        out = _find_score_json(fix) or _find_score_json("{" + fix.split("{", 1)[-1] if "{" in fix else "")
     if not isinstance(out, dict) or not isinstance(out.get("scores"), dict):
         raise Exception("Could not read scores from the AI answer")
     return out, engine

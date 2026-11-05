@@ -9292,6 +9292,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
         <div className="d-strip" id="d-queue-strip">
           <div className="d-strip-i">
             <span className="d-strip-t">{scoreJob && scoreJob.running ? `Scoring ${scoreJob.done} / ${scoreJob.total}${scoreJob.failed ? ` · ${scoreJob.failed} failed` : ""} · ${scoreJob.engine === "linkup" ? "Linkup + Claude" : "Claude web search"}` : (queueActive ? (queueLog || "Scoring…") : `${unscoredCount} unscored`)}</span>
+            {scoreJob && !scoreJob.running && scoreJob.finishedAt && scoreJob.total > 0 && <span className="d-small" title={(scoreJob.errors || []).join("\n")}>Last run: {scoreJob.total - scoreJob.failed} scored{scoreJob.failed ? `, ${scoreJob.failed} failed (${String((scoreJob.errors || [])[0] || "").slice(0, 90)})` : ""}</span>}
             {scoreJob && scoreJob.running && scoreJob.total > 0 && <span className="d-prog"><span style={{ width: `${(scoreJob.done / scoreJob.total) * 100}%` }} /></span>}
             {queueActive && !(scoreJob && scoreJob.running) && queueTotal > 0 && <span className="d-prog"><span style={{ width: `${((queueTotal - unscoredCount) / queueTotal) * 100}%` }} /></span>}
             {scoreJob && scoreJob.running
