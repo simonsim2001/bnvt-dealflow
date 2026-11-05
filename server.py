@@ -2813,6 +2813,10 @@ def _upsert_contact(item, out, defaults, error=None):
 
 def _contact_runner(items, defaults):
     from concurrent.futures import ThreadPoolExecutor
+    try:
+        contact_job["engine"] = "linkup" if linkup_key() else "claude-web"
+    except Exception:
+        pass
     def work(item):
         if contact_job["stop"]:
             return
@@ -2858,7 +2862,7 @@ def start_contact_import(items, defaults):
     items = [i for i in (items or []) if isinstance(i, dict) and (i.get("query") or "").strip()]
     contact_job.update(running=bool(items), total=len(items), done=0, failed=0, added=0, updated=0, active=[], errors=[], stop=False,
                        startedAt=datetime.now().isoformat(timespec="seconds"), finishedAt=None,
-                       engine="linkup" if linkup_key() else "claude-web")
+                       engine="claude-web")
     if items:
         threading.Thread(target=_contact_runner, args=(items, defaults or {}), daemon=True, name="contacts").start()
     return True

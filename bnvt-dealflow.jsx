@@ -7547,13 +7547,27 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
       try {
         if (!attachOnly) {
           setInvestorQueueLog(`Sending ${items.length} contacts to the server…`);
-          const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 20000);
-          const r = await fetch("/api/contacts/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, defaults }), signal: ctl.signal });
-          clearTimeout(to);
-          if (r.status === 401) throw new Error("session expired, reload the page and log in again");
-          if (r.status !== 409 && !r.ok) throw new Error("HTTP " + r.status);
-          if (r.status === 409) setInvestorQueueLog("An import is already running, following it…");
-          else setInvestorBulkText("");
+          // The server may be slow to answer (waking up, busy). Never fail on a slow answer:
+          // after a timeout, check whether the job started anyway, otherwise retry.
+          let started = false;
+          for (let attempt = 1; attempt <= 3 && alive && !started; attempt++) {
+            const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 30000 * attempt);
+            try {
+              const r = await fetch("/api/contacts/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, defaults }), signal: ctl.signal });
+              if (r.status === 401) throw new Error("session expired, reload the page and log in again");
+              if (r.status === 409) { setInvestorQueueLog("An import is already running, following it…"); started = true; }
+              else if (r.ok) started = true;
+              else if (r.status < 500) throw new Error("HTTP " + r.status);
+            } catch (e) {
+              if (e.name !== "AbortError" && !/fetch|network|load/i.test(e.message)) throw e;
+            } finally { clearTimeout(to); }
+            if (!started) {
+              try { const st = await (await fetch("/api/contacts/status")).json(); if (st.running || (st.total === items.length && st.startedAt)) started = true; } catch (e) {}
+            }
+            if (!started && attempt < 3) setInvestorQueueLog(`Server is slow to answer, retrying (${attempt + 1}/3)…`);
+          }
+          if (!started) throw new Error("the server did not answer. Wait a minute and press Start again.");
+          setInvestorBulkText("");
         }
         let lastDone = -1, misses = 0;
         while (alive) {
