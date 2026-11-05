@@ -3,7 +3,7 @@ import os, subprocess, sys, time, urllib.request, urllib.error, http.cookiejar, 
 SRC = "/Users/simonlevy/.gemini/antigravity/scratch/bnvt-dealflow"
 env = dict(os.environ, PORT="8767", APP_PASSWORD="test-pass-123")
 p = subprocess.Popen([sys.executable, "server.py"], cwd=SRC, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-time.sleep(2.5)
+time.sleep(15)
 B = "http://localhost:8767"
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k): return None
