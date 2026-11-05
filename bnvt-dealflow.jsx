@@ -3563,7 +3563,7 @@ const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteIn
 };
 
 // ---- Network (desktop): contact book + map + deal sharing in one screen ----
-const DesktopNetwork = ({ investors = [], setInvestors, companies = [], onDeleteInvestor, renderClassic }) => {
+const DesktopNetwork = ({ investors = [], setInvestors, companies = [], onDeleteInvestor, renderClassic, onBulk }) => {
   const [classic, setClassic] = useState(false);
   const [q, setQ] = useState("");
   const [chip, setChip] = useState("all");
@@ -3618,7 +3618,7 @@ const DesktopNetwork = ({ investors = [], setInvestors, companies = [], onDelete
         <button className="d-btn sm" onClick={() => setShare({ companyIds: deal ? [deal.id] : [], investorIds: [] })}>Share deals</button>
         <button className="d-btn sm pri" onClick={() => setEditing("new")}>+ Add contact</button>
         <DMenu id="dn-more" items={[
-          ["Bulk AI import", () => setClassic(true), "LinkedIn URLs or names"],
+          ["Bulk AI import", () => { onBulk && onBulk(); setClassic(true); }, "LinkedIn URLs or names"],
           ["AI recalibrate geo / stage", () => setClassic(true), "Classic view"],
           ["Export TSV for Excel", () => setClassic(true), "Classic view"],
           ["Classic view", () => setClassic(true), "Previous Network layout"],
@@ -7530,21 +7530,39 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   }, [tamQueueActive, companies, tamQueueTotal, tamQueueIndex, selectedTamQueueIds]);
 
   // Investor Bulk Import: runs on the server in parallel (Linkup + Claude), survives closing the app.
+  // On load: re-attach to an import already running on the server (e.g. app was closed or reloaded).
+  useEffect(() => {
+    fetch("/api/contacts/status").then(r => r.ok ? r.json() : null).then(d => {
+      if (d && d.running) { setInvestorBulkMode(true); setInvestorQueueList(Array(d.total).fill({ query: "" })); setInvestorQueueIndex(d.done); setInvestorQueueLog(`[${d.done}/${d.total}] Import running on the server…`); setInvestorQueueActive(true); }
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!investorQueueActive || !investorQueueList.length) return;
+    const attachOnly = investorQueueList.every(it => !it.query);
     const items = investorQueueList.map(it => ({ query: it.query, stage: it.stage || "", priority: it.priority || "", region: it.region || "", notes: it.notes || "" }));
     const defaults = { stage: investorDefaultStage || "", priority: investorDefaultPriority || "", region: investorDefaultRegion || "", notes: investorDefaultNotes || "" };
     let alive = true;
     (async () => {
       try {
-        const r = await fetch("/api/contacts/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, defaults }) });
-        if (r.status === 409) { setInvestorQueueLog("[Error] An import is already running. Wait for it to finish."); setInvestorQueueActive(false); return; }
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        setInvestorBulkText(""); setInvestorQueueList([]);
-        let lastDone = -1;
+        if (!attachOnly) {
+          setInvestorQueueLog(`Sending ${items.length} contacts to the server…`);
+          const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 20000);
+          const r = await fetch("/api/contacts/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, defaults }), signal: ctl.signal });
+          clearTimeout(to);
+          if (r.status === 401) throw new Error("session expired, reload the page and log in again");
+          if (r.status !== 409 && !r.ok) throw new Error("HTTP " + r.status);
+          if (r.status === 409) setInvestorQueueLog("An import is already running, following it…");
+          else setInvestorBulkText("");
+        }
+        let lastDone = -1, misses = 0;
         while (alive) {
           await new Promise(res => setTimeout(res, 2000));
-          const d = await (await fetch("/api/contacts/status")).json();
+          let d;
+          try { d = await (await fetch("/api/contacts/status")).json(); misses = 0; }
+          catch (e) { if (++misses > 10) throw new Error("lost connection to the server"); continue; }
+          if (!alive) break;
+          if (d.total) setInvestorQueueList(l => l.length === d.total ? l : Array(d.total).fill({ query: "" }));
           if (d.done !== lastDone) { lastDone = d.done; if (window.__slSyncNow) window.__slSyncNow(); }
           setInvestorQueueIndex(d.done);
           const eng = d.engine === "linkup" ? "Linkup + Claude" : "Claude web search";
@@ -8184,7 +8202,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           />
         )}
         {tab === "network" && (
-          <DesktopNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} renderClassic={() => (
+          <DesktopNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} onBulk={() => setInvestorBulkMode(true)} renderClassic={() => (
           <Network 
             companies={companies}
             investors={investors} 
@@ -21529,7 +21547,7 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
                 ▶ Start Bulk AI Import
               </Btn>
             ) : (
-              <Btn onClick={() => setQueueActive(false)}>⏸ Pause Queue</Btn>
+              <Btn onClick={() => { fetch("/api/contacts/stop", { method: "POST" }).catch(() => {}); setQueueActive(false); setQueueLog("Stopped. Contacts already researched are saved."); }}>⏸ Stop import</Btn>
             )}
             <Btn onClick={() => { setBulkMode(false); setQueueActive(false); setQueueLog(""); }}>Close</Btn>
           </div>
