@@ -2660,11 +2660,14 @@ def _score_runner(ids):
         with _score_lock:
             score_job["active"].append(comp.get("name") or cid)
         try:
+            t0 = time.time()
             out, engine = score_one(comp)
             score_job["engine"] = engine
             _apply_score(cid, out=out)
+            print(f"[Scoring] OK {comp.get('name')} in {time.time() - t0:.1f}s ({engine})", flush=True)
         except Exception as e:
             msg = str(e)[:200]
+            print(f"[Scoring] FAILED {comp.get('name')}: {msg}", flush=True)
             _apply_score(cid, error=msg)
             with _score_lock:
                 score_job["failed"] += 1

@@ -4100,17 +4100,63 @@ const mIsUnscored = (c) => c.scores === null || !!(c.oneLiner && c.oneLiner.star
 const mQueueName = (log) => { const m = String(log || "").match(/Analyzing (.+?)\.\.\./); return m ? m[1] : ""; };
 
 // Progress for the diligence queue (state lives in App).
+// Server-side scoring job (shared by phone + desktop). Polls fast while running.
+function useServerScoring() {
+  const [job, setJob] = useState(null);
+  const lastDone = useRef(-1);
+  const poll = useCallback(async () => {
+    try {
+      const r = await fetch("/api/score/status"); if (!r.ok) return null;
+      const d = await r.json(); setJob(d);
+      if (d.done !== lastDone.current) { lastDone.current = d.done; if (window.__slSyncNow) window.__slSyncNow(); }
+      return d;
+    } catch (e) { return null; }
+  }, []);
+  useEffect(() => {
+    let alive = true, t = null;
+    const loop = async () => { const d = await poll(); if (!alive) return; t = setTimeout(loop, d && d.running ? 2000 : 15000); };
+    loop();
+    const kick = () => poll();
+    window.addEventListener("sl-score-kick", kick);
+    return () => { alive = false; clearTimeout(t); window.removeEventListener("sl-score-kick", kick); };
+  }, [poll]);
+  const call = async (action, ids) => {
+    try {
+      const r = await fetch("/api/score/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids ? { ids } : {}) });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 401) alert("Your session expired. Please sign in again.");
+      else if (r.status === 409) alert("Scoring is already running — progress is shown in the bar.");
+      else if (!r.ok) alert("Scoring could not start (HTTP " + r.status + ").");
+      window.dispatchEvent(new Event("sl-score-kick"));
+      return d;
+    } catch (e) { alert("Could not reach the server: " + e.message); }
+  };
+  return { job, start: (ids) => call("start", ids), stop: () => call("stop"), poll };
+}
+
+// Detailed live progress for a scoring run.
+const ScoreDetails = ({ job }) => {
+  if (!job) return <div className="sd-muted">Loading status…</div>;
+  const total = job.total || 0, done = job.done || 0, ok = done - (job.failed || 0);
+  const secs = job.startedAt ? Math.max(1, Math.round(((job.finishedAt ? new Date(job.finishedAt) : new Date()) - new Date(job.startedAt)) / 1000)) : 0;
+  return (
+    <div className="sd" id="score-details">
+      <div className="sd-row"><b>{job.running ? "Running" : (job.finishedAt ? "Finished" : "Idle")}</b><span>{done} / {total} done · {ok} scored · {job.failed || 0} failed{secs ? ` · ${secs}s` : ""}</span></div>
+      <div className="sd-bar"><div style={{ width: (total ? (done / total) * 100 : 0) + "%" }} /></div>
+      <div className="sd-muted">Engine: {job.engine === "linkup" ? "Linkup search + Claude " : "Claude web search "}({job.model}, {job.workers} at a time){!job.linkup ? " · add a Linkup key in Settings for faster research" : ""}</div>
+      {job.active && job.active.length > 0 && <div className="sd-list"><label>Scoring now</label>{job.active.map(n => <span key={n}>{n}</span>)}</div>}
+      {job.errors && job.errors.length > 0 && <div className="sd-list err"><label>Errors</label>{job.errors.map((e, i) => <span key={i}>{e}</span>)}</div>}
+    </div>
+  );
+};
+
 const MScoreSheet = ({ open, onClose, q }) => {
-  const done = Math.max(0, (q.index || 1) - 1);
-  const total = q.total || 0;
+  const job = q && q.job;
   return (
     <MSheet open={open} onClose={onClose} title="Scoring" id="m-score-sheet" footer={
-      q.active ? <button className="m-btn m-full" id="m-score-cancel" onClick={() => { q.cancel(); onClose(); }}>Cancel scoring</button>
+      job && job.running ? <button className="m-btn m-full" id="m-score-cancel" onClick={() => { q.cancel(); }}>Stop scoring</button>
         : <button className="m-btn m-full" onClick={onClose}>Close</button>}>
-      <div className="m-h1">{q.active ? `${Math.min(done + 1, total || 1)} / ${total || "…"}` : "Idle"}</div>
-      <div className="m-bar m-mt8"><div style={{ width: (total ? (done / total) * 100 : 0) + "%" }} /></div>
-      <div className="m-small m-mt8">{q.active ? (mQueueName(q.log) ? "Now scoring " + mQueueName(q.log) : "Starting…") : (q.log || "Nothing running.")}</div>
-      {q.log && /\[Error\]/.test(q.log) && <div className="m-err">{q.log}</div>}
+      <ScoreDetails job={job} />
     </MSheet>
   );
 };
@@ -6948,6 +6994,7 @@ window.App = function App() {
   const [queueTotal, setQueueTotal] = useState(0);
   const [queueLog, setQueueLog] = useState("");
   const [researchingIds, setResearchingIds] = useState({});
+  const srvScore = useServerScoring();
   const [researchingTamIds, setResearchingTamIds] = useState({});
   
   // Selection and Bulk Actions States
@@ -8083,11 +8130,9 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
   useEffect(() => { if (tab !== "network") setPhoneFocus(null); }, [tab]);
   const phoneGo = (k) => { setTab(k); setSelected(null); setPhoneMenu(false); window.scrollTo && window.scrollTo(0, 0); };
   const [phoneFocus, setPhoneFocus] = useState(null);
-  const phoneQueue = { active: queueActive, index: queueIndex, total: queueTotal, log: queueLog, cancel: () => setQueueActive(false) };
-  const phoneScoreAll = () => {
-    setCompanies(cs => cs.map(c => (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? { ...c, scores: null, rationale: {}, oneLiner: "" } : c));
-    setSelectedQueueIds(null); setQueueTotal(0); setQueueLog("Starting diligence queue..."); setQueueActive(true);
-  };
+  const phoneJob = srvScore.job;
+  const phoneQueue = { active: !!(phoneJob && phoneJob.running), index: phoneJob ? phoneJob.done + 1 : 0, total: phoneJob ? phoneJob.total : 0, log: phoneJob && phoneJob.active && phoneJob.active[0] ? `Analyzing ${phoneJob.active[0]}...` : "", job: phoneJob, cancel: () => srvScore.stop() };
+  const phoneScoreAll = () => { srvScore.start(); };
   const phonePick = (kind, item) => {
     setCmdKOpen(false); setPhoneMenu(false);
     if (kind === "deal") { setTab("pipeline"); setSelected(item.id); }
@@ -8601,6 +8646,7 @@ function Pipeline({
 
   const runDiligenceOnSelection = () => {
     if (selectedCompanyIds.length === 0) return;
+    serverScore("start", [...selectedCompanyIds]); return;
     setCompanies(cs => cs.map(c => {
       if (selectedCompanyIds.includes(c.id)) {
         return {
@@ -9251,6 +9297,9 @@ Construct the final email now. Maintain the exact formatting of the examples abo
   const sel = companies.find((c) => c.id === selected);
 
   if (sel) return <CompanyDetail company={sel} investors={investors} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => removeCompany(sel.id)} founderProfiles={founderProfiles} researchingTamIds={researchingTamIds} runTamForId={runTamForId} />;
+  const srvPipe = useServerScoring();
+  const scoreJob = srvPipe.job;
+  const serverScore = (action, ids) => action === "stop" ? srvPipe.stop() : srvPipe.start(ids);
   if (isPhone) return <MobilePipeline companies={companies} setSelected={setSelected} updateCompany={updateCompany} />;
 
   const unscoredCount = companies.filter(c => c.scores === null || (c.oneLiner && c.oneLiner.startsWith("Research failed:"))).length;
@@ -9261,34 +9310,11 @@ Construct the final email now. Maintain the exact formatting of the examples abo
            !c.marketStudy.problemThesis || 
            (c.marketStudy.problemThesis && c.marketStudy.problemThesis.startsWith("TAM calculation failed:"));
   }).length;
-  const [scoreJob, setScoreJob] = useState(null);
-  const lastDone = useRef(-1);
-  const pollScore = useCallback(async () => {
-    try {
-      const r = await fetch("/api/score/status"); if (!r.ok) return null;
-      const d = await r.json(); setScoreJob(d);
-      if (d.done !== lastDone.current) { lastDone.current = d.done; if (window.__slSyncNow) window.__slSyncNow(); }
-      return d;
-    } catch (e) { return null; }
-  }, []);
-  useEffect(() => {
-    let alive = true, t = null;
-    const loop = async () => { const d = await pollScore(); if (!alive) return; t = setTimeout(loop, d && d.running ? 2500 : 20000); };
-    loop();
-    return () => { alive = false; clearTimeout(t); };
-  }, [pollScore]);
-  const serverScore = async (action, ids) => {
-    try {
-      const r = await fetch("/api/score/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids ? { ids } : {}) });
-      if (r.status === 409) alert("Scoring is already running. It will pick up new deals when you start it again.");
-      await pollScore();
-    } catch (e) { alert("Could not reach the server: " + e.message); }
-  };
   const hasApiKey = hasClaudeKey();
 
   return (
     <div className="d-pipe">
-      {(unscoredCount > 0 || queueActive || unSizedTamCount > 0 || tamQueueActive) && (
+      {(unscoredCount > 0 || queueActive || unSizedTamCount > 0 || tamQueueActive || (scoreJob && (scoreJob.running || scoreJob.finishedAt))) && (
         <div className="d-strip" id="d-queue-strip">
           <div className="d-strip-i">
             <span className="d-strip-t">{scoreJob && scoreJob.running ? `Scoring ${scoreJob.done} / ${scoreJob.total}${scoreJob.failed ? ` · ${scoreJob.failed} failed` : ""} · ${scoreJob.engine === "linkup" ? "Linkup + Claude" : "Claude web search"}` : (queueActive ? (queueLog || "Scoring…") : `${unscoredCount} unscored`)}</span>
@@ -9313,6 +9339,7 @@ Construct the final email now. Maintain the exact formatting of the examples abo
               : <button className="d-btn sm" onClick={() => setTamQueueActive(false)}>Pause</button>}
           </div>
           {!hasApiKey && <span className="d-err">Add a Claude API key in Settings to run queues.</span>}
+          {scoreJob && (scoreJob.running || (scoreJob.finishedAt && scoreJob.total > 0)) && <div className="d-strip-details"><ScoreDetails job={scoreJob} /></div>}
           {(/\[Error\]/.test(queueLog || "") || /\[Error\]/.test(tamQueueLog || "")) && <span className="d-err">{/\[Error\]/.test(queueLog || "") ? queueLog : tamQueueLog}</span>}
         </div>
       )}

@@ -560,6 +560,18 @@
             .m-sheet.tall { height: 100vh; max-height: 100vh; }
             .m-sheet.on { transform: none; }
         }
+        /* Scoring details */
+        .d-strip-details { flex: 1 1 100%; }
+        .sd { font-family: Arial; font-size: 12px; color: #000; display: flex; flex-direction: column; gap: 6px; }
+        .sd-row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+        .sd-row span { color: #555; }
+        .sd-bar { height: 6px; background: #EEE; border-radius: 3px; overflow: hidden; }
+        .sd-bar div { height: 100%; background: #000; transition: width .4s ease; }
+        .sd-muted { color: #888; font-size: 11px; }
+        .sd-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+        .sd-list label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #888; margin-right: 4px; }
+        .sd-list span { font-size: 11px; background: #F2F2F2; border-radius: 9px; padding: 2px 8px; }
+        .sd-list.err span { background: #FFF; border: 1px solid #C00000; color: #C00000; }
     </style>
 </head>
 <body>
@@ -651,7 +663,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=75.22"></script>
+    <script src="bnvt-dealflow.js?v=75.23"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {
