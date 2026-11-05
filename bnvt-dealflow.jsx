@@ -9214,8 +9214,8 @@ Construct the final email now. Maintain the exact formatting of the examples abo
   const isPhone = useIsPhone();
   const sel = companies.find((c) => c.id === selected);
 
-  if (sel) return <CompanyDetail company={sel} investors={investors} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => removeCompany(sel.id)} founderProfiles={founderProfiles} researchingTamIds={researchingTamIds} runTamForId={runTamForId} />;
   const srvPipe = useServerScoring();
+  if (sel) return <CompanyDetail company={sel} investors={investors} update={(p) => updateCompany(sel.id, p)} back={() => setSelected(null)} remove={() => removeCompany(sel.id)} founderProfiles={founderProfiles} researchingTamIds={researchingTamIds} runTamForId={runTamForId} />;
   const scoreJob = srvPipe.job;
   const serverScore = (action, ids) => action === "stop" ? srvPipe.stop() : srvPipe.start(ids);
   if (isPhone) return <MobilePipeline companies={companies} setSelected={setSelected} updateCompany={updateCompany} />;
