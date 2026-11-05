@@ -2492,6 +2492,183 @@ def handle_healthz(handler):
 
 
 
+
+# ---------------- Fast parallel scoring (Linkup research + Claude Haiku) ----------------
+# Runs on the server, several deals at a time, and keeps going if the browser is closed.
+SCORE_WORKERS = int(os.environ.get("SCORE_WORKERS", "8"))
+SCORE_MODEL = os.environ.get("SCORE_MODEL", "claude-haiku-4-5")
+score_job = {"running": False, "total": 0, "done": 0, "failed": 0, "active": [], "errors": [],
+             "startedAt": None, "finishedAt": None, "engine": None, "stop": False}
+_score_lock = threading.Lock()
+
+def linkup_key():
+    return (os.environ.get("LINKUP_API_KEY") or get_stored_value("linkup_api_key") or "").strip()
+
+def linkup_search(query, depth="standard", output="sourcedAnswer", timeout=60):
+    req = urllib.request.Request(
+        "https://api.linkup.so/v1/search",
+        data=json.dumps({"q": query, "depth": depth, "outputType": output}).encode("utf-8"),
+        headers={"Authorization": f"Bearer {linkup_key()}", "Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def _anthropic(body, timeout=180, beta=None):
+    key = get_stored_value("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY") or ""
+    headers = {"x-api-key": key.strip(), "anthropic-version": "2023-06-01", "content-type": "application/json"}
+    if beta:
+        headers["anthropic-beta"] = beta
+    last = None
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                d = json.loads(resp.read().decode("utf-8"))
+            return "\n".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
+        except urllib.error.HTTPError as e:
+            last = f"Claude HTTP {e.code}: {e.read()[:200].decode('utf-8', 'ignore')}"
+            if e.code in (429, 500, 502, 503, 504, 529):
+                time.sleep(3 * (attempt + 1)); continue
+            raise Exception(last)
+        except Exception as e:
+            last = str(e); time.sleep(2 * (attempt + 1))
+    raise Exception(last or "Claude call failed")
+
+def _notes_text(notes):
+    if isinstance(notes, list):
+        return "\n".join("- " + (n if isinstance(n, str) else (n or {}).get("text", "")) for n in notes)
+    return notes if isinstance(notes, str) else ""
+
+SCORE_SCHEMA_HINT = ('{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth",'
+    '"geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"tags":["Second-time Founder","Young/Fearless/Creative"],'
+    '"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},'
+    '"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n,"tam":n},'
+    '"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"...","tam":"..."}}')
+
+def _score_prompt(comp, research):
+    target = comp.get("url") or comp.get("name") or ""
+    notes = _notes_text(comp.get("notes")) + ("\n" + _notes_text(comp.get("granolaNotes")) if comp.get("granolaNotes") else "")
+    return f"""You are an analyst at BNVT Capital, an early-stage AI fund (tickets up to $10M, US + EU). Assess this entity (a company website or an individual founder's LinkedIn profile/name): {target}
+{('Name in our CRM: ' + comp.get('name')) if comp.get('name') else ''}
+{('Proprietary context from the partner (weight this heavily):' + chr(10) + notes) if notes.strip() else ''}
+
+WEB RESEARCH (from a live search; rely on it, do not invent facts):
+{research or '(no web research available: use only what is certain, flag estimates)'}
+
+If the entity is an individual founder, assess their career/research background, past organizations and current venture or focus.
+Tags (max 3): 'Second-time Founder' (founded before), 'Young/Fearless/Creative' (new/emerging industries, young creative engineer), 'Deep Problem Understanding' (legacy industry, deep domain knowledge).
+Scores on a 1-5 scale: technical depth/proprietary tech, data moat, distribution/switching cost, model-agnosticism, IP/time to replicate, TAM.
+
+Respond ONLY with valid JSON, no markdown fences, no preamble:
+{SCORE_SCHEMA_HINT}"""
+
+def _research(comp):
+    target = comp.get("url") or comp.get("name") or ""
+    if linkup_key():
+        q1 = (f"Who is behind {target} ({comp.get('name','')})? What do they build or work on, the product, market, and their background "
+              f"(education, past companies, research). If it is a LinkedIn profile, research that person and their current venture.")
+        q2 = f"{comp.get('name') or target}: founders, funding, investors, traction, customers, recent news"
+        out = []
+        for q in (q1, q2):
+            try:
+                d = linkup_search(q)
+                src = "\n".join(f"- {s.get('name','')}: {s.get('url','')} | {(s.get('snippet') or s.get('content') or '')[:300]}" for s in (d.get("sources") or [])[:8])
+                out.append(f"Q: {q}\nA: {d.get('answer','')}\nSources:\n{src}")
+            except Exception as e:
+                out.append(f"Q: {q}\n(search failed: {e})")
+        return "\n\n".join(out), "linkup"
+    return None, "claude-web"
+
+def score_one(comp):
+    research, engine = _research(comp)
+    prompt = _score_prompt(comp, research)
+    if engine == "linkup":
+        text = _anthropic({"model": SCORE_MODEL, "max_tokens": 2500, "messages": [{"role": "user", "content": prompt}]})
+    else:  # no Linkup key: Claude does its own web search (slower)
+        text = _anthropic({"model": "claude-sonnet-4-6", "max_tokens": 4000, "messages": [{"role": "user", "content": prompt}],
+                           "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 4}]}, timeout=300)
+    out = extract_json(text)
+    if isinstance(out, str):
+        out = json.loads(out)
+    if not isinstance(out, dict) or not isinstance(out.get("scores"), dict):
+        raise Exception("Could not read scores from the AI answer")
+    return out, engine
+
+def _apply_score(cid, out=None, error=None):
+    with db_lock:
+        db = read_db()
+        for c in db.get("companies", []):
+            if str(c.get("id")) != str(cid):
+                continue
+            now = int(time.time() * 1000)
+            if error:
+                c["oneLiner"] = f"Research failed: {error}"[:300]
+            else:
+                c.update({
+                    "name": out.get("name") or c.get("name"),
+                    "oneLiner": out.get("oneLiner") or c.get("oneLiner"),
+                    "sector": out.get("sector") or c.get("sector"),
+                    "stage": out.get("stageGuess") or c.get("stage"),
+                    "geo": out.get("geo") or c.get("geo") or "",
+                    "founders": out.get("founders") or c.get("founders") or [],
+                    "tags": out.get("tags") or [],
+                    "overview": out.get("overview") or {},
+                    "scores": out.get("scores"),
+                    "rationale": out.get("rationale") or {},
+                    "scoredAt": now,
+                })
+            c["updatedAt"] = now
+            break
+        write_db(db)
+
+def _is_unscored(c):
+    return c.get("scores") in (None, {}) or str(c.get("oneLiner") or "").startswith("Research failed")
+
+def _score_runner(ids):
+    from concurrent.futures import ThreadPoolExecutor
+    def work(cid):
+        if score_job["stop"]:
+            return
+        comp = next((c for c in read_db().get("companies", []) if str(c.get("id")) == str(cid)), None)
+        if not comp:
+            return
+        with _score_lock:
+            score_job["active"].append(comp.get("name") or cid)
+        try:
+            out, engine = score_one(comp)
+            score_job["engine"] = engine
+            _apply_score(cid, out=out)
+        except Exception as e:
+            msg = str(e)[:200]
+            _apply_score(cid, error=msg)
+            with _score_lock:
+                score_job["failed"] += 1
+                score_job["errors"] = (score_job["errors"] + [f"{comp.get('name')}: {msg}"])[-10:]
+        finally:
+            with _score_lock:
+                score_job["done"] += 1
+                try: score_job["active"].remove(comp.get("name") or cid)
+                except ValueError: pass
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, SCORE_WORKERS)) as ex:
+            list(ex.map(work, ids))
+    finally:
+        score_job.update(running=False, finishedAt=datetime.now().isoformat(timespec="seconds"), active=[])
+
+def start_scoring(ids=None):
+    if score_job["running"]:
+        return False
+    comps = read_db().get("companies", [])
+    if not ids:
+        ids = [c.get("id") for c in comps if _is_unscored(c)]
+    ids = [i for i in ids if i]
+    score_job.update(running=bool(ids), total=len(ids), done=0, failed=0, active=[], errors=[], stop=False,
+                     startedAt=datetime.now().isoformat(timespec="seconds"), finishedAt=None,
+                     engine="linkup" if linkup_key() else "claude-web")
+    if ids:
+        threading.Thread(target=_score_runner, args=(ids,), daemon=True, name="scoring").start()
+    return True
+
+
 # ---------------- Gradium voice (TTS + STT) ----------------
 GRADIUM_BASE = "https://api.gradium.ai/api"
 GRADIUM_DEFAULT_VOICE = "YTpq7expH9539ERJ"
@@ -2741,6 +2918,12 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"value": None}).encode('utf-8'))
+        elif parsed_url.path == '/api/score/status':
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({**score_job, "linkup": bool(linkup_key()), "workers": SCORE_WORKERS, "model": SCORE_MODEL}).encode('utf-8'))
+            return
         elif parsed_url.path == '/api/voice/status':
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -4245,6 +4428,35 @@ Respond ONLY with valid JSON.
                 }).encode('utf-8'))
                 return
 
+        elif self.path == '/api/linkup/test':
+            try:
+                if not linkup_key():
+                    raise Exception("No Linkup key saved")
+                d = linkup_search("What does the company Linkup (linkup.so) do? One sentence.", depth="standard", output="sourcedAnswer", timeout=30)
+                res = {"ok": True, "answer": d.get("answer", "")}
+            except urllib.error.HTTPError as e:
+                res = {"ok": False, "error": f"HTTP {e.code}: {e.read()[:200].decode('utf-8', 'ignore')}"}
+            except Exception as e:
+                res = {"ok": False, "error": str(e)}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode('utf-8'))
+        elif self.path in ('/api/score/start', '/api/score/stop'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            try:
+                body = json.loads(self.rfile.read(content_length).decode('utf-8') or '{}') if content_length else {}
+            except Exception:
+                body = {}
+            if self.path == '/api/score/stop':
+                score_job["stop"] = True
+                ok = True
+            else:
+                ok = start_scoring(body.get("ids") or None)
+            self.send_response(200 if ok else 409)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": ok, **score_job}).encode('utf-8'))
         elif self.path == '/api/storage':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length) if content_length > 0 else b''
@@ -4256,6 +4468,8 @@ Respond ONLY with valid JSON.
                     raise Exception("Missing key")
                 if not safe_storage_key(key):
                     raise Exception("Invalid key")
+                if is_secret_key(key) and (value is None or (isinstance(value, str) and not value.strip())):
+                    value = MASK_PREFIX  # empty field: keep the saved secret
                 if is_masked(value):
                     # The browser sent back the masked placeholder: keep the real secret.
                     self.send_response(200)

@@ -218,6 +218,45 @@ function hasServerKey(name) {
 }
 function hasClaudeKey() { return hasServerKey("anthropic_api_key"); }
 
+
+// Linkup web search key (fast research for parallel scoring). Saves straight to the server.
+const LinkupKeyCard = () => {
+  const [val, setVal] = useState("");
+  const [status, setStatus] = useState(null);
+  const [msg, setMsg] = useState("");
+  const refresh = () => fetch("/api/score/status").then(r => r.json()).then(d => setStatus(d)).catch(() => {});
+  useEffect(() => { refresh(); }, []);
+  const save = async () => {
+    if (!val.trim()) return;
+    setMsg("Saving…");
+    await fetch("/api/storage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "linkup_api_key", value: val.trim() }) });
+    setVal(""); await refresh(); setMsg("Saved. Scoring now uses Linkup.");
+  };
+  const test = async () => {
+    setMsg("Testing…");
+    try { const r = await fetch("/api/linkup/test", { method: "POST" }); const d = await r.json(); setMsg(d.ok ? "Linkup works: " + (d.answer || "").slice(0, 120) : "Linkup error: " + d.error); }
+    catch (e) { setMsg("Linkup error: " + e.message); }
+  };
+  const on = status && status.linkup;
+  return (
+    <div style={{ border: "1px solid #E6E6E6", borderRadius: 10, padding: 18, marginBottom: 16, background: "#fff" }} id="linkup-card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>Linkup API Key (fast scoring)</div>
+          <div style={{ fontSize: 12, color: "#777" }}>Web research in 1–3 s per deal, so scoring runs on the server, {status ? status.workers : 8} deals at a time.</div>
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4, border: "1px solid " + (on ? "#000" : "#C00000"), color: on ? "#000" : "#C00000" }}>{on ? "CONFIGURED" : "MISSING KEY"}</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <input id="linkup-key" type="password" value={val} onChange={(e) => setVal(e.target.value)} placeholder={on ? "Replace Linkup key" : "Paste Linkup API key"} style={{ flex: "1 1 220px", padding: "9px 12px", border: "1px solid #DDD", borderRadius: 6, fontSize: 13 }} />
+        <button className="d-btn sm pri" onClick={save} disabled={!val.trim()}>Save</button>
+        <button className="d-btn sm" onClick={test} disabled={!on}>Test</button>
+      </div>
+      {msg && <div style={{ fontSize: 12, marginTop: 8, color: /error/i.test(msg) ? "#C00000" : "#333" }}>{msg}</div>}
+    </div>
+  );
+};
+
 function parseJSON(text) {
   let clean = text.replace(/```json|```/g, "").trim();
   
@@ -5664,6 +5703,9 @@ function Settings({ setTab }) {
   };
 
   const saveKey = async (key, val) => {
+    // Never overwrite a saved server key with an empty field or the masked placeholder.
+    const isSecret = /_api_key$|_key$|_db_url$/.test(key);
+    if (isSecret && (!val || String(val).startsWith("\u2022\u2022\u2022\u2022"))) return;
     localStorage.setItem(key, val);
     try {
       await fetch('/api/storage', {
@@ -6034,6 +6076,7 @@ function Settings({ setTab }) {
         </div>
         )}
 
+        <LinkupKeyCard />
         {/* 2. Affinity CRM API Key Card */}
         {showS("affinity") && (
         <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1px solid ${INK}18`, padding: "22px 26px", boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)" }}>
@@ -7189,6 +7232,7 @@ window.App = function App() {
         console.warn("Storage polling sync check:", e.message);
       }
     };
+    window.__slSyncNow = sync;
     const interval = setInterval(sync, 15000);
     const onVisible = () => { if (document.visibilityState === "visible") sync(); };
     document.addEventListener("visibilitychange", onVisible);
@@ -7624,7 +7668,23 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
   const runDiligenceForId = async (id) => {
     const comp = companies.find(c => c.id === id);
     if (!comp) return;
-    
+
+    // Fast path: score on the server (Linkup research + Claude), survives closing the app.
+    try {
+      setResearchingIds(prev => ({ ...prev, [id]: true }));
+      const r = await fetch("/api/score/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id] }) });
+      if (r.ok) {
+        for (let i = 0; i < 120; i++) {
+          await new Promise(res => setTimeout(res, 2000));
+          const s = await (await fetch("/api/score/status")).json();
+          if (!s.running) break;
+        }
+        if (window.__slSyncNow) await window.__slSyncNow();
+        setResearchingIds(prev => { const copy = { ...prev }; delete copy[id]; return copy; });
+        return;
+      }
+    } catch (e) { /* fall back to the in-browser path below */ }
+
     setResearchingIds(prev => ({ ...prev, [id]: true }));
     try {
       let granolaContext = "";
@@ -9201,6 +9261,29 @@ Construct the final email now. Maintain the exact formatting of the examples abo
            !c.marketStudy.problemThesis || 
            (c.marketStudy.problemThesis && c.marketStudy.problemThesis.startsWith("TAM calculation failed:"));
   }).length;
+  const [scoreJob, setScoreJob] = useState(null);
+  const lastDone = useRef(-1);
+  const pollScore = useCallback(async () => {
+    try {
+      const r = await fetch("/api/score/status"); if (!r.ok) return null;
+      const d = await r.json(); setScoreJob(d);
+      if (d.done !== lastDone.current) { lastDone.current = d.done; if (window.__slSyncNow) window.__slSyncNow(); }
+      return d;
+    } catch (e) { return null; }
+  }, []);
+  useEffect(() => {
+    let alive = true, t = null;
+    const loop = async () => { const d = await pollScore(); if (!alive) return; t = setTimeout(loop, d && d.running ? 2500 : 20000); };
+    loop();
+    return () => { alive = false; clearTimeout(t); };
+  }, [pollScore]);
+  const serverScore = async (action, ids) => {
+    try {
+      const r = await fetch("/api/score/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids ? { ids } : {}) });
+      if (r.status === 409) alert("Scoring is already running. It will pick up new deals when you start it again.");
+      await pollScore();
+    } catch (e) { alert("Could not reach the server: " + e.message); }
+  };
   const hasApiKey = hasClaudeKey();
 
   return (
@@ -9208,13 +9291,13 @@ Construct the final email now. Maintain the exact formatting of the examples abo
       {(unscoredCount > 0 || queueActive || unSizedTamCount > 0 || tamQueueActive) && (
         <div className="d-strip" id="d-queue-strip">
           <div className="d-strip-i">
-            <span className="d-strip-t">{queueActive ? (queueLog || "Scoring…") : `${unscoredCount} unscored`}</span>
-            {queueActive && queueTotal > 0 && <span className="d-prog"><span style={{ width: `${((queueTotal - unscoredCount) / queueTotal) * 100}%` }} /></span>}
-            {!queueActive
-              ? <button className="d-btn sm" id="d-start-diligence" disabled={!hasApiKey || unscoredCount === 0} onClick={() => {
-                  setCompanies(cs => cs.map(c => (c.oneLiner && c.oneLiner.startsWith("Research failed:")) ? { ...c, scores: null, rationale: {}, oneLiner: "" } : c));
-                  setShouldStartQueue(true);
-                }}>Start scoring</button>
+            <span className="d-strip-t">{scoreJob && scoreJob.running ? `Scoring ${scoreJob.done} / ${scoreJob.total}${scoreJob.failed ? ` · ${scoreJob.failed} failed` : ""} · ${scoreJob.engine === "linkup" ? "Linkup + Claude" : "Claude web search"}` : (queueActive ? (queueLog || "Scoring…") : `${unscoredCount} unscored`)}</span>
+            {scoreJob && scoreJob.running && scoreJob.total > 0 && <span className="d-prog"><span style={{ width: `${(scoreJob.done / scoreJob.total) * 100}%` }} /></span>}
+            {queueActive && !(scoreJob && scoreJob.running) && queueTotal > 0 && <span className="d-prog"><span style={{ width: `${((queueTotal - unscoredCount) / queueTotal) * 100}%` }} /></span>}
+            {scoreJob && scoreJob.running
+              ? <button className="d-btn sm" onClick={() => serverScore("stop")}>Stop</button>
+              : !queueActive
+              ? <button className="d-btn sm" id="d-start-diligence" disabled={!hasApiKey || unscoredCount === 0} onClick={() => serverScore("start")}>Start scoring</button>
               : <button className="d-btn sm" onClick={() => setQueueActive(false)}>Pause</button>}
           </div>
           <span className="d-strip-sep" />
