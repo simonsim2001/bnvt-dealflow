@@ -7529,151 +7529,37 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     return () => clearTimeout(timer);
   }, [tamQueueActive, companies, tamQueueTotal, tamQueueIndex, selectedTamQueueIds]);
 
-  // Investor Bulk Import Queue Runner
+  // Investor Bulk Import: runs on the server in parallel (Linkup + Claude), survives closing the app.
   useEffect(() => {
-    if (!investorQueueActive || investorQueueIndex >= investorQueueList.length) {
-      if (investorQueueActive && investorQueueIndex >= investorQueueList.length) {
-        setInvestorQueueActive(false);
-        setInvestorQueueLog("Bulk import complete!");
-        setInvestorBulkText("");
-        setInvestorQueueList([]);
-      }
-      return;
-    }
-
-    const item = investorQueueList[investorQueueIndex];
-    if (!item || !item.query.trim()) {
-      setInvestorQueueIndex((idx) => idx + 1);
-      return;
-    }
-
-    const runImport = async () => {
-      setInvestorQueueLog(`[${investorQueueIndex + 1}/${investorQueueList.length}] Researching: ${item.query}...`);
+    if (!investorQueueActive || !investorQueueList.length) return;
+    const items = investorQueueList.map(it => ({ query: it.query, stage: it.stage || "", priority: it.priority || "", region: it.region || "", notes: it.notes || "" }));
+    const defaults = { stage: investorDefaultStage || "", priority: investorDefaultPriority || "", region: investorDefaultRegion || "", notes: investorDefaultNotes || "" };
+    let alive = true;
+    (async () => {
       try {
-        const prompt = `Research this venture capitalist investor using web search.
-Query: ${item.query.trim()}
-${item.stage ? `Expected Stage Focus: ${item.stage}` : ""}
-${item.region ? `Expected Geography: ${item.region}` : ""}
-
-Identify:
-- Full Name
-- Fund Name
-- LinkedIn Profile URL
-- Sweet Spot (stage & check size, e.g. 'Pre-Seed - Seed, $250k - $1M')
-- Geography (e.g. 'US', 'Europe', 'Global')
-- Sector Focus / Interests (provide 3 to 6 tags, e.g. ["climate tech", "robotics", "dev tools"])
-- Investment Thesis & BNVT Fund Fit (discuss their preferences and how they fit as a co-investor or downround investor for BNVT - early-stage AI fund, tickets up to $10M, US + EU)
-
-Respond ONLY with valid JSON in this format, with no markdown fences, no preamble:
-{
-  "name": "Full Name",
-  "fund": "Fund Name",
-  "linkedin": "LinkedIn URL",
-  "sweetSpot": "stages & check sizes",
-  "geo": "geography",
-  "focus": ["tag1", "tag2", "tag3"],
-  "notes": "investment thesis & BNVT fit notes"
-}`;
-        const out = parseJSON(await callClaude(prompt, true, "light"));
-        
-        const finalStage = item.stage || investorDefaultStage || out.stage || "";
-        const finalPriority = item.priority || investorDefaultPriority;
-        const finalRegion = item.region || investorDefaultRegion || out.geo || "Unknown";
-        const combinedNotes = [
-          out.notes,
-          item.notes ? `User Import Notes: ${item.notes}` : "",
-          investorDefaultNotes ? `Import Context: ${investorDefaultNotes}` : ""
-        ].filter(Boolean).join("\n\n");
-
-        const newInv = {
-          id: uid(),
-          name: out.name || item.query,
-          fund: out.fund || "Unknown Fund",
-          linkedin: out.linkedin || (item.query.startsWith("http") ? item.query : ""),
-          email: "",
-          sweetSpot: out.sweetSpot || "Unknown",
-          stage: finalStage,
-          priority: finalPriority,
-          geo: finalRegion,
-          focus: out.focus || [],
-          notes: combinedNotes,
-        };
-
-        setInvestors((list) => {
-          const exists = list.some((i) => 
-            (newInv.linkedin && i.linkedin === newInv.linkedin) || 
-            (i.name && newInv.name && i.fund && newInv.fund && i.name.toLowerCase() === newInv.name.toLowerCase() && i.fund.toLowerCase() === newInv.fund.toLowerCase())
-          );
-          return exists ? list.map((i) => {
-            const isMatch = (newInv.linkedin && i.linkedin === newInv.linkedin) || 
-                            (i.name && newInv.name && i.fund && newInv.fund && i.name.toLowerCase() === newInv.name.toLowerCase() && i.fund.toLowerCase() === newInv.fund.toLowerCase());
-            if (isMatch) {
-              return {
-                ...i,
-                ...newInv,
-                id: i.id,
-                focus: Array.from(new Set([...(i.focus || []), ...(newInv.focus || [])])),
-                notes: appendNotesText(i.notes, newInv.notes)
-              };
-            }
-            return i;
-          }) : [...list, newInv];
-        });
-
-        setInvestorQueueLog(`[Success] Researched & imported ${out.name || item.query}`);
-      } catch (err) {
-        console.error("Bulk import error on " + item.query, err);
-        setInvestorQueueLog(`[Error] Skipping ${item.query}: ${err.message}`);
-        
-        const finalStage = item.stage || investorDefaultStage || "";
-        const finalPriority = item.priority || investorDefaultPriority;
-        const finalRegion = item.region || investorDefaultRegion || "Unknown";
-        const combinedNotes = [
-          item.notes ? `User Import Notes: ${item.notes}` : "",
-          investorDefaultNotes ? `Import Context: ${investorDefaultNotes}` : ""
-        ].filter(Boolean).join("\n\n");
-
-        const newInv = {
-          id: uid(),
-          name: item.query.startsWith("http") ? "LinkedIn User" : item.query,
-          fund: "Imported",
-          linkedin: item.query.startsWith("http") ? item.query : "",
-          email: "",
-          sweetSpot: "Not Researched",
-          stage: finalStage,
-          priority: finalPriority,
-          geo: finalRegion,
-          focus: [],
-          notes: combinedNotes
-        };
-        
-        setInvestors((list) => {
-          const exists = list.some((i) => 
-            (newInv.linkedin && i.linkedin === newInv.linkedin) || 
-            (i.name && newInv.name && i.fund && newInv.fund && i.name.toLowerCase() === newInv.name.toLowerCase() && i.fund.toLowerCase() === newInv.fund.toLowerCase())
-          );
-          return exists ? list.map((i) => {
-            const isMatch = (newInv.linkedin && i.linkedin === newInv.linkedin) || 
-                            (i.name && newInv.name && i.fund && newInv.fund && i.name.toLowerCase() === newInv.name.toLowerCase() && i.fund.toLowerCase() === newInv.fund.toLowerCase());
-            if (isMatch) {
-              return {
-                ...i,
-                ...newInv,
-                id: i.id,
-                focus: Array.from(new Set([...(i.focus || []), ...(newInv.focus || [])])),
-                notes: appendNotesText(i.notes, newInv.notes)
-              };
-            }
-            return i;
-          }) : [...list, newInv];
-        });
+        const r = await fetch("/api/contacts/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, defaults }) });
+        if (r.status === 409) { setInvestorQueueLog("[Error] An import is already running. Wait for it to finish."); setInvestorQueueActive(false); return; }
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        setInvestorBulkText(""); setInvestorQueueList([]);
+        let lastDone = -1;
+        while (alive) {
+          await new Promise(res => setTimeout(res, 2000));
+          const d = await (await fetch("/api/contacts/status")).json();
+          if (d.done !== lastDone) { lastDone = d.done; if (window.__slSyncNow) window.__slSyncNow(); }
+          setInvestorQueueIndex(d.done);
+          const eng = d.engine === "linkup" ? "Linkup + Claude" : "Claude web search";
+          const now = (d.active || []).slice(0, 3).join(", ");
+          setInvestorQueueLog(d.running
+            ? `[${d.done}/${d.total}] Researching in parallel (${eng}, ${d.workers} at a time)${now ? " · now: " + now : ""}${d.failed ? ` · ${d.failed} failed` : ""}`
+            : `Bulk import complete: ${d.added} added, ${d.updated} updated${d.failed ? `, ${d.failed} failed (${(d.errors || [])[0] || ""})` : ""}.`);
+          if (!d.running) { setInvestorQueueActive(false); if (window.__slSyncNow) window.__slSyncNow(); break; }
+        }
+      } catch (e) {
+        setInvestorQueueLog("[Error] Could not start the import: " + e.message); setInvestorQueueActive(false);
       }
-      setInvestorQueueIndex((idx) => idx + 1);
-    };
-
-    const timer = setTimeout(runImport, 1200);
-    return () => clearTimeout(timer);
-  }, [investorQueueActive, investorQueueIndex, investorQueueList]);
+    })();
+    return () => { alive = false; };
+  }, [investorQueueActive]);
 
   const syncAffinityStatusDirectly = async (company, newStatus) => {
     if (!company || !(company.affinityOrgId || company.affinityListEntryId || company.affinityUrl)) return;
@@ -22279,7 +22165,15 @@ Respond ONLY with valid JSON in this format, with no markdown fences, no preambl
   "focus": ["deeptech", "climate tech", "AI applications"],
   "notes": "Jane focuses heavily on early-stage climate tech and deeptech. High fund fit for BNVT: potential co-investor in climate-AI or industrial automation deals."
 }`;
-      const out = parseJSON(await callClaude(prompt, true));
+      let out;
+      try {
+        const r = await fetch("/api/contacts/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: [f.name, f.fund, f.linkedin].filter(Boolean).join(" ") || query }) });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || "server research failed");
+        out = d.contact;
+      } catch (e) {
+        out = parseJSON(await callClaude(prompt, true, "light"));
+      }
       setF((prev) => ({
         ...prev,
         name: out.name || prev.name,

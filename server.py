@@ -2698,6 +2698,172 @@ def start_scoring(ids=None):
     return True
 
 
+
+# ---------------- Network contacts: research + parallel bulk import (same engine as scoring) ----------------
+contact_job = {"running": False, "total": 0, "done": 0, "failed": 0, "added": 0, "updated": 0, "active": [], "errors": [],
+               "startedAt": None, "finishedAt": None, "engine": None, "stop": False}
+_contact_lock = threading.Lock()
+
+CONTACT_SCHEMA_HINT = ('{"name":"Full Name","fund":"Fund Name","linkedin":"https://www.linkedin.com/in/...","email":"",'
+    '"sweetSpot":"stages & check sizes, e.g. Seed - Series A, $1-5M","stage":"Seed","geo":"country/region","city":"city",'
+    '"focus":["tag1","tag2","tag3"],"notes":"investment thesis & BNVT fit (2-4 sentences)"}')
+
+def _contact_prompt(query, research, hints=""):
+    return f"""You research venture investors for BNVT Capital (early-stage AI fund, US + EU, tickets up to $10M).
+Investor to identify: {query}
+{hints}
+WEB RESEARCH (from a live search; rely on it, do not invent facts):
+{research or '(no web research available: search the web)'}
+
+Return the investor's full name, fund, LinkedIn URL, public work email only if clearly published, sweet spot (stage and check size),
+stage focus, geography (country/region) and city, 3-6 sector focus tags, and notes on their thesis and how they fit BNVT as a co-investor.
+If something is unknown leave it empty. Respond ONLY with valid JSON, no markdown fences, no preamble:
+{CONTACT_SCHEMA_HINT}"""
+
+def research_contact(query, hints=""):
+    research, engine = None, "claude-web"
+    if linkup_key():
+        engine = "linkup"
+        try:
+            d = linkup_search(f"Venture capital investor {query}: full name, fund/firm, role, LinkedIn URL, city and country, "
+                              f"investment stage and typical check size, sector focus, notable investments and thesis.")
+            src = "\n".join(f"- {s.get('name','')}: {s.get('url','')} | {(s.get('snippet') or s.get('content') or '')[:300]}" for s in (d.get("sources") or [])[:8])
+            research = f"A: {d.get('answer','')}\nSources:\n{src}"
+        except Exception as e:
+            research = f"(search failed: {e})"
+    prompt = _contact_prompt(query, research, hints)
+    body = {"model": SCORE_MODEL, "max_tokens": 1500, "messages": [{"role": "user", "content": prompt}]}
+    if engine != "linkup":
+        body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}]
+    text = _anthropic(body, timeout=120)
+    out = _find_json_with(text, "name")
+    if not isinstance(out, dict):
+        fix = _anthropic({"model": SCORE_MODEL, "max_tokens": 1200, "messages": [
+            {"role": "user", "content": prompt}, {"role": "assistant", "content": (text or "(no answer)")[:5000]},
+            {"role": "user", "content": "Now output ONLY the JSON object in the exact schema, nothing else. Leave unknown fields empty."}]})
+        out = _find_json_with(fix, "name")
+    if not isinstance(out, dict):
+        raise Exception("Could not read the AI answer")
+    if isinstance(out.get("focus"), str):
+        out["focus"] = [t.strip() for t in out["focus"].split(",") if t.strip()]
+    return out, engine
+
+def _find_json_with(text, key):
+    dec = json.JSONDecoder()
+    text = text or ""
+    for i, ch in enumerate(text):
+        if ch == "{":
+            try:
+                obj, _ = dec.raw_decode(text[i:])
+                if isinstance(obj, dict) and key in obj:
+                    return obj
+            except Exception:
+                pass
+    return None
+
+def _norm(s):
+    return str(s or "").strip().lower()
+
+def _upsert_contact(item, out, defaults, error=None):
+    q = (item.get("query") or "").strip()
+    is_url = q.startswith("http")
+    notes = "\n\n".join(x for x in [
+        (out or {}).get("notes", ""),
+        f"User Import Notes: {item['notes']}" if item.get("notes") else "",
+        f"Import Context: {defaults['notes']}" if defaults.get("notes") else ""] if x)
+    now = int(time.time() * 1000)
+    inv = {
+        "name": (out or {}).get("name") or ("LinkedIn User" if is_url else q),
+        "fund": (out or {}).get("fund") or ("Imported" if error else "Unknown Fund"),
+        "linkedin": (out or {}).get("linkedin") or (q if is_url else ""),
+        "email": (out or {}).get("email") or "",
+        "sweetSpot": (out or {}).get("sweetSpot") or ("Not Researched" if error else "Unknown"),
+        "stage": item.get("stage") or defaults.get("stage") or (out or {}).get("stage") or "",
+        "priority": item.get("priority") or defaults.get("priority") or "Medium",
+        "geo": item.get("region") or defaults.get("region") or (out or {}).get("geo") or "Unknown",
+        "city": (out or {}).get("city") or "",
+        "focus": (out or {}).get("focus") or [],
+        "notes": notes,
+        "updatedAt": now,
+    }
+    with db_lock:
+        db = read_db()
+        lst = db.setdefault("investors", [])
+        match = None
+        for i in lst:
+            if (inv["linkedin"] and _norm(i.get("linkedin")).rstrip("/") == _norm(inv["linkedin"]).rstrip("/")) or \
+               (_norm(i.get("name")) and _norm(i.get("name")) == _norm(inv["name"]) and _norm(i.get("fund")) == _norm(inv["fund"])):
+                match = i; break
+        if match:
+            keep_notes = match.get("notes")
+            for k, v in inv.items():
+                if v not in ("", None, [], "Unknown", "Unknown Fund", "Imported", "Not Researched") or not match.get(k):
+                    match[k] = v
+            match["focus"] = list(dict.fromkeys((match.get("focus") or []) + (inv["focus"] or [])))
+            if keep_notes and inv["notes"] and inv["notes"] not in str(keep_notes):
+                match["notes"] = (keep_notes if isinstance(keep_notes, str) else _notes_text(keep_notes)) + "\n\n" + inv["notes"]
+            kind = "updated"
+        else:
+            inv["id"] = "inv_" + uuid.uuid4().hex[:10]
+            inv["createdAt"] = now
+            lst.append(inv)
+            kind = "added"
+        write_db(db)
+    return kind
+
+def _contact_runner(items, defaults):
+    from concurrent.futures import ThreadPoolExecutor
+    def work(item):
+        if contact_job["stop"]:
+            return
+        q = (item.get("query") or "").strip()
+        if not q:
+            with _contact_lock: contact_job["done"] += 1
+            return
+        with _contact_lock: contact_job["active"].append(q[:60])
+        try:
+            hints = "\n".join(x for x in [f"Expected stage focus: {item.get('stage') or defaults.get('stage')}" if (item.get('stage') or defaults.get('stage')) else "",
+                                          f"Expected geography: {item.get('region') or defaults.get('region')}" if (item.get('region') or defaults.get('region')) else ""] if x)
+            t0 = time.time()
+            out, engine = research_contact(q, hints)
+            contact_job["engine"] = engine
+            kind = _upsert_contact(item, out, defaults)
+            with _contact_lock: contact_job[kind] += 1
+            print(f"[Contacts] {kind} {out.get('name') or q} in {time.time() - t0:.1f}s ({engine})", flush=True)
+        except Exception as e:
+            msg = str(e)[:200]
+            print(f"[Contacts] FAILED {q}: {msg}", flush=True)
+            try:
+                kind = _upsert_contact(item, None, defaults, error=msg)
+                with _contact_lock: contact_job[kind] += 1
+            except Exception:
+                pass
+            with _contact_lock:
+                contact_job["failed"] += 1
+                contact_job["errors"] = (contact_job["errors"] + [f"{q[:60]}: {msg}"])[-10:]
+        finally:
+            with _contact_lock:
+                contact_job["done"] += 1
+                try: contact_job["active"].remove(q[:60])
+                except ValueError: pass
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, SCORE_WORKERS)) as ex:
+            list(ex.map(work, items))
+    finally:
+        contact_job.update(running=False, finishedAt=datetime.now().isoformat(timespec="seconds"), active=[])
+
+def start_contact_import(items, defaults):
+    if contact_job["running"]:
+        return False
+    items = [i for i in (items or []) if isinstance(i, dict) and (i.get("query") or "").strip()]
+    contact_job.update(running=bool(items), total=len(items), done=0, failed=0, added=0, updated=0, active=[], errors=[], stop=False,
+                       startedAt=datetime.now().isoformat(timespec="seconds"), finishedAt=None,
+                       engine="linkup" if linkup_key() else "claude-web")
+    if items:
+        threading.Thread(target=_contact_runner, args=(items, defaults or {}), daemon=True, name="contacts").start()
+    return True
+
+
 # ---------------- Gradium voice (TTS + STT) ----------------
 GRADIUM_BASE = "https://api.gradium.ai/api"
 GRADIUM_DEFAULT_VOICE = "YTpq7expH9539ERJ"
@@ -2947,6 +3113,12 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"value": None}).encode('utf-8'))
+        elif parsed_url.path == '/api/contacts/status':
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({**contact_job, "linkup": bool(linkup_key()), "workers": SCORE_WORKERS}).encode('utf-8'))
+            return
         elif parsed_url.path == '/api/score/status':
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -4457,6 +4629,28 @@ Respond ONLY with valid JSON.
                 }).encode('utf-8'))
                 return
 
+        elif self.path in ('/api/contacts/import', '/api/contacts/stop', '/api/contacts/research'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            try:
+                body = json.loads(self.rfile.read(content_length).decode('utf-8') or '{}') if content_length else {}
+            except Exception:
+                body = {}
+            code, res = 200, {}
+            if self.path == '/api/contacts/stop':
+                contact_job["stop"] = True; res = {"ok": True}
+            elif self.path == '/api/contacts/import':
+                ok = start_contact_import(body.get("items"), body.get("defaults") or {})
+                code, res = (200 if ok else 409), {"ok": ok, **contact_job}
+            else:
+                try:
+                    out, engine = research_contact(str(body.get("query") or "").strip())
+                    res = {"ok": True, "contact": out, "engine": engine}
+                except Exception as e:
+                    res = {"ok": False, "error": str(e)[:300]}
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode('utf-8'))
         elif self.path == '/api/linkup/test':
             try:
                 if not linkup_key():
