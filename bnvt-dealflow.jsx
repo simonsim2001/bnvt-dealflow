@@ -3463,7 +3463,7 @@ const MobileDeal = ({ company: c, investors = [], companies = [], update, back, 
 // ---- Network: contact book with merged deal sharing (phone) ----
 const M_REGIONS = ["EU", "US", "UK", "Nordics", "Global"];
 const mInitials = (n) => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
-const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteInvestor, focusId }) => {
+const PhoneInvestorBook = ({ investors = [], setInvestors, companies = [], onDeleteInvestor, focusId }) => {
   const { openFull } = usePhone();
   const [q, setQ] = useState("");
   const [chip, setChip] = useState("all");
@@ -3563,7 +3563,7 @@ const PhoneNetwork = ({ investors = [], setInvestors, companies = [], onDeleteIn
 };
 
 // ---- Network (desktop): contact book + map + deal sharing in one screen ----
-const DesktopNetwork = ({ investors = [], setInvestors, companies = [], onDeleteInvestor, renderClassic, onBulk }) => {
+const DesktopInvestorBook = ({ investors = [], setInvestors, companies = [], onDeleteInvestor, renderClassic, onBulk }) => {
   const [classic, setClassic] = useState(false);
   const [q, setQ] = useState("");
   const [chip, setChip] = useState("all");
@@ -3688,6 +3688,247 @@ const DesktopNetwork = ({ investors = [], setInvestors, companies = [], onDelete
       <MShareFlow open={!!share} onClose={() => setShare(null)} companies={companies} investors={investors} initialCompanyIds={share ? share.companyIds : []} initialInvestorIds={share ? share.investorIds : []} />
     </div>
   );
+};
+
+// ---- LP book (same structure as the investor contact book) ----
+const LP_TYPES = ["Family office", "Fund of funds", "Institution", "HNWI / Angel", "Corporate", "Foundation / Endowment"];
+const LP_STATUSES = ["Prospect", "Contacted", "In discussion", "Committed", "Passed"];
+const fmtMoney = (v) => { const n = Number(String(v || "").replace(/[^0-9.]/g, "")); if (!n) return v || ""; return n >= 1e6 ? "€" + (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M" : n >= 1e3 ? "€" + Math.round(n / 1e3) + "k" : "€" + n; };
+
+const L = ({ t, children }) => <label className="lp-f"><span>{t}</span>{children}</label>;
+const LPForm = ({ initial, onSave, onCancel, onDelete }) => {
+  const [f, setF] = useState(() => ({ name: "", fund: "", lpType: "", status: "Prospect", priority: "Medium", ticket: "", committed: "", target: "", fundIn: "", geo: "", city: "", linkedin: "", email: "", phone: "", lastContact: "", focus: [], notes: "", ...(initial || {}), notes: notesToText((initial || {}).notes) }));
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const research = async () => {
+    const query = q.trim() || f.linkedin || [f.name, f.fund].filter(Boolean).join(" ");
+    if (!query) { setMsg("Type a name, organisation or LinkedIn URL first."); return; }
+    setBusy(true); setMsg("Researching on the server…");
+    try {
+      const r = await fetch("/api/contacts/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, kind: "lp" }) });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "research failed");
+      const c = d.contact || {};
+      setF(p => ({ ...p, name: c.name || p.name, fund: c.fund || p.fund, lpType: LP_TYPES.includes(c.lpType) ? c.lpType : p.lpType, linkedin: c.linkedin || p.linkedin || (query.startsWith("http") ? query : ""), email: c.email || p.email, ticket: c.ticket || p.ticket, geo: c.geo || p.geo, city: c.city || p.city, focus: Array.from(new Set([...(p.focus || []), ...(c.focus || [])])), notes: p.notes ? (c.notes && !p.notes.includes(c.notes) ? p.notes + "\n\n" + c.notes : p.notes) : (c.notes || "") }));
+      setMsg("Filled in (" + (d.engine === "linkup" ? "Linkup + Claude" : "Claude web search") + "). Check and save.");
+    } catch (e) { setMsg("Research failed: " + e.message); }
+    setBusy(false);
+  };
+  return (
+    <div className="lp-form" id="lp-form">
+      <div className="lp-ai">
+        <input id="lp-ai-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name + organisation, or LinkedIn URL" />
+        <button className="d-btn sm pri" id="lp-ai-btn" disabled={busy} onClick={research}>{busy ? "Researching…" : "Research with AI"}</button>
+      </div>
+      {msg && <div className="d-small" style={{ color: /failed/.test(msg) ? "#C00000" : "#333", margin: "6px 0" }}>{msg}</div>}
+      <div className="lp-grid">
+        <L t="Name"><input value={f.name} onChange={set("name")} /></L>
+        <L t="Organisation"><input value={f.fund} onChange={set("fund")} /></L>
+        <L t="LP type"><select value={f.lpType} onChange={set("lpType")}><option value="">—</option>{LP_TYPES.map(x => <option key={x}>{x}</option>)}</select></L>
+        <L t="Status"><select value={f.status} onChange={set("status")}>{LP_STATUSES.map(x => <option key={x}>{x}</option>)}</select></L>
+        <L t="Priority"><select value={f.priority} onChange={set("priority")}>{["High", "Medium", "Low"].map(x => <option key={x}>{x}</option>)}</select></L>
+        <L t="Typical ticket"><input value={f.ticket} onChange={set("ticket")} placeholder="e.g. €1-5M" /></L>
+        <L t="Target commitment (€)"><input value={f.target} onChange={set("target")} placeholder="1000000" /></L>
+        <L t="Committed (€)"><input value={f.committed} onChange={set("committed")} placeholder="500000" /></L>
+        <L t="Fund"><input value={f.fundIn} onChange={set("fundIn")} placeholder="e.g. BNVT Fund I" /></L>
+        <L t="Last contact"><input type="date" value={f.lastContact} onChange={set("lastContact")} /></L>
+        <L t="Region"><input value={f.geo} onChange={set("geo")} placeholder="EU, UK, US…" /></L>
+        <L t="City"><input value={f.city} onChange={set("city")} /></L>
+        <L t="LinkedIn"><input value={f.linkedin} onChange={set("linkedin")} /></L>
+        <L t="Email"><input value={f.email} onChange={set("email")} /></L>
+        <L t="Phone"><input value={f.phone} onChange={set("phone")} /></L>
+        <L t="Focus (comma separated)"><input value={(f.focus || []).join(", ")} onChange={(e) => setF({ ...f, focus: e.target.value.split(",").map(x => x.trim()).filter(Boolean) })} /></L>
+      </div>
+      <L t="Notes"><textarea rows={5} value={f.notes} onChange={set("notes")} /></L>
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <button className="d-btn sm pri" id="lp-save" onClick={() => { if (!f.name.trim()) { setMsg("Name is required."); return; } onSave({ ...f, id: f.id || "lp_" + uid(), createdAt: f.createdAt || Date.now(), updatedAt: Date.now() }); }}>Save</button>
+        <button className="d-btn sm" onClick={onCancel}>Cancel</button>
+        {initial && initial.id && onDelete && <button className="d-btn sm" style={{ color: "#C00000", borderColor: "#C00000", marginLeft: "auto" }} onClick={() => { if (confirm("Delete " + (f.name || "this LP") + "?")) onDelete(initial.id); }}>Delete</button>}
+      </div>
+    </div>
+  );
+};
+
+const LPBulk = ({ onClose }) => {
+  const [text, setText] = useState("");
+  const [lpType, setLpType] = useState("");
+  const [log, setLog] = useState("");
+  const [job, setJob] = useState(null);
+  const poll = async () => {
+    for (let misses = 0; ;) {
+      await new Promise(r => setTimeout(r, 2000));
+      let d; try { d = await (await fetch("/api/contacts/status")).json(); misses = 0; } catch (e) { if (++misses > 10) { setLog("Lost connection; the import keeps running on the server."); return; } continue; }
+      setJob(d); if (window.__slSyncNow) window.__slSyncNow();
+      if (!d.running) { setLog(`Done: ${d.added} added, ${d.updated} updated${d.failed ? `, ${d.failed} failed (${(d.errors || [])[0] || ""})` : ""}.`); return; }
+    }
+  };
+  const start = async () => {
+    const items = text.split("\n").map(l => l.trim()).filter(Boolean).map(l => { const p = l.split("\t"); return { query: p[0].trim(), lpType: (p[1] || "").trim(), notes: (p[2] || "").trim() }; });
+    if (!items.length) return;
+    setLog(`Sending ${items.length} LPs to the server…`);
+    try {
+      const r = await fetch("/api/contacts/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, defaults: { lpType, priority: "Medium" }, kind: "lp" }) });
+      if (r.status === 409) setLog("Another import is running, following it…");
+      else if (!r.ok) throw new Error("HTTP " + r.status);
+      else setText("");
+      poll();
+    } catch (e) { setLog("[Error] " + e.message); }
+  };
+  const running = job && job.running;
+  return (
+    <div className="lp-form" id="lp-bulk">
+      <div className="d-small" style={{ marginBottom: 6 }}>One LP per line: name + organisation, or LinkedIn URL. Optional columns (tab separated, from Excel): LP type, notes.</div>
+      <textarea id="lp-bulk-text" rows={7} value={text} onChange={(e) => setText(e.target.value)} placeholder={"https://www.linkedin.com/in/...\nJane Doe, Doe Family Office"} style={{ width: "100%", boxSizing: "border-box" }} />
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+        <select value={lpType} onChange={(e) => setLpType(e.target.value)}><option value="">LP type (optional)</option>{LP_TYPES.map(x => <option key={x}>{x}</option>)}</select>
+        <button className="d-btn sm pri" id="lp-bulk-start" disabled={!text.trim() || running} onClick={start}>Start AI import</button>
+        {running && <button className="d-btn sm" onClick={() => fetch("/api/contacts/stop", { method: "POST" })}>Stop</button>}
+        <button className="d-btn sm" onClick={onClose}>Close</button>
+      </div>
+      {job && job.total > 0 && (<div style={{ marginTop: 10 }}>
+        <div style={{ height: 4, background: "#eee" }}><div style={{ height: 4, background: "#000", width: (100 * job.done / job.total) + "%", transition: "width .3s" }} /></div>
+        {running && <div className="d-small" style={{ marginTop: 6 }}>[{job.done}/{job.total}] Researching in parallel ({job.engine === "linkup" ? "Linkup + Claude" : "Claude web search"}, {job.workers} at a time){(job.active || []).length ? " · now: " + job.active.slice(0, 3).join(", ") : ""}</div>}
+      </div>)}
+      {log && <div className="d-small" style={{ marginTop: 6, color: /Error|failed/.test(log) ? "#C00000" : "#000" }}>{log}</div>}
+    </div>
+  );
+};
+
+const LPBook = ({ lps = [], setLps, onDeleteLp, companies = [], phone }) => {
+  const [q, setQ] = useState("");
+  const [chip, setChip] = useState("all");
+  const [view, setView] = useState("contact");
+  const [hub, setHub] = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [bulk, setBulk] = useState(false);
+  const [share, setShare] = useState(null);
+  const [limit, setLimit] = useState(150);
+  const norm = (s) => String(s || "").toLowerCase();
+  const hubs = useMemo(() => mCityGroups(lps), [lps]);
+  const hubIds = useMemo(() => hub && hubs[hub] ? new Set(hubs[hub].investors.map(i => i.id)) : null, [hub, hubs]);
+  const list = useMemo(() => {
+    const t = norm(q).trim();
+    return lps.filter(i => {
+      if (hubIds && !hubIds.has(i.id)) return false;
+      if (chip === "high" && i.priority !== "High") return false;
+      if (LP_TYPES.includes(chip) && i.lpType !== chip) return false;
+      if (LP_STATUSES.includes(chip) && (i.status || "Prospect") !== chip) return false;
+      return !t || norm([i.name, i.fund, i.lpType, i.status, i.geo, i.city, i.ticket, i.fundIn, (i.focus || []).join(" ")].join(" ")).includes(t);
+    }).sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  }, [lps, q, chip, hubIds]);
+  useEffect(() => { setLimit(150); }, [q, chip, hub]);
+  useEffect(() => { if (!phone && !openId && list.length) setOpenId(list[0].id); }, [list.length]);
+  const lp = lps.find(i => i.id === openId);
+  const save = (f) => { setLps(l => { const ix = l.findIndex(i => i.id === f.id); return ix >= 0 ? l.map(i => i.id === f.id ? { ...i, ...f } : i) : [f, ...l]; }); setEditing(null); setOpenId(f.id); };
+  const committed = lps.reduce((s, i) => s + (Number(String(i.committed || "").replace(/[^0-9.]/g, "")) || 0), 0);
+  const target = lps.reduce((s, i) => s + (Number(String(i.target || "").replace(/[^0-9.]/g, "")) || 0), 0);
+  const chips = [["all", "All"], ["high", "High priority"], ...LP_STATUSES.map(s => [s, s]), ...LP_TYPES.map(s => [s, s])];
+  let lastLetter = "";
+  const detail = lp && (
+    <div className="dn-card" id="lp-contact">
+      {phone && <button className="d-btn sm" style={{ marginBottom: 10 }} onClick={() => setOpenId(null)}>← All LPs</button>}
+      <div className="dn-card-h">
+        <span className="dn-av lg">{mInitials(lp.name)}</span>
+        <div className="dn-rt"><h2>{lp.name}</h2><span>{[lp.fund, lp.city, lp.geo].filter(Boolean).join(" · ")}</span></div>
+        <span className="dn-badge">{lp.status || "Prospect"}</span>
+      </div>
+      <div className="dn-actions">
+        {lp.email ? <a className="d-btn sm pri" href={"mailto:" + lp.email}>Email</a> : null}
+        {lp.linkedin ? <a className="d-btn sm" href={lp.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a> : null}
+        {lp.phone ? <a className="d-btn sm" href={"tel:" + lp.phone}>Call</a> : null}
+        <button className="d-btn sm" onClick={() => setShare({ companyIds: [], investorIds: [lp.id] })}>Share a deal</button>
+        <button className="d-btn sm" onClick={() => setEditing(lp)}>Edit</button>
+      </div>
+      <div className="dn-facts">
+        {lp.lpType && <div><label>LP type</label><span>{lp.lpType}</span></div>}
+        {lp.priority && <div><label>Priority</label><span>{lp.priority}</span></div>}
+        {lp.ticket && <div><label>Typical ticket</label><span>{lp.ticket}</span></div>}
+        {(lp.committed || lp.target) && <div><label>Committed / target</label><span>{fmtMoney(lp.committed) || "—"} / {fmtMoney(lp.target) || "—"}</span></div>}
+        {lp.fundIn && <div><label>Fund</label><span>{lp.fundIn}</span></div>}
+        {lp.lastContact && <div><label>Last contact</label><span>{lp.lastContact}</span></div>}
+        {(lp.focus || []).length > 0 && <div className="wide"><label>Focus</label><span className="dn-tags">{lp.focus.map(f => <i key={f}>{f}</i>)}</span></div>}
+        {notesToText(lp.notes) && <div className="wide"><label>Notes</label><span className="dn-notes">{notesToText(lp.notes)}</span></div>}
+      </div>
+    </div>
+  );
+  return (
+    <div className="dn" id="lp-book">
+      <div className="dn-top">
+        <div className="dn-search"><MIcon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3" size={16} /><input id="lp-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search LP, organisation, type, city…" />{q && <button onClick={() => setQ("")} aria-label="Clear">×</button>}</div>
+        <span className="d-grow" />
+        {!phone && <div className="dn-seg"><button className={view === "contact" ? "on" : ""} onClick={() => setView("contact")}>Contact</button><button className={view === "map" ? "on" : ""} onClick={() => setView("map")}>Map</button></div>}
+        <button className="d-btn sm" id="lp-bulk-btn" onClick={() => setBulk(b => !b)}>Bulk AI import</button>
+        <button className="d-btn sm pri" id="lp-add" onClick={() => setEditing("new")}>+ Add LP</button>
+      </div>
+      {bulk && <LPBulk onClose={() => setBulk(false)} />}
+      <div className="dn-chips">
+        {chips.map(([k, l]) => <button key={k} className={"d-chip" + (chip === k ? " on" : "")} onClick={() => setChip(chip === k ? "all" : k)}>{l}</button>)}
+        {hub && hubs[hub] && <button className="d-chip on" onClick={() => setHub(null)}>{hubs[hub].name} ×</button>}
+        <span className="d-grow" /><span className="d-small">{list.length} LPs{target ? ` · ${fmtMoney(committed)} committed of ${fmtMoney(target)} target` : committed ? ` · ${fmtMoney(committed)} committed` : ""}</span>
+      </div>
+      {phone && lp ? detail : (
+      <div className="dn-body">
+        <div className="dn-list" id="lp-list">
+          {list.slice(0, limit).map((i) => {
+            const letter = (String(i.name || "#")[0] || "#").toUpperCase();
+            const head = letter !== lastLetter ? (lastLetter = letter) : null;
+            return (<React.Fragment key={i.id}>
+              {head && <div className="dn-letter">{head}</div>}
+              <button className={"dn-row" + (openId === i.id ? " on" : "")} onClick={() => { setOpenId(i.id); setView("contact"); }}>
+                <span className="dn-av">{mInitials(i.name)}</span>
+                <span className="dn-rt"><b>{i.name || "(no name)"}</b><span>{[i.fund, i.lpType, i.city || i.geo].filter(Boolean).join(" · ")}</span></span>
+                <span className="dn-fit">{i.status || "Prospect"}</span>
+              </button>
+            </React.Fragment>);
+          })}
+          {list.length > limit && <button className="d-btn sm dn-more" onClick={() => setLimit(limit + 150)}>Show more ({list.length - limit})</button>}
+          {list.length === 0 && <div className="dn-empty">{lps.length ? "No LPs match." : "No LPs yet. Use + Add LP or Bulk AI import."}</div>}
+        </div>
+        {!phone && <div className="dn-main">
+          {view === "map" ? (
+            <div className="dn-map">
+              <MNetMap investors={lps} onOpenInvestor={(id) => { setOpenId(id); setView("contact"); }} onHub={setHub} selectedHub={hub} hideList />
+              <div className="d-small dn-hint">Click a city to filter the list on the left.</div>
+            </div>
+          ) : detail || <div className="dn-empty">Select an LP.</div>}
+        </div>}
+      </div>)}
+      <MSheet open={!!editing} onClose={() => setEditing(null)} title={editing === "new" ? "New LP" : "Edit LP"} tall id="lp-edit">
+        {editing && <div className="m-embed"><LPForm initial={editing === "new" ? null : editing} onSave={save} onCancel={() => setEditing(null)} onDelete={(id) => { onDeleteLp && onDeleteLp(id); setEditing(null); setOpenId(null); }} /></div>}
+      </MSheet>
+      <MShareFlow open={!!share} onClose={() => setShare(null)} companies={companies} investors={lps} initialCompanyIds={share ? share.companyIds : []} initialInvestorIds={share ? share.investorIds : []} />
+    </div>
+  );
+};
+
+// Network = Investors | LPs switch
+const NetworkBookSwitch = ({ book, setBook, lpCount, invCount }) => (
+  <div className="dn-seg nb-switch" id="nb-switch" style={{ margin: "0 0 12px" }}>
+    <button className={book === "investors" ? "on" : ""} onClick={() => setBook("investors")}>Investors{invCount != null ? ` (${invCount})` : ""}</button>
+    <button className={book === "lps" ? "on" : ""} id="nb-lps" onClick={() => setBook("lps")}>LPs{lpCount != null ? ` (${lpCount})` : ""}</button>
+  </div>
+);
+const useNetworkBook = () => {
+  const [book, setBookS] = useState(() => { try { return localStorage.getItem("sl-network-book") || "investors"; } catch (e) { return "investors"; } });
+  const setBook = (b) => { setBookS(b); try { localStorage.setItem("sl-network-book", b); } catch (e) {} };
+  return [book, setBook];
+};
+const DesktopNetwork = (props) => {
+  const [book, setBook] = useNetworkBook();
+  return (<div>
+    <NetworkBookSwitch book={book} setBook={setBook} lpCount={(props.lps || []).length} invCount={(props.investors || []).length} />
+    {book === "lps" ? <LPBook lps={props.lps} setLps={props.setLps} onDeleteLp={props.onDeleteLp} companies={props.companies} /> : <DesktopInvestorBook {...props} />}
+  </div>);
+};
+const PhoneNetwork = (props) => {
+  const [book, setBook] = useNetworkBook();
+  return (<div>
+    <div style={{ padding: "8px 16px 0" }}><NetworkBookSwitch book={book} setBook={setBook} lpCount={(props.lps || []).length} /></div>
+    {book === "lps" ? <div style={{ padding: "0 12px" }}><LPBook phone lps={props.lps} setLps={props.setLps} onDeleteLp={props.onDeleteLp} companies={props.companies} /></div> : <PhoneInvestorBook {...props} />}
+  </div>);
 };
 
 // ---- Reports (phone) ----
@@ -6852,6 +7093,7 @@ window.App = function App() {
   const [readingColumns, setReadingColumns] = useState(DEFAULT_READING_COLUMNS);
   const [reports, setReports] = useState([]);
   const [voiceSessions, setVoiceSessions] = useState([]);
+  const [lps, setLps] = useState([]);
   const [deletedIds, setDeletedIds] = useState([]);
   const [distributePicked, setDistributePicked] = useState([]);
   const [distributeCompanyIds, setDistributeCompanyIds] = useState([]);
@@ -7054,6 +7296,7 @@ window.App = function App() {
           setReadingColumns(Array.isArray(d.readingColumns) && d.readingColumns.length ? d.readingColumns : DEFAULT_READING_COLUMNS);
           setReports(Array.isArray(d.reports) ? d.reports : []);
           setVoiceSessions(Array.isArray(d.voiceSessions) ? d.voiceSessions : []);
+          setLps(Array.isArray(d.lps) ? d.lps : []);
         } else {
           setCompanies(deduplicateCompanies(SEED_COMPANIES.map(c => ({ geo: "", priority: "Medium", founders: [], assets: [], preemption: false, preemptionModel: null, ...c }))));
           setInvestors(deduplicateInvestors(SEED_INVESTORS));
@@ -7212,7 +7455,7 @@ window.App = function App() {
     if (!loaded) return;
     window.__bnvtSavePending = true;
     const t = setTimeout(() => {
-      const dbPayload = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions });
+      const dbPayload = JSON.stringify({ companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions, lps });
       fetch("/api/storage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -7229,7 +7472,7 @@ window.App = function App() {
         .finally(() => { window.__bnvtSavePending = false; });
     }, 600);
     return () => clearTimeout(t);
-  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions, loaded]);
+  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions, lps, loaded]);
 
   // Warn before closing/reloading while a save is in flight or has failed
   useEffect(() => {
@@ -7272,6 +7515,9 @@ window.App = function App() {
           const repRes = mergeClientWithServerList(reports, d.reports || [], mergedDel);
           if (repRes.changed) setReports(repRes.merged);
 
+          const lpRes = mergeClientWithServerList(lps, d.lps || [], mergedDel);
+          if (lpRes.changed) setLps(lpRes.merged);
+
           const vsRes = mergeClientWithServerList(voiceSessions, d.voiceSessions || [], mergedDel);
           if (vsRes.changed) setVoiceSessions(vsRes.merged);
         }
@@ -7285,7 +7531,7 @@ window.App = function App() {
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
     return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
-  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions, loaded]);
+  }, [companies, investors, deepDives, founderProfiles, deletedIds, readingItems, readingColumns, reports, voiceSessions, lps, loaded]);
 
   // AI Diligence Queue Runner
   useEffect(() => {
@@ -8082,7 +8328,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
     if (tab === "deepdives") return <PhoneDives deepDives={deepDives} setDeepDives={setDeepDives} setDeletedIds={setDeletedIds} />;
     if (tab === "dtm") return <PhoneDTM companies={companies} updateCompany={updateCompany} setSelected={setSelected} setTab={setTab} />;
     if (tab === "preemption") return <PhoneSandbox companies={companies} updateCompany={updateCompany} setSelected={setSelected} setTab={setTab} />;
-    if (tab === "network") return <PhoneNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} focusId={phoneFocus} />;
+    if (tab === "network") return <PhoneNetwork onDeleteLp={(id) => { setLps((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} lps={lps} setLps={setLps} investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} focusId={phoneFocus} />;
     if (tab === "outreach") return <Outreach companies={companies} updateCompany={updateCompany} apiKey={apiKey} />;
     if (tab === "distribute") return <PhoneDistribute companies={companies} investors={investors} />;
     if (tab === "assets") return <PhoneAssets companies={companies} updateCompany={updateCompany} />;
@@ -8216,7 +8462,7 @@ Respond ONLY with valid JSON in this exact structure, with no markdown fences, n
           />
         )}
         {tab === "network" && (
-          <DesktopNetwork investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} onBulk={() => setInvestorBulkMode(true)} renderClassic={() => (
+          <DesktopNetwork onDeleteLp={(id) => { setLps((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} lps={lps} setLps={setLps} investors={investors} setInvestors={setInvestors} companies={companies} onDeleteInvestor={(id) => { setInvestors((l) => l.filter((i) => i.id !== id)); setDeletedIds((prev) => [...prev, id]); }} onBulk={() => setInvestorBulkMode(true)} renderClassic={() => (
           <Network 
             companies={companies}
             investors={investors} 
@@ -20004,6 +20250,32 @@ function RejectionDraftCard({ company, draftText, updateCompany }) {
 
 // ---- Add company tab ----------------------------------------------------------------
 
+// Live progress of an "Add opportunity" research job running on the server.
+const AddProgress = ({ job, onClose }) => {
+  if (!job) return null;
+  const icon = (st) => st === "done" ? "✓" : st === "active" ? "…" : st === "error" ? "✕" : "○";
+  const steps = job.steps && job.steps.length ? job.steps : [{ k: "save", label: "Saving deal card", state: "active" }];
+  return (
+    <div id="add-progress" style={{ border: "1px solid #000", borderRadius: 10, padding: "12px 14px", margin: "12px 0", background: "#fff", fontFamily: "Arial, sans-serif" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+        <b style={{ fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.running ? "Researching " : job.error ? "Research failed: " : "Added: "}{job.name}</b>
+        <span style={{ fontSize: 12, color: "#555", flexShrink: 0 }}>{job.elapsed ? Math.round(job.elapsed) + " s" : ""}{job.engine ? " · " + (job.engine === "linkup" ? "Linkup + Claude" : "Claude web search") : ""}</span>
+      </div>
+      <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
+        {steps.map(st => (
+          <div key={st.k} style={{ display: "flex", gap: 8, fontSize: 13, color: st.state === "pending" ? "#999" : st.state === "error" ? "#C00000" : "#000", fontWeight: st.state === "active" ? 700 : 400 }}>
+            <span style={{ width: 14, textAlign: "center" }}>{icon(st.state)}</span>
+            <span style={{ flex: 1 }}>{st.label}{st.state === "active" ? "…" : ""}</span>
+            {st.at != null && st.state === "done" && <span style={{ color: "#777", fontSize: 12 }}>{st.at} s</span>}
+          </div>
+        ))}
+      </div>
+      {job.error && <div style={{ color: "#C00000", fontSize: 12.5, marginTop: 8 }}>{job.error}. The deal is saved; use Score on it to retry.</div>}
+      {!job.running && <div style={{ marginTop: 10 }}><button className="d-btn sm" onClick={onClose}>Close</button></div>}
+    </div>
+  );
+};
+
 function AddCompany({ onAdd, companies, setCompanies, setInvestors }) {
   const [url, setUrl] = useState("");
   const [docsendUrl, setDocsendUrl] = useState("");
@@ -20023,6 +20295,7 @@ function AddCompany({ onAdd, companies, setCompanies, setInvestors }) {
   const [status, setStatus] = useState("");
   const [err, setErr] = useState("");
   const [rawResponse, setRawResponse] = useState("");
+  const [addJob, setAddJob] = useState(null);
   const voice = useVoice((t) => setContext((d) => (d ? d + " " : "") + t));
   
   // Custom Bulk Import States
@@ -20112,75 +20385,55 @@ function AddCompany({ onAdd, companies, setCompanies, setInvestors }) {
         }
       }
 
-      setStatus("Scoring against the defensibility matrix...");
-      const prompt = `You are an analyst at BNVT Capital, an early-stage AI fund (tickets up to $10M, US + EU). Research this entity (which could be a company website or an individual founder's LinkedIn profile/name) using web search: ${url.trim() || docsendUrl.trim() || (pdfFile ? pdfFile.name : "Pitch Deck")}
-${docsendUrl.trim() ? `\nPresentation URL: ${docsendUrl.trim()}` : ""}
-${docsendText ? `\nExtracted presentation content:\n${docsendText}\n` : ""}
-${pdfText.trim() ? `\nExtracted Pitch Deck PDF Text:\n${pdfText.trim()}\n` : ""}
-${context.trim() ? `\nProprietary context from the partner (weight this heavily):\n${context.trim()}\n` : ""}
-
-If the entity is an individual founder, research their career/research background, past organizations (e.g. DeepMind, OpenAI, universities), and their current venture, projects, or startup focus.
-
-For the JSON output:
-- name: The individual's full name (or company name if it is a company).
-- oneLiner: A short bio or role/focus summary (e.g. 'Co-founder of Stealth AI, ex-DeepMind researcher') or company one-liner.
-- sector: The key focus domain or industry (e.g. 'Generative AI', 'Robotics', 'Talent / Founder').
-- stageGuess: Estimate their current stage (Pre-seed, Seed, Series A, Series B, Growth). If it is a personal profile in stealth, output 'Pre-seed' or 'Seed'.
-- geo: Estimate their primary geographic region (e.g., 'US', 'UK', 'EU', 'Nordics', 'Global').
-- founders: A list of the company's founders and their LinkedIn profile URLs (e.g., [{"name": "Jane Doe", "linkedin": "https://www.linkedin.com/in/janedoe"}]). If the researched entity is an individual, list them as a founder.
-- overview:
-  - product: Description of what they are working on, their startup, or their technical project.
-  - market: The market they target or industry space.
-  - team: A summary of the individual's background (past work experience, education, credentials) or company founders.
-  - traction: Their achievements, academic citations, past startup success, or sourcing/reputation signals.
-- scores & rationale: Score the defensibility and market scale of their current project, or their overall potential as a talent-led venture (evaluating the technical depth, IP/time to replicate their skills, model-agnosticism of their background/work, data access, distribution/switching cost of their project, and the Total Addressable Market (TAM) size/potential). Keep it on the standard 1-5 scale.
-
-Respond ONLY with valid JSON, no markdown fences, no preamble:
-{"name":"","oneLiner":"max 120 chars","sector":"2-3 words","stageGuess":"Pre-seed|Seed|Series A|Series B|Growth","geo":"US|UK|EU|Nordics|Global","founders":[{"name":"","linkedin":""}],"overview":{"product":"2-3 sentences","market":"2-3 sentences incl. rough size/dynamics","team":"2-3 sentences on founders/quality","traction":"2-3 sentences, real or estimated, flag which"},"scores":{"proprietaryTech":n,"dataMoat":n,"distributionSwitching":n,"modelAgnostic":n,"ipTimeToReplicate":n,"tam":n},"rationale":{"proprietaryTech":"one sentence","dataMoat":"...","distributionSwitching":"...","modelAgnostic":"...","ipTimeToReplicate":"...","tam":"..."}}`;
-      
       let uploadedAsset = null;
       if (pdfFile) {
         setStatus("Uploading PDF pitch deck to server...");
-        uploadedAsset = await uploadAssetFile(pdfFile);
+        try { uploadedAsset = await uploadAssetFile(pdfFile); } catch (e) { console.warn("Deck upload failed", e); }
       }
-      setStatus("Scoring against the defensibility matrix...");
-      const rawText = await callClaude(prompt, true);
-      setRawResponse(rawText);
-      const out = parseJSON(rawText);
       const rawUrl = url.trim() || docsendUrl.trim();
       const isUrl = rawUrl.startsWith("http") || (rawUrl.includes(".") && !rawUrl.includes(" "));
       const formattedUrl = isUrl ? (rawUrl.startsWith("http") ? rawUrl : "https://" + rawUrl) : "";
-      
+      let derivedName = rawUrl;
+      if (isUrl && rawUrl.includes("linkedin.com/in/")) derivedName = (rawUrl.split("linkedin.com/in/")[1] || "").split("/")[0].split("-").filter(w => !/\d/.test(w)).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+      else if (isUrl) { const d = rawUrl.replace(/^https?:\/\/(www\.)?/, "").split("/")[0].split(".")[0]; derivedName = d ? d.charAt(0).toUpperCase() + d.slice(1) : rawUrl; }
+      if (!derivedName && pdfFile) derivedName = pdfFile.name.replace(/\.[^\/.]+$/, "");
       const combinedNotes = [
         ...(context.trim() ? [{ ts: Date.now(), text: context.trim(), via: voice.supported ? "text/voice" : "text" }] : []),
-        ...(pdfFile ? [{ ts: Date.now(), text: `Pitch Deck PDF uploaded: ${pdfFile.name} (${Math.round(pdfFile.size/1024)} KB). Extracted text:\n\n${pdfText}`, via: "pdf" }] : []),
-        ...(docsendUrl.trim() ? [{ ts: Date.now(), text: `Presentation Link: ${docsendUrl}${docsendText ? `\n\nExtracted content:\n${docsendText.substring(0, 1000)}...` : ""}`, via: "docsend" }] : [])
+        ...(pdfFile ? [{ ts: Date.now(), text: `Pitch Deck PDF uploaded: ${pdfFile.name} (${Math.round(pdfFile.size/1024)} KB).`, via: "pdf" }] : []),
+        ...(docsendUrl.trim() ? [{ ts: Date.now(), text: `Presentation Link: ${docsendUrl}`, via: "docsend" }] : [])
       ];
-
       const company = {
-        id: uid(),
-        name: out.name || (pdfFile ? pdfFile.name.replace(/\.[^\/.]+$/, "") : rawUrl),
-        entityType: entityType || "Company",
-        url: formattedUrl,
-        oneLiner: out.oneLiner || "",
-        sector: out.sector || "",
-        stage: STAGES.includes(out.stageGuess) ? out.stageGuess : stage,
-        geo: out.geo || geo || "",
-        priority: priority || "Medium",
-        founders: out.founders || [],
-        source,
-        status: "Active opportunity",
-        dtm: false,
-        overview: out.overview || {},
-        scores: out.scores || null,
-        rationale: out.rationale || {},
-        notes: combinedNotes,
-        assets: [
-          ...(uploadedAsset ? [uploadedAsset] : []),
-          ...(docsendAsset ? [docsendAsset] : [])
-        ],
+        id: uid(), name: derivedName || "New opportunity", entityType: entityType || "Company", url: formattedUrl,
+        oneLiner: "Researching…", sector: "", stage, geo: geo || "", priority: priority || "Medium", founders: [],
+        source, status: "Active opportunity", dtm: false, overview: {}, scores: null, rationale: {},
+        notes: combinedNotes, assets: [...(uploadedAsset ? [uploadedAsset] : []), ...(docsendAsset ? [docsendAsset] : [])],
         createdAt: Date.now(),
       };
+      const deckText = [docsendText, pdfText.trim()].filter(Boolean).join("\n\n").slice(0, 15000);
+      setStatus("Sending to the server…");
+      const r = await fetch("/api/company/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company, deckText }) });
+      const started = await r.json().catch(() => ({}));
+      if (!r.ok || !started.ok) throw new Error(started.error || ("HTTP " + r.status));
+      if (window.__slSyncNow) window.__slSyncNow();
+      setAddJob({ id: company.id, running: true, steps: [], elapsed: 0, name: company.name });
+      setBusy(false); setStatus("");
+      setUrl(""); setContext(""); setPdfFile(null); setPdfText("");
+      let misses = 0;
+      while (true) {
+        await new Promise(res => setTimeout(res, 1200));
+        let d;
+        try { d = await (await fetch("/api/company/add/status?id=" + encodeURIComponent(company.id))).json(); misses = 0; }
+        catch (e) { if (++misses > 20) { setAddJob(j => ({ ...j, running: false, error: "Lost connection. The research keeps running on the server; check the Pipeline in a minute." })); break; } continue; }
+        if (!d.found) { setAddJob(j => ({ ...j, running: false, error: "The server restarted. Use \"Score\" on the deal to retry." })); break; }
+        setAddJob({ ...d, name: (d.company && d.company.name) || company.name });
+        if (!d.running) {
+          if (window.__slSyncNow) window.__slSyncNow();
+          if (d.company && !d.error) onAdd(d.company);
+          break;
+        }
+      }
+      setDocsendUrl(""); setDocsendPassword("");
+      return;
       onAdd(company);
       setDocsendUrl("");
       setDocsendPassword("");
@@ -20357,12 +20610,14 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
 
     if (newCompanies.length > 0) {
       setCompanies((prev) => [...newCompanies, ...prev]);
-      setImportLog(`Successfully imported ${addedCount} new companies/individuals!`);
+      setImportLog(`Imported ${addedCount} new companies/individuals. Research + scoring starts on the server in a few seconds (progress in the Pipeline bar).`);
       setBulkText("");
+      const ids = newCompanies.map(c => c.id);
+      setTimeout(() => { fetch("/api/score/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }).catch(() => {}); }, 5000);
       setTimeout(() => {
         setBulkMode(false);
         setImportLog("");
-      }, 2000);
+      }, 6000);
     } else {
       setImportLog("No new unique companies or individuals found to import.");
     }
@@ -20397,6 +20652,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
         {status && <div className="m-small m-mt8">{status}</div>}
         {err && <div className="m-err">{err}</div>}
         <button className="m-btn pri m-full m-mt12" id="m-add-research" disabled={busy} onClick={research}>{busy ? "Researching…" : "Research & score"}</button>
+        <AddProgress job={addJob} onClose={() => setAddJob(null)} />
         <button className="m-btn ghost m-full m-mt8" disabled={busy} onClick={addBlank}>Add without research</button>
       </div>) : (<div className="m-pad">
         <div className="m-small">One per line. Columns (tab-separated): Website/Name, Status, Stage, Priority, Region, Notes.</div>
@@ -20537,6 +20793,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
             )}
             <Btn small onClick={addBlank} disabled={busy} style={{ borderColor: LINE, color: FADE }}>Add without research</Btn>
           </div>
+          <AddProgress job={addJob} onClose={() => setAddJob(null)} />
           {err && (
             <div style={{ color: RUST, fontSize: 12.5, marginTop: 12 }}>
               <div>{err}</div>

@@ -501,6 +501,16 @@
         .dn-pop-l button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; border: 0; background: none; padding: 7px 8px; border-radius: 8px; cursor: pointer; text-align: left; font: 13px Arial; }
         .dn-pop-l button:hover { background: #F4F4F4; }
         .dn-pop-l span { color: #888; font-size: 11px; }
+        .lp-form { border: 1px solid #DADADA; border-radius: 10px; padding: 14px; margin: 0 0 12px; background: #fff; font-family: Arial, sans-serif; }
+        .lp-ai { display: flex; gap: 8px; }
+        .lp-ai input { flex: 1; min-width: 0; height: 32px; border: 1px solid #DADADA; border-radius: 8px; padding: 0 10px; font: 13px Arial; }
+        .lp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 10px; }
+        .lp-f { display: flex; flex-direction: column; gap: 4px; font: 11px Arial; color: #555; text-transform: uppercase; letter-spacing: .04em; margin-top: 6px; }
+        .lp-f input, .lp-f select, .lp-f textarea { font: 13px Arial; color: #000; text-transform: none; letter-spacing: 0; border: 1px solid #DADADA; border-radius: 8px; padding: 7px 9px; background: #fff; box-sizing: border-box; width: 100%; }
+        #lp-book .dn-chips { overflow-x: auto; flex-wrap: nowrap; }
+        #lp-bulk select { height: 32px; border: 1px solid #DADADA; border-radius: 8px; font: 13px Arial; padding: 0 8px; }
+        #lp-bulk textarea { border: 1px solid #DADADA; border-radius: 8px; padding: 8px; font: 13px Arial; }
+        @media (max-width: 700px) { #lp-book .dn-body { display: block; } #lp-book .dn-list { max-height: none; width: auto; border-right: 0; } #lp-book .dn-top { flex-wrap: wrap; gap: 8px; } #lp-book .dn-search { flex: 1 1 100%; } #lp-book .dn-chips { overflow-x: auto; flex-wrap: nowrap; } .lp-grid { grid-template-columns: 1fr 1fr; } }
         .dn-seg { display: inline-flex; border: 1px solid #DADADA; border-radius: 16px; overflow: hidden; height: 32px; }
         .dn-seg button { border: 0; background: #fff; padding: 0 14px; font: 13px Arial; cursor: pointer; color: #444; }
         .dn-seg button.on { background: #000; color: #fff; font-weight: 700; }
@@ -663,7 +673,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=75.28"></script>
+    <script src="bnvt-dealflow.js?v=75.32"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {

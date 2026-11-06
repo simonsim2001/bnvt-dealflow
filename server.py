@@ -1057,6 +1057,7 @@ def merge_databases(client_db, server_db):
         "readingItems": merge_list(client_db.get("readingItems", []), server_db.get("readingItems", []), combined_deleted, "id"),
         "reports": merge_list(client_db.get("reports", []), server_db.get("reports", []), combined_deleted, "id"),
         "voiceSessions": merge_list(client_db.get("voiceSessions", []), server_db.get("voiceSessions", []), combined_deleted, "id"),
+        "lps": merge_list(client_db.get("lps", []), server_db.get("lps", []), combined_deleted, "id"),
         "readingColumns": client_db.get("readingColumns") or server_db.get("readingColumns") or None,
         "deletedIds": combined_deleted
     }
@@ -2720,9 +2721,34 @@ stage focus, geography (country/region) and city, 3-6 sector focus tags, and not
 If something is unknown leave it empty. Respond ONLY with valid JSON, no markdown fences, no preamble:
 {CONTACT_SCHEMA_HINT}"""
 
-def research_contact(query, hints=""):
+LP_SCHEMA_HINT = ('{"name":"Full Name","fund":"Organisation (family office, fund of funds, institution...)","lpType":"Family office|Fund of funds|Institution|HNWI / Angel|Corporate|Foundation / Endowment",'
+    '"linkedin":"https://www.linkedin.com/in/...","email":"","ticket":"typical LP commitment, e.g. $1-5M","geo":"country/region","city":"city",'
+    '"focus":["VC","AI","Europe"],"notes":"who they are, what they invest in as an LP (VC funds, emerging managers, AI...), and fit as an LP for BNVT (2-4 sentences)"}')
+
+def _lp_prompt(query, research, hints=""):
+    return f"""You research Limited Partners (LPs: family offices, funds of funds, institutions, HNWIs, corporates, endowments) for BNVT Capital, an early-stage AI venture fund (US + EU) raising capital.
+LP to identify: {query}
+{hints}
+WEB RESEARCH (from a live search; rely on it, do not invent facts):
+{research or '(no web research available: search the web)'}
+
+Return the person's full name, their organisation, LP type, LinkedIn URL, public work email only if clearly published, typical LP ticket size,
+geography (country/region) and city, 3-6 focus tags (asset classes, themes, whether they back emerging VC managers), and notes on fit as an LP for BNVT.
+If something is unknown leave it empty. Respond ONLY with valid JSON, no markdown fences, no preamble:
+{LP_SCHEMA_HINT}"""
+
+def research_contact(query, hints="", kind="investor"):
     research, engine = None, "claude-web"
-    if linkup_key():
+    if linkup_key() and kind == "lp":
+        engine = "linkup"
+        try:
+            d = linkup_search(f"{query}: full name, organisation (family office, fund of funds, institution), role, LinkedIn URL, city and country, "
+                              f"LP investments in venture capital funds, typical commitment size, focus and thesis.")
+            src = "\n".join(f"- {s.get('name','')}: {s.get('url','')} | {(s.get('snippet') or s.get('content') or '')[:300]}" for s in (d.get("sources") or [])[:8])
+            research = f"A: {d.get('answer','')}\nSources:\n{src}"
+        except Exception as e:
+            research = f"(search failed: {e})"
+    elif linkup_key():
         engine = "linkup"
         try:
             d = linkup_search(f"Venture capital investor {query}: full name, fund/firm, role, LinkedIn URL, city and country, "
@@ -2731,7 +2757,7 @@ def research_contact(query, hints=""):
             research = f"A: {d.get('answer','')}\nSources:\n{src}"
         except Exception as e:
             research = f"(search failed: {e})"
-    prompt = _contact_prompt(query, research, hints)
+    prompt = (_lp_prompt if kind == "lp" else _contact_prompt)(query, research, hints)
     body = {"model": SCORE_MODEL, "max_tokens": 1500, "messages": [{"role": "user", "content": prompt}]}
     if engine != "linkup":
         body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}]
@@ -2764,7 +2790,7 @@ def _find_json_with(text, key):
 def _norm(s):
     return str(s or "").strip().lower()
 
-def _upsert_contact(item, out, defaults, error=None):
+def _upsert_contact(item, out, defaults, error=None, kind="investor"):
     q = (item.get("query") or "").strip()
     is_url = q.startswith("http")
     notes = "\n\n".join(x for x in [
@@ -2786,9 +2812,15 @@ def _upsert_contact(item, out, defaults, error=None):
         "notes": notes,
         "updatedAt": now,
     }
+    if kind == "lp":
+        inv.pop("sweetSpot", None); inv.pop("stage", None)
+        inv["fund"] = (out or {}).get("fund") or ("Imported" if error else "Unknown")
+        inv["lpType"] = item.get("lpType") or defaults.get("lpType") or (out or {}).get("lpType") or ""
+        inv["ticket"] = (out or {}).get("ticket") or ""
+        inv["status"] = item.get("status") or defaults.get("status") or "Prospect"
     with db_lock:
         db = read_db()
-        lst = db.setdefault("investors", [])
+        lst = db.setdefault("lps" if kind == "lp" else "investors", [])
         match = None
         for i in lst:
             if (inv["linkedin"] and _norm(i.get("linkedin")).rstrip("/") == _norm(inv["linkedin"]).rstrip("/")) or \
@@ -2804,7 +2836,7 @@ def _upsert_contact(item, out, defaults, error=None):
                 match["notes"] = (keep_notes if isinstance(keep_notes, str) else _notes_text(keep_notes)) + "\n\n" + inv["notes"]
             kind = "updated"
         else:
-            inv["id"] = "inv_" + uuid.uuid4().hex[:10]
+            inv["id"] = ("lp_" if kind == "lp" else "inv_") + uuid.uuid4().hex[:10]
             inv["createdAt"] = now
             lst.append(inv)
             kind = "added"
@@ -2829,16 +2861,16 @@ def _contact_runner(items, defaults):
             hints = "\n".join(x for x in [f"Expected stage focus: {item.get('stage') or defaults.get('stage')}" if (item.get('stage') or defaults.get('stage')) else "",
                                           f"Expected geography: {item.get('region') or defaults.get('region')}" if (item.get('region') or defaults.get('region')) else ""] if x)
             t0 = time.time()
-            out, engine = research_contact(q, hints)
+            out, engine = research_contact(q, hints, contact_job.get("kind") or "investor")
             contact_job["engine"] = engine
-            kind = _upsert_contact(item, out, defaults)
+            kind = _upsert_contact(item, out, defaults, kind=contact_job.get("kind") or "investor")
             with _contact_lock: contact_job[kind] += 1
             print(f"[Contacts] {kind} {out.get('name') or q} in {time.time() - t0:.1f}s ({engine})", flush=True)
         except Exception as e:
             msg = str(e)[:200]
             print(f"[Contacts] FAILED {q}: {msg}", flush=True)
             try:
-                kind = _upsert_contact(item, None, defaults, error=msg)
+                kind = _upsert_contact(item, None, defaults, error=msg, kind=contact_job.get("kind") or "investor")
                 with _contact_lock: contact_job[kind] += 1
             except Exception:
                 pass
@@ -2856,9 +2888,10 @@ def _contact_runner(items, defaults):
     finally:
         contact_job.update(running=False, finishedAt=datetime.now().isoformat(timespec="seconds"), active=[])
 
-def start_contact_import(items, defaults):
+def start_contact_import(items, defaults, kind="investor"):
     if contact_job["running"]:
         return False
+    contact_job["kind"] = "lp" if kind == "lp" else "investor"
     items = [i for i in (items or []) if isinstance(i, dict) and (i.get("query") or "").strip()]
     contact_job.update(running=bool(items), total=len(items), done=0, failed=0, added=0, updated=0, active=[], errors=[], stop=False,
                        startedAt=datetime.now().isoformat(timespec="seconds"), finishedAt=None,
@@ -2866,6 +2899,99 @@ def start_contact_import(items, defaults):
     if items:
         threading.Thread(target=_contact_runner, args=(items, defaults or {}), daemon=True, name="contacts").start()
     return True
+
+
+# ---------------- Add opportunity on the server (live steps) ----------------
+add_jobs = {}  # id -> {step, steps:[{k,label,state}], startedAt, error, company, engine}
+ADD_STEPS = [("save", "Saving deal card"), ("research", "Researching the web"), ("score", "Writing overview + scoring matrix"), ("done", "Saved")]
+
+def _add_set(cid, k, state, **extra):
+    j = add_jobs.get(cid)
+    if not j:
+        return
+    for st in j["steps"]:
+        if st["k"] == k:
+            st["state"] = state
+            st["at"] = round(time.time() - j["t0"], 1)
+    j["step"] = k
+    j.update(extra)
+
+def _add_runner(cid, deck_text, company=None):
+    try:
+        if company:  # save the card first (in the background so the request returns instantly)
+            with db_lock:
+                db = read_db()
+                lst = db.setdefault("companies", [])
+                ix = next((i for i, c in enumerate(lst) if str(c.get("id")) == cid), None)
+                if ix is None:
+                    lst.insert(0, company)
+                else:
+                    lst[ix] = {**lst[ix], **company}
+                write_db(db)
+        comp = next((c for c in read_db().get("companies", []) if str(c.get("id")) == str(cid)), None)
+        if not comp:
+            raise Exception("deal not found after saving")
+        _add_set(cid, "save", "done")
+        comp = dict(comp)
+        if deck_text:
+            comp["notes"] = (_notes_text(comp.get("notes")) + "\n\nPITCH DECK / PRESENTATION TEXT:\n" + deck_text[:15000]).strip()
+        _add_set(cid, "research", "active")
+        research, engine = _research(comp)
+        add_jobs[cid]["engine"] = engine
+        _add_set(cid, "research", "done")
+        _add_set(cid, "score", "active")
+        prompt = _score_prompt(comp, research)
+        if engine == "linkup":
+            text = _anthropic({"model": SCORE_MODEL, "max_tokens": 3000, "messages": [{"role": "user", "content": prompt}]})
+        else:
+            text = _anthropic({"model": SCORE_MODEL, "max_tokens": 3000, "messages": [{"role": "user", "content": prompt}],
+                               "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}]}, timeout=120)
+        out = _find_score_json(text)
+        if not isinstance(out, dict) or not isinstance(out.get("scores"), dict):
+            fix = _anthropic({"model": SCORE_MODEL, "max_tokens": 2500, "messages": [
+                {"role": "user", "content": prompt}, {"role": "assistant", "content": (text or "(no answer)")[:6000]},
+                {"role": "user", "content": "Now output ONLY the JSON object in the exact schema, nothing else. Conservative 1-2 scores if information is missing."}]})
+            out = _find_score_json(fix)
+        if not isinstance(out, dict) or not isinstance(out.get("scores"), dict):
+            raise Exception("Could not read scores from the AI answer")
+        _apply_score(cid, out=out)
+        _add_set(cid, "score", "done")
+        final = next((c for c in read_db().get("companies", []) if str(c.get("id")) == str(cid)), None)
+        _add_set(cid, "done", "done", running=False, company=final)
+        print(f"[Add] OK {final and final.get('name')} in {time.time() - add_jobs[cid]['t0']:.1f}s ({engine})", flush=True)
+    except Exception as e:
+        msg = str(e)[:300]
+        print(f"[Add] FAILED {cid}: {msg}", flush=True)
+        j = add_jobs.get(cid) or {}
+        for st in j.get("steps", []):
+            if st["state"] == "active":
+                st["state"] = "error"
+        try:
+            _apply_score(cid, error=msg)
+            final = next((c for c in read_db().get("companies", []) if str(c.get("id")) == str(cid)), None)
+        except Exception:
+            final = None
+        j.update(running=False, error=msg, company=final)
+
+def start_company_add(company, deck_text=""):
+    if not isinstance(company, dict) or not company.get("id"):
+        raise ValueError("missing company")
+    cid = str(company["id"])
+    company = dict(company, scores=None, oneLiner=company.get("oneLiner") or "Researching…", updatedAt=int(time.time() * 1000))
+    add_jobs[cid] = {"id": cid, "running": True, "t0": time.time(), "error": None, "company": None,
+                     "engine": "linkup" if os.environ.get("LINKUP_API_KEY") else None,
+                     "steps": [{"k": k, "label": l, "state": "pending", "at": None} for k, l in ADD_STEPS]}
+    add_jobs[cid]["steps"][0]["state"] = "active"
+    for old in [k for k, v in add_jobs.items() if not v.get("running") and time.time() - v["t0"] > 3600]:
+        add_jobs.pop(old, None)
+    threading.Thread(target=_add_runner, args=(cid, deck_text or "", company), daemon=True, name="add-" + cid).start()
+    return cid
+
+def add_status(cid):
+    j = add_jobs.get(str(cid))
+    if not j:
+        return {"found": False}
+    return {"found": True, **{k: v for k, v in j.items() if k != "t0"}, "elapsed": round(time.time() - j["t0"], 1)}
 
 
 # ---------------- Gradium voice (TTS + STT) ----------------
@@ -3117,6 +3243,13 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"value": None}).encode('utf-8'))
+        elif parsed_url.path == '/api/company/add/status':
+            cid = (parse_qs(parsed_url.query).get('id') or [''])[0]
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(add_status(cid)).encode('utf-8'))
+            return
         elif parsed_url.path == '/api/contacts/status':
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -4633,6 +4766,18 @@ Respond ONLY with valid JSON.
                 }).encode('utf-8'))
                 return
 
+        elif self.path == '/api/company/add':
+            content_length = int(self.headers.get('Content-Length', 0))
+            try:
+                body = json.loads(self.rfile.read(content_length).decode('utf-8') or '{}')
+                cid = start_company_add(body.get("company"), str(body.get("deckText") or ""))
+                code, res = 200, {"ok": True, "id": cid}
+            except Exception as e:
+                code, res = 400, {"ok": False, "error": str(e)[:300]}
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode('utf-8'))
         elif self.path in ('/api/contacts/import', '/api/contacts/stop', '/api/contacts/research'):
             content_length = int(self.headers.get('Content-Length', 0))
             try:
@@ -4643,11 +4788,11 @@ Respond ONLY with valid JSON.
             if self.path == '/api/contacts/stop':
                 contact_job["stop"] = True; res = {"ok": True}
             elif self.path == '/api/contacts/import':
-                ok = start_contact_import(body.get("items"), body.get("defaults") or {})
+                ok = start_contact_import(body.get("items"), body.get("defaults") or {}, body.get("kind") or "investor")
                 code, res = (200 if ok else 409), {"ok": ok, **contact_job}
             else:
                 try:
-                    out, engine = research_contact(str(body.get("query") or "").strip())
+                    out, engine = research_contact(str(body.get("query") or "").strip(), "", body.get("kind") or "investor")
                     res = {"ok": True, "contact": out, "engine": engine}
                 except Exception as e:
                     res = {"ok": False, "error": str(e)[:300]}
