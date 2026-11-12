@@ -3518,7 +3518,7 @@ const PhoneInvestorBook = ({ investors = [], setInvestors, companies = [], onDel
         return (
           <React.Fragment key={i.id}>
             {head && <div className="m-letter">{head}</div>}
-            <MRow lead={mInitials(i.name)} title={i.name || "(no name)"} sub={[i.fund, i.city || i.geo, (i.focus || []).slice(0, 2).join(", ")].filter(Boolean).join(" · ")} value={deal ? fitLabel(fit) : (i.priority === "High" ? "High" : "")} onClick={() => setOpenId(i.id)} />
+            <MRow lead={mInitials(i.name)} title={i.name || "(no name)"} sub={[i.fund, i.city || i.geo, (i.focus || []).slice(0, 2).join(", ")].filter(Boolean).join(" · ")} value={deal ? fitLabel(fit) : ""} right={<HighToggle on={i.priority === "High"} onToggle={() => togglePriority(setInvestors, i.id)} />} chevron={false} onClick={() => setOpenId(i.id)} />
           </React.Fragment>
         );
       })}
@@ -3641,7 +3641,8 @@ const DesktopInvestorBook = ({ investors = [], setInvestors, companies = [], onD
               <button className={"dn-row" + (openId === i.id ? " on" : "")} onClick={() => { setOpenId(i.id); setView("contact"); }}>
                 <span className="dn-av">{mInitials(i.name)}</span>
                 <span className="dn-rt"><b>{i.name || "(no name)"}</b><span>{[i.fund, i.city || i.geo].filter(Boolean).join(" · ")}</span></span>
-                {deal ? <span className="dn-fit">{fitLabel(fit)}</span> : (i.priority === "High" ? <span className="dn-fit">High</span> : null)}
+                {deal ? <span className="dn-fit">{fitLabel(fit)}</span> : null}
+                <HighToggle on={i.priority === "High"} onToggle={() => togglePriority(setInvestors, i.id)} />
               </button>
             </React.Fragment>);
           })}
@@ -3660,7 +3661,7 @@ const DesktopInvestorBook = ({ investors = [], setInvestors, companies = [], onD
               <div className="dn-card-h">
                 <span className="dn-av lg">{mInitials(inv.name)}</span>
                 <div className="dn-rt"><h2>{inv.name}</h2><span>{[inv.fund, inv.city, inv.geo].filter(Boolean).join(" · ")}</span></div>
-                {inv.priority && <span className="dn-badge">{inv.priority}</span>}
+                <button className={"dn-badge hi-badge" + (inv.priority === "High" ? " on" : "")} onClick={() => togglePriority(setInvestors, inv.id)} title="Click to toggle High priority">{inv.priority === "High" ? "★ High" : "☆ " + (inv.priority || "Medium")}</button>
               </div>
               <div className="dn-actions">
                 <button className="d-btn sm pri" onClick={() => setShare({ companyIds: deal ? [deal.id] : [], investorIds: [inv.id] })}>Share a deal</button>
@@ -3691,6 +3692,13 @@ const DesktopInvestorBook = ({ investors = [], setInvestors, companies = [], onD
     </div>
   );
 };
+
+// One-click High priority toggle (shown on hover, always visible when High)
+const HighToggle = ({ on, onToggle, id }) => (
+  <span role="button" tabIndex={0} id={id} className={"hi-tog" + (on ? " on" : "")} title={on ? "High priority · click to remove" : "Mark as High priority"} aria-label={on ? "Remove High priority" : "Mark as High priority"}
+    onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggle(); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); onToggle(); } }}>{on ? "★" : "☆"}</span>
+);
+const togglePriority = (setList, id) => setList(l => l.map(x => x.id === id ? { ...x, priority: x.priority === "High" ? "Medium" : "High" } : x));
 
 // ---- Interaction timeline (dated notes per contact; filled by you or by your agent) ----
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -3944,6 +3952,7 @@ const LPBook = ({ lps = [], setLps, onDeleteLp, companies = [], phone }) => {
                 <span className="dn-av">{mInitials(i.name)}</span>
                 <span className="dn-rt"><b>{i.name || "(no name)"}</b><span>{[i.fund, i.lpType, i.city || i.geo].filter(Boolean).join(" · ")}</span></span>
                 <span className="dn-fit">{i.status || "Prospect"}</span>
+                <HighToggle on={i.priority === "High"} onToggle={() => togglePriority(setLps, i.id)} />
               </button>
             </React.Fragment>);
           })}
@@ -7149,14 +7158,24 @@ window.App = function App() {
   });
 
   const [companies, setCompanies] = useState([]);
-  const [investors, setInvestors] = useState([]);
+  const [investors, setInvestorsRaw] = useState([]);
+  // UI edits go through this setter: any changed contact gets a fresh updatedAt so the edit wins the merge with Supabase.
+  const stampChanged = (setter) => (u) => setter(prev => {
+    const next = typeof u === "function" ? u(prev) : u;
+    if (!Array.isArray(next)) return next;
+    const before = new Map((prev || []).map(x => [x && x.id, x]));
+    const now = Date.now();
+    return next.map(x => { if (!x || !x.id) return x; const old = before.get(x.id); return old === x ? x : { ...x, updatedAt: Math.max(now, (x.updatedAt || 0) + 1) }; });
+  });
+  const setInvestors = useCallback(stampChanged(setInvestorsRaw), []);
   const [deepDives, setDeepDives] = useState([]);
   const [founderProfiles, setFounderProfiles] = useState([]);
   const [readingItems, setReadingItems] = useState([]);
   const [readingColumns, setReadingColumns] = useState(DEFAULT_READING_COLUMNS);
   const [reports, setReports] = useState([]);
   const [voiceSessions, setVoiceSessions] = useState([]);
-  const [lps, setLps] = useState([]);
+  const [lps, setLpsRaw] = useState([]);
+  const setLps = useCallback(stampChanged(setLpsRaw), []);
   const [deletedIds, setDeletedIds] = useState([]);
   const [distributePicked, setDistributePicked] = useState([]);
   const [distributeCompanyIds, setDistributeCompanyIds] = useState([]);
@@ -7346,7 +7365,7 @@ window.App = function App() {
             ...c
           }));
           setCompanies(deduplicateCompanies(loadedComps));
-          setInvestors(deduplicateInvestors(d.investors?.length ? d.investors : SEED_INVESTORS));
+          setInvestorsRaw(deduplicateInvestors(d.investors?.length ? d.investors : SEED_INVESTORS));
           setDeepDives(d.deepDives || []);
           setFounderProfiles(d.founderProfiles?.length ? d.founderProfiles : SEED_FOUNDER_PROFILES);
           setDeletedIds(d.deletedIds || []);
@@ -7354,10 +7373,10 @@ window.App = function App() {
           setReadingColumns(Array.isArray(d.readingColumns) && d.readingColumns.length ? d.readingColumns : DEFAULT_READING_COLUMNS);
           setReports(Array.isArray(d.reports) ? d.reports : []);
           setVoiceSessions(Array.isArray(d.voiceSessions) ? d.voiceSessions : []);
-          setLps(Array.isArray(d.lps) ? d.lps : []);
+          setLpsRaw(Array.isArray(d.lps) ? d.lps : []);
         } else {
           setCompanies(deduplicateCompanies(SEED_COMPANIES.map(c => ({ geo: "", priority: "Medium", founders: [], assets: [], preemption: false, preemptionModel: null, ...c }))));
-          setInvestors(deduplicateInvestors(SEED_INVESTORS));
+          setInvestorsRaw(deduplicateInvestors(SEED_INVESTORS));
           setDeepDives([]);
           setFounderProfiles(SEED_FOUNDER_PROFILES);
           setDeletedIds([]);
@@ -7365,7 +7384,7 @@ window.App = function App() {
       } catch (e) {
         console.error("Failed to load persistence", e);
         setCompanies(deduplicateCompanies(SEED_COMPANIES.map(c => ({ geo: "", priority: "Medium", founders: [], assets: [], preemption: false, preemptionModel: null, ...c }))));
-        setInvestors(deduplicateInvestors(SEED_INVESTORS));
+        setInvestorsRaw(deduplicateInvestors(SEED_INVESTORS));
         setDeepDives([]);
         setFounderProfiles(SEED_FOUNDER_PROFILES);
         setDeletedIds([]);
@@ -7559,7 +7578,7 @@ window.App = function App() {
           if (compRes.changed) setCompanies(deduplicateCompanies(compRes.merged));
 
           const invRes = mergeClientWithServerList(investors, d.investors || [], mergedDel);
-          if (invRes.changed) setInvestors(deduplicateInvestors(invRes.merged));
+          if (invRes.changed) setInvestorsRaw(deduplicateInvestors(invRes.merged));
 
           const fpRes = mergeClientWithServerList(founderProfiles, d.founderProfiles || [], mergedDel);
           if (fpRes.changed) setFounderProfiles(fpRes.merged);
@@ -7574,7 +7593,7 @@ window.App = function App() {
           if (repRes.changed) setReports(repRes.merged);
 
           const lpRes = mergeClientWithServerList(lps, d.lps || [], mergedDel);
-          if (lpRes.changed) setLps(lpRes.merged);
+          if (lpRes.changed) setLpsRaw(lpRes.merged);
 
           const vsRes = mergeClientWithServerList(voiceSessions, d.voiceSessions || [], mergedDel);
           if (vsRes.changed) setVoiceSessions(vsRes.merged);
