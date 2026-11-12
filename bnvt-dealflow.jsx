@@ -7263,12 +7263,7 @@ window.App = function App() {
     return list.sort((a, b) => b.daysInactive - a.daysInactive);
   }, [companies, founderProfiles, investors, snoozedReminders, reminderThresholdDays]);
 
-  useEffect(() => {
-    if (loaded && reminders.length > 0 && !hasAutoOpenedReminders && !(window.matchMedia && window.matchMedia("(max-width: 768px)").matches)) {
-      setIsReminderModalOpen(true);
-      setHasAutoOpenedReminders(true);
-    }
-  }, [loaded, reminders.length, hasAutoOpenedReminders]);
+  // Reminders no longer pop up on open: they stay available from the bell (desktop) and the menu (phone).
 
   const handleSnoozeReminder = (id) => {
     const snoozeUntil = Date.now() + (7 * 24 * 60 * 60 * 1000);
