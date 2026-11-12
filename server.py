@@ -985,7 +985,7 @@ def merge_single_item(client_item, server_item):
         
         if key == "notes":
             merged["notes"] = merge_notes(c_val, s_val)
-        elif key in ("founders", "assets", "documents", "qa", "deckIngestHistory"):
+        elif key in ("founders", "assets", "documents", "qa", "deckIngestHistory", "interactions", "sharedDeals"):
             merged[key] = merge_sub_list(c_val, s_val)
         elif isinstance(c_val, dict) and isinstance(s_val, dict):
             m_dict = dict(s_val)
@@ -2425,6 +2425,8 @@ def gate_request(handler, method):
     path = urlparse(handler.path).path
     if path in PUBLIC_PATHS:
         return True
+    if path.startswith("/api/agent/") and agent_auth_ok(handler):
+        return True
     is_api = path.startswith("/api/")
     if not is_api and path not in STATIC_FILES:
         handler.send_response(404)
@@ -2994,6 +2996,166 @@ def add_status(cid):
     return {"found": True, **{k: v for k, v in j.items() if k != "t0"}, "elapsed": round(time.time() - j["t0"], 1)}
 
 
+# ---------------- Agent API (your WhatsApp / personal agents) ----------------
+# Auth: header "Authorization: Bearer <AGENT_API_TOKEN>" (falls back to the Azava secret), or a logged-in session.
+def agent_token():
+    return (os.environ.get("AGENT_API_TOKEN") or get_stored_value_file("agent_api_token") or "").strip()
+
+def agent_auth_ok(handler):
+    tok = agent_token()
+    h = handler.headers.get("Authorization") or ""
+    q = parse_qs(urlparse(handler.path).query)
+    given = h.split("Bearer ", 1)[1].strip() if h.startswith("Bearer ") else (q.get("token", [""])[0] or "").strip()
+    if not given:
+        return False
+    if tok and hmac.compare_digest(given, tok):
+        return True
+    try:
+        return check_auth(handler)
+    except Exception:
+        return False
+
+def _contact_lists(db, kind="all"):
+    out = []
+    if kind in ("all", "investors", "investor"):
+        out += [("investor", c) for c in db.get("investors", []) if isinstance(c, dict)]
+    if kind in ("all", "lps", "lp"):
+        out += [("lp", c) for c in db.get("lps", []) if isinstance(c, dict)]
+    return out
+
+def _shared_from(ix, c):
+    names = {s.get("dealId"): s.get("name") for s in (c.get("sharedDeals") or []) if isinstance(s, dict)}
+    m = {}
+    for x in ix:
+        if x.get("shared"):
+            for d in x.get("dealIds") or []:
+                if d not in m or str(x.get("date")) > str(m[d]["date"]):
+                    m[d] = {"dealId": d, "name": names.get(d), "date": x.get("date")}
+    return list(m.values())
+
+def _contact_brief(kind, c, full=False):
+    ix = [x for x in (c.get("interactions") or []) if isinstance(x, dict) and not x.get("deleted")]
+    ix.sort(key=lambda x: (str(x.get("date") or ""), x.get("ts") or 0), reverse=True)
+    d = {"id": c.get("id"), "kind": kind, "name": c.get("name"), "fund": c.get("fund"), "lpType": c.get("lpType"), "status": c.get("status"),
+         "stage": c.get("stage"), "sweetSpot": c.get("sweetSpot") or c.get("ticket"), "geo": c.get("geo"), "city": c.get("city"),
+         "focus": c.get("focus") or [], "priority": c.get("priority"), "linkedin": c.get("linkedin"), "email": c.get("email"),
+         "lastContact": c.get("lastContact"), "sharedDeals": _shared_from(ix, c), "interactions": ix if full else ix[:3]}
+    if full:
+        d["notes"] = _notes_text(c.get("notes"))
+    return d
+
+def _words(s):
+    return set(w for w in re.findall(r"[a-z0-9]+", str(s or "").lower()) if len(w) > 2)
+
+def _find_contact(db, ref, kind="all"):
+    ref = str(ref or "").strip()
+    if not ref:
+        return None, None
+    r = _norm(ref).rstrip("/")
+    for k, c in _contact_lists(db, kind):
+        if str(c.get("id")) == ref or (c.get("linkedin") and _norm(c.get("linkedin")).rstrip("/") == r) or (c.get("email") and _norm(c.get("email")) == r):
+            return k, c
+    for k, c in _contact_lists(db, kind):
+        if _norm(c.get("name")) == r:
+            return k, c
+    return None, None
+
+def _find_deal(db, ref):
+    ref = str(ref or "").strip()
+    if not ref:
+        return None
+    for c in db.get("companies", []):
+        if str(c.get("id")) == ref:
+            return c
+    r = _norm(ref)
+    for c in db.get("companies", []):
+        if _norm(c.get("name")) == r:
+            return c
+    for c in db.get("companies", []):
+        if r and r in _norm(c.get("name")):
+            return c
+    return None
+
+def agent_search(q="", kind="all", limit=20):
+    db = read_db()
+    qw = _words(q)
+    res = []
+    for k, c in _contact_lists(db, kind):
+        hay = _words(" ".join(str(x) for x in [c.get("name"), c.get("fund"), c.get("lpType"), c.get("stage"), c.get("sweetSpot"), c.get("ticket"),
+                                                c.get("geo"), c.get("city"), " ".join(c.get("focus") or []), _notes_text(c.get("notes"))[:2000]]))
+        score = len(qw & hay) if qw else 1
+        if score:
+            res.append((score, k, c))
+    res.sort(key=lambda x: -x[0])
+    return [_contact_brief(k, c) for _, k, c in res[:max(1, min(int(limit or 20), 100))]]
+
+def agent_match(deal_ref, kind="investors", limit=15):
+    db = read_db()
+    deal = _find_deal(db, deal_ref)
+    if not deal:
+        raise ValueError("deal not found: " + str(deal_ref))
+    dw = _words(" ".join(str(x) for x in [deal.get("sector"), deal.get("oneLiner"), " ".join(deal.get("tags") or []), (deal.get("overview") or {}).get("market", "")]))
+    stage, geo = _norm(deal.get("stage")), _norm(deal.get("geo"))
+    out = []
+    for k, c in _contact_lists(db, kind):
+        fw = _words(" ".join(c.get("focus") or []) + " " + _notes_text(c.get("notes"))[:1500])
+        s = 2 * len(dw & _words(" ".join(c.get("focus") or []))) + 0.5 * len(dw & fw)
+        if stage and stage in _norm(str(c.get("stage")) + " " + str(c.get("sweetSpot"))):
+            s += 3
+        if geo and geo in _norm(str(c.get("geo")) + " " + str(c.get("city"))):
+            s += 2
+        if c.get("priority") == "High":
+            s += 1
+        already = any(str(deal.get("id")) in [str(d) for d in (x.get("dealIds") or [])] for x in (c.get("interactions") or []) if isinstance(x, dict) and x.get("shared") and not x.get("deleted"))
+        if s > 0:
+            b = _contact_brief(k, c); b["fit"] = round(s, 1); b["alreadyShared"] = already
+            out.append(b)
+    out.sort(key=lambda x: -x["fit"])
+    return {"deal": {"id": deal.get("id"), "name": deal.get("name"), "stage": deal.get("stage"), "sector": deal.get("sector"), "geo": deal.get("geo"), "oneLiner": deal.get("oneLiner")},
+            "matches": out[:max(1, min(int(limit or 15), 100))]}
+
+def agent_add_interaction(body):
+    ref = body.get("contact") or body.get("contactId") or body.get("linkedin") or body.get("email") or body.get("name")
+    kind = body.get("kind") or "all"
+    text = str(body.get("text") or body.get("note") or "").strip()
+    date = str(body.get("date") or datetime.now().strftime("%Y-%m-%d"))[:10]
+    deal_refs = body.get("deals") or body.get("dealIds") or []
+    if isinstance(deal_refs, str):
+        deal_refs = [deal_refs]
+    shared = bool(body.get("shared"))
+    with db_lock:
+        db = read_db()
+        k, c = _find_contact(db, ref, kind)
+        if not c:
+            raise ValueError("contact not found: " + str(ref) + " (use /api/agent/network/search or /api/agent/enrich to add them)")
+        deals = [d for d in (_find_deal(db, r) for r in deal_refs) if d]
+        if not text and not deals:
+            raise ValueError("text or deals required")
+        now = int(time.time() * 1000)
+        entry = {"id": "ix_" + uuid.uuid4().hex[:10], "date": date, "text": text or ("Shared " + ", ".join(d.get("name") for d in deals)),
+                 "dealIds": [d.get("id") for d in deals], "shared": shared and bool(deals), "via": str(body.get("via") or "agent")[:30], "ts": now}
+        c["interactions"] = [entry] + list(c.get("interactions") or [])
+        if entry["shared"]:
+            ids = set(entry["dealIds"])
+            c["sharedDeals"] = [s for s in (c.get("sharedDeals") or []) if isinstance(s, dict) and s.get("dealId") not in ids] + \
+                               [{"dealId": d.get("id"), "name": d.get("name"), "date": date} for d in deals]
+        if date > str(c.get("lastContact") or ""):
+            c["lastContact"] = date
+        c["updatedAt"] = now
+        write_db(db)
+    return {"ok": True, "contact": _contact_brief(k, c), "interaction": entry}
+
+AGENT_HELP = {
+    "auth": "Authorization: Bearer <AGENT_API_TOKEN>",
+    "endpoints": {
+        "GET /api/agent/network/search?q=&kind=all|investors|lps&limit=": "find contacts (name, fund, focus, city, notes)",
+        "GET /api/agent/contact?id=": "full contact with all dated interactions and shared deals (id, LinkedIn URL, email or exact name)",
+        "GET /api/agent/match?deal=<id or name>&kind=investors|lps|all&limit=": "best-fit contacts for a deal, with alreadyShared flag",
+        "GET /api/agent/deals?q=&limit=": "search deals",
+        "POST /api/agent/interaction": "{contact, text, date?, deals?:[id|name], shared?:bool, via?:'whatsapp', kind?}",
+        "POST /api/agent/enrich": "{query: 'name + fund' or LinkedIn URL, kind?:'investor'|'lp'} research the web and add/update the contact",
+    }}
+
 # ---------------- Gradium voice (TTS + STT) ----------------
 GRADIUM_BASE = "https://api.gradium.ai/api"
 GRADIUM_DEFAULT_VOICE = "YTpq7expH9539ERJ"
@@ -3243,6 +3405,35 @@ class DealflowHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"value": None}).encode('utf-8'))
+        elif parsed_url.path.startswith('/api/agent/'):
+            q = parse_qs(parsed_url.query); gv = lambda k, d="": (q.get(k) or [d])[0]
+            code, res = 200, {}
+            try:
+                p = parsed_url.path
+                if p == '/api/agent/help':
+                    res = AGENT_HELP
+                elif p == '/api/agent/network/search':
+                    res = {"results": agent_search(gv("q"), gv("kind", "all"), gv("limit", "20"))}
+                elif p == '/api/agent/contact':
+                    db = read_db(); k, c = _find_contact(db, gv("id") or gv("q"), gv("kind", "all"))
+                    code, res = (200, _contact_brief(k, c, full=True)) if c else (404, {"error": "contact not found"})
+                elif p == '/api/agent/match':
+                    res = agent_match(gv("deal"), gv("kind", "investors"), gv("limit", "15"))
+                elif p == '/api/agent/deals':
+                    t = _norm(gv("q")); lim = int(gv("limit", "30") or 30)
+                    res = {"deals": [{"id": c.get("id"), "name": c.get("name"), "stage": c.get("stage"), "sector": c.get("sector"), "geo": c.get("geo"), "status": c.get("status"), "oneLiner": c.get("oneLiner"), "starred": c.get("starred")}
+                                     for c in read_db().get("companies", []) if not t or t in _norm(" ".join(str(x) for x in [c.get("name"), c.get("sector"), c.get("oneLiner")]))][:lim]}
+                else:
+                    code, res = 404, {"error": "unknown agent endpoint", **AGENT_HELP}
+            except ValueError as e:
+                code, res = 404, {"error": str(e)}
+            except Exception as e:
+                code, res = 500, {"error": str(e)[:300]}
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res, ensure_ascii=False).encode('utf-8'))
+            return
         elif parsed_url.path == '/api/company/add/status':
             cid = (parse_qs(parsed_url.query).get('id') or [''])[0]
             self.send_response(200)
@@ -4766,6 +4957,33 @@ Respond ONLY with valid JSON.
                 }).encode('utf-8'))
                 return
 
+        elif self.path.startswith('/api/agent/'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            code, res = 200, {}
+            try:
+                body = json.loads(self.rfile.read(content_length).decode('utf-8') or '{}') if content_length else {}
+                p = urlparse(self.path).path
+                if p == '/api/agent/interaction':
+                    res = agent_add_interaction(body)
+                elif p == '/api/agent/enrich':
+                    kind = "lp" if body.get("kind") in ("lp", "lps") else "investor"
+                    query = str(body.get("query") or "").strip()
+                    if not query:
+                        raise ValueError("query required")
+                    out, engine = research_contact(query, "", kind)
+                    added = _upsert_contact({"query": query, "notes": body.get("notes") or ""}, out, {}, kind=kind)
+                    db = read_db(); k, c = _find_contact(db, out.get("linkedin") or out.get("name"), "lps" if kind == "lp" else "investors")
+                    res = {"ok": True, "result": added, "engine": engine, "contact": _contact_brief(k, c) if c else out}
+                else:
+                    code, res = 404, {"error": "unknown agent endpoint", **AGENT_HELP}
+            except ValueError as e:
+                code, res = 404, {"error": str(e)}
+            except Exception as e:
+                code, res = 500, {"error": str(e)[:300]}
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res, ensure_ascii=False).encode('utf-8'))
         elif self.path == '/api/company/add':
             content_length = int(self.headers.get('Content-Length', 0))
             try:

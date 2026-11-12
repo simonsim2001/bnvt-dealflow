@@ -511,6 +511,32 @@
         #lp-bulk select { height: 32px; border: 1px solid #DADADA; border-radius: 8px; font: 13px Arial; padding: 0 8px; }
         #lp-bulk textarea { border: 1px solid #DADADA; border-radius: 8px; padding: 8px; font: 13px Arial; }
         @media (max-width: 700px) { #lp-book .dn-body { display: block; } #lp-book .dn-list { max-height: none; width: auto; border-right: 0; } #lp-book .dn-top { flex-wrap: wrap; gap: 8px; } #lp-book .dn-search { flex: 1 1 100%; } #lp-book .dn-chips { overflow-x: auto; flex-wrap: nowrap; } .lp-grid { grid-template-columns: 1fr 1fr; } }
+        .tl { margin-top: 18px; border-top: 1px solid #EEE; padding-top: 14px; font-family: Arial, sans-serif; }
+        .tl-h, .tl-shared label { display: block; font: 700 11px Arial; letter-spacing: .06em; text-transform: uppercase; color: #555; margin-bottom: 6px; }
+        .tl-shared { margin-bottom: 12px; }
+        .tl-add { border: 1px solid #DADADA; border-radius: 10px; padding: 8px; background: #fff; }
+        .tl-row { display: flex; gap: 8px; align-items: flex-start; }
+        .tl-row input[type=date] { height: 34px; border: 1px solid #DADADA; border-radius: 8px; padding: 0 6px; font: 12px Arial; flex-shrink: 0; }
+        .tl-row textarea { flex: 1; min-width: 0; border: 1px solid #DADADA; border-radius: 8px; padding: 7px 9px; font: 13px Arial; resize: vertical; }
+        .tl-opts { margin-top: 6px; align-items: center; flex-wrap: wrap; }
+        .tl-opts .d-mini { max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .tl-chk { font: 12px Arial; display: inline-flex; gap: 4px; align-items: center; }
+        .tl-pick { margin-top: 8px; }
+        .tl-pick input { width: 100%; box-sizing: border-box; height: 32px; border: 1px solid #DADADA; border-radius: 8px; padding: 0 9px; font: 13px Arial; }
+        .tl-pick-l { max-height: 200px; overflow-y: auto; margin-top: 6px; display: grid; gap: 2px; }
+        .tl-pick-l button { text-align: left; border: 0; background: #fff; padding: 6px 8px; border-radius: 6px; font: 13px Arial; cursor: pointer; }
+        .tl-pick-l button span { color: #777; font-size: 11px; margin-left: 6px; }
+        .tl-pick-l button.on { background: #000; color: #fff; } .tl-pick-l button.on span { color: #ccc; }
+        .tl-list { margin-top: 10px; display: grid; gap: 0; }
+        .tl-item { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid #F0F0F0; }
+        .tl-date { font: 700 12px Arial; width: 78px; flex-shrink: 0; color: #000; padding-top: 1px; }
+        .tl-body { flex: 1; min-width: 0; }
+        .tl-text { font: 13px/1.45 Arial; white-space: pre-wrap; word-break: break-word; }
+        .tl-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; font: 11px Arial; color: #777; }
+        .tl-meta i { font-style: normal; border: 1px solid #DADADA; border-radius: 10px; padding: 1px 7px; color: #333; }
+        .tl-meta i.on { background: #000; color: #fff; border-color: #000; }
+        .tl-del { margin-left: auto; border: 0; background: none; color: #999; cursor: pointer; font-size: 15px; }
+        @media (max-width: 700px) { .tl-row { flex-wrap: wrap; } .tl-row input[type=date] { width: 100%; } .tl-date { width: 64px; } }
         .dn-seg { display: inline-flex; border: 1px solid #DADADA; border-radius: 16px; overflow: hidden; height: 32px; }
         .dn-seg button { border: 0; background: #fff; padding: 0 14px; font: 13px Arial; cursor: pointer; color: #444; }
         .dn-seg button.on { background: #000; color: #fff; font-weight: 700; }
@@ -673,7 +699,7 @@
         }
     </script>
     <!-- Load pre-compiled App component for instant zero-lag loading -->
-    <script src="bnvt-dealflow.js?v=75.32"></script>
+    <script src="bnvt-dealflow.js?v=75.34"></script>
     <!-- Render the App once it's loaded and defined on window -->
     <script>
         function mergeNotesJS(cNotes = [], sNotes = []) {

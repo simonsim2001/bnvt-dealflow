@@ -3203,7 +3203,7 @@ const MField = ({ label, children }) => <label className="m-field"><span classNa
 const MFullLink = ({ label = "Open full view" }) => { const { openFull } = usePhone(); return <button className="m-btn m-full ghost" id="m-full-view" onClick={openFull}>{label}</button>; };
 
 // ---- Navigation: 4 tabs at the bottom, everything else behind ☰ ----
-const PHONE_NAV = [["pipeline", "Pipeline"], ["voice", "Voice"], ["reading", "Reading"], ["network", "Network"]];
+const PHONE_NAV = [["network", "Network"], ["voice", "Voice"], ["reading", "Reading"], ["pipeline", "Pipeline"]];
 const PHONE_MENU = [
   ["reports", "Reports"], ["dtm", "Deal Team Meeting"], ["preemption", "Pre-emption Sandbox"], ["add", "Add opportunity"],
   ["deepdives", "Deep Dives"], ["talentDashboard", "Talent Sourcing"], ["founders", "LinkedIn · Founder Assessment"],
@@ -3316,7 +3316,7 @@ const MShareFlow = ({ open, onClose, companies = [], investors = [], initialComp
   const titles = { 1: "Share · pick deals", 2: "Share · pick contacts", 3: "Share · drafts" };
   const footer = step === 1 ? <button className="m-btn pri m-full" disabled={!cIds.length} onClick={() => { setQ(""); setStep(iIds.length ? 3.5 : 2); }}>{cIds.length ? `Next · ${cIds.length} deal${cIds.length > 1 ? "s" : ""}` : "Pick at least one deal"}</button>
     : step === 2 || step === 3.5 ? <button className="m-btn pri m-full" disabled={!iIds.length || !cIds.length || busy} onClick={generate}>{busy ? "Writing drafts…" : `Write ${iIds.length || ""} draft${iIds.length === 1 ? "" : "s"}`}</button>
-    : <button className="m-btn m-full" onClick={() => setStep(2)}>Back to contacts</button>;
+    : <div style={{ display: "flex", gap: 8, width: "100%" }}><button className="m-btn" style={{ flex: 1 }} onClick={() => setStep(2)}>Back</button><button className="m-btn pri" style={{ flex: 2 }} id="m-share-mark" onClick={() => { if (window.__slLogShared) window.__slLogShared(iIds, cIds, "Shared " + comps.map(c => c.name).join(", ")); onClose && onClose(); }}>Mark as shared ✓</button></div>;
   return (
     <MSheet open={open} onClose={onClose} tall title={titles[Math.floor(step)] || "Share"} footer={footer} id="m-share">
       {err && <div className="m-err">{err}</div>}
@@ -3543,6 +3543,7 @@ const PhoneInvestorBook = ({ investors = [], setInvestors, companies = [], onDel
           {inv.priority && <MField label="Priority"><div className="m-text">{inv.priority}</div></MField>}
           {(inv.focus || []).length > 0 && <MField label="Focus"><div className="m-text">{(inv.focus || []).join(", ")}</div></MField>}
           {notesToText(inv.notes) && <MField label="Notes"><div className="m-text">{notesToText(inv.notes)}</div></MField>}
+          <ContactTimeline contact={inv} companies={companies} onChange={(p) => setInvestors(l => l.map(i => i.id === inv.id ? { ...i, ...p } : i))} />
           {(() => { const rec = companies.map(c => [c, investorFit(inv, [c])]).filter(x => x[1] >= 4).sort((a, b) => b[1] - a[1]).slice(0, 5); return rec.length > 0 && (
             <MField label="Deals that fit">{rec.map(([c]) => <MRow key={c.id} title={c.name} sub={[c.stage, c.sector].filter(Boolean).join(" · ")} onClick={() => { setOpenId(null); setShare({ companyIds: [c.id], investorIds: [inv.id] }); }} />)}</MField>); })()}
         </>)}
@@ -3675,6 +3676,7 @@ const DesktopInvestorBook = ({ investors = [], setInvestors, companies = [], onD
                 {(inv.focus || []).length > 0 && <div className="wide"><label>Focus</label><span className="dn-tags">{(inv.focus || []).map(f => <i key={f}>{f}</i>)}</span></div>}
                 {notesToText(inv.notes) && <div className="wide"><label>Notes</label><span className="dn-notes">{notesToText(inv.notes)}</span></div>}
               </div>
+              <ContactTimeline contact={inv} companies={companies} onChange={(p) => setInvestors(l => l.map(i => i.id === inv.id ? { ...i, ...p } : i))} />
               {fits.length > 0 && (<div className="dn-fits"><label>Deals that fit</label>
                 {fits.map(([c, f]) => <button key={c.id} className="dn-fitrow" onClick={() => setShare({ companyIds: [c.id], investorIds: [inv.id] })}><b>{c.name}</b><span>{[c.stage, c.sector].filter(Boolean).join(" · ")}</span><em>{fitLabel(f)} · Share</em></button>)}
               </div>)}
@@ -3686,6 +3688,66 @@ const DesktopInvestorBook = ({ investors = [], setInvestors, companies = [], onD
         {editing && <div className="m-embed"><InvestorForm companies={companies} initial={editing === "new" ? null : editing} onSave={save} onCancel={() => setEditing(null)} onDelete={(id) => { onDeleteInvestor && onDeleteInvestor(id); setEditing(null); setOpenId(null); }} setTab={() => {}} setDistributePicked={() => {}} setDistributeCompanyIds={() => {}} /></div>}
       </MSheet>
       <MShareFlow open={!!share} onClose={() => setShare(null)} companies={companies} investors={investors} initialCompanyIds={share ? share.companyIds : []} initialInvestorIds={share ? share.investorIds : []} />
+    </div>
+  );
+};
+
+// ---- Interaction timeline (dated notes per contact; filled by you or by your agent) ----
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const ContactTimeline = ({ contact, companies = [], onChange }) => {
+  const [text, setText] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [dealIds, setDealIds] = useState([]);
+  const [shared, setShared] = useState(false);
+  const [dq, setDq] = useState("");
+  const [pick, setPick] = useState(false);
+  const items = (contact.interactions || []).filter(x => x && !x.deleted).sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.ts || 0) - (a.ts || 0));
+  // Deals shared = derived from (non-deleted) shared interactions, so deleting a note also removes the mark.
+  const sharedDeals = Object.values((contact.interactions || []).filter(x => x && !x.deleted && x.shared).reduce((m, x) => { (x.dealIds || []).forEach(id => { if (!m[id] || String(x.date) > String(m[id].date)) m[id] = { dealId: id, date: x.date, name: ((contact.sharedDeals || []).find(s => s.dealId === id) || {}).name }; }); return m; }, {}));
+  const dealName = (id) => (companies.find(c => c.id === id) || {}).name || (sharedDeals.find(s => s.dealId === id) || {}).name || "deal";
+  const add = () => {
+    if (!text.trim() && !dealIds.length) return;
+    const entry = { id: "ix_" + uid(), date, text: text.trim() || (shared ? "Shared " + dealIds.map(dealName).join(", ") : ""), dealIds, shared: shared && dealIds.length > 0, via: "app", ts: Date.now() };
+    const sd = entry.shared ? [...sharedDeals.filter(s => !dealIds.includes(s.dealId)), ...dealIds.map(id => ({ dealId: id, name: dealName(id), date }))] : sharedDeals;
+    onChange({ interactions: [entry, ...(contact.interactions || [])], sharedDeals: sd, lastContact: date > (contact.lastContact || "") ? date : contact.lastContact, updatedAt: Date.now() });
+    setText(""); setDealIds([]); setShared(false); setPick(false); setDate(todayISO());
+  };
+  const remove = (id) => { if (confirm("Delete this note?")) onChange({ interactions: (contact.interactions || []).map(x => x.id === id ? { ...x, deleted: true } : x), updatedAt: Date.now() }); };
+  const deals = companies.filter(c => !dq || String(c.name + " " + (c.sector || "")).toLowerCase().includes(dq.toLowerCase())).sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)).slice(0, 30);
+  return (
+    <div className="tl" id="contact-timeline">
+      {sharedDeals.length > 0 && <div className="tl-shared"><label>Deals shared</label><span className="dn-tags">{sharedDeals.map(s => <i key={s.dealId} title={s.date}>{s.name}{s.date ? " · " + s.date.slice(5) : ""}</i>)}</span></div>}
+      <label className="tl-h">Interactions</label>
+      <div className="tl-add">
+        <div className="tl-row">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" />
+          <textarea id="tl-text" rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder="Call, meeting, WhatsApp… what happened, next step" onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) add(); }} />
+        </div>
+        <div className="tl-row tl-opts">
+          <button className="d-mini" onClick={() => setPick(p => !p)}>{dealIds.length ? `Deals: ${dealIds.map(dealName).join(", ")}` : "+ Link deals"}</button>
+          {dealIds.length > 0 && <label className="tl-chk"><input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} /> Shared with them</label>}
+          <span className="d-grow" />
+          <button className="d-btn sm pri" id="tl-add" disabled={!text.trim() && !dealIds.length} onClick={add}>Add note</button>
+        </div>
+        {pick && <div className="tl-pick">
+          <input value={dq} onChange={(e) => setDq(e.target.value)} placeholder="Search deals" autoFocus />
+          <div className="tl-pick-l">{deals.map(c => <button key={c.id} className={dealIds.includes(c.id) ? "on" : ""} onClick={() => setDealIds(ids => ids.includes(c.id) ? ids.filter(x => x !== c.id) : [...ids, c.id])}>{dealIds.includes(c.id) ? "✓ " : ""}{c.starred ? "★ " : ""}{c.name}<span>{[c.stage, c.sector].filter(Boolean).join(" · ")}</span></button>)}</div>
+        </div>}
+      </div>
+      {items.length === 0 ? <div className="d-small" style={{ color: "#777", marginTop: 6 }}>No interactions yet. Notes added here or by your agent appear with their date.</div> :
+        <div className="tl-list">{items.map(x => (
+          <div key={x.id} className="tl-item">
+            <div className="tl-date">{x.date}</div>
+            <div className="tl-body">
+              <div className="tl-text">{x.text}</div>
+              <div className="tl-meta">
+                {(x.dealIds || []).map(id => <i key={id} className={x.shared ? "on" : ""}>{x.shared ? "Shared · " : ""}{dealName(id)}</i>)}
+                {x.via && x.via !== "app" && <span>via {x.via}</span>}
+                <button className="tl-del" onClick={() => remove(x.id)} aria-label="Delete note">×</button>
+              </div>
+            </div>
+          </div>))}
+        </div>}
     </div>
   );
 };
@@ -3852,6 +3914,7 @@ const LPBook = ({ lps = [], setLps, onDeleteLp, companies = [], phone }) => {
         {(lp.focus || []).length > 0 && <div className="wide"><label>Focus</label><span className="dn-tags">{lp.focus.map(f => <i key={f}>{f}</i>)}</span></div>}
         {notesToText(lp.notes) && <div className="wide"><label>Notes</label><span className="dn-notes">{notesToText(lp.notes)}</span></div>}
       </div>
+      <ContactTimeline contact={lp} companies={companies} onChange={(p) => setLps(l => l.map(i => i.id === lp.id ? { ...i, ...p } : i))} />
     </div>
   );
   return (
@@ -4704,9 +4767,9 @@ const D_ICONS = {
 };
 const DIcon = ({ k, d, size = 18, w = 1.8 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d || D_ICONS[k]} /></svg>;
 const D_GROUPS = [
-  ["Deals", [["pipeline", "Pipeline"], ["dtm", "Deal Team Meeting"], ["preemption", "Pre-emption Sandbox"], ["add", "Add opportunity"]]],
-  ["Intelligence", [["voice", "Voice"], ["chat", "AI Assistant"], ["reports", "Reports"], ["reading", "Reading"], ["deepdives", "Deep Dives"]]],
   ["People", [["network", "Network"], ["distribute", "Distribute"], ["outreach", "Cold Reach"], ["talentDashboard", "Talent Sourcing"], ["founders", "Founder Assessment"]]],
+  ["Intelligence", [["voice", "Voice"], ["chat", "AI Assistant"], ["reports", "Reports"], ["reading", "Reading"], ["deepdives", "Deep Dives"]]],
+  ["Deals", [["pipeline", "Pipeline"], ["dtm", "Deal Team Meeting"], ["preemption", "Pre-emption Sandbox"], ["add", "Add opportunity"]]],
   ["Library", [["assets", "Asset Library"]]],
 ];
 const D_TITLES = Object.fromEntries([...D_GROUPS.flatMap(g => g[1]), ["settings", "Settings"]]);
@@ -7072,7 +7135,7 @@ function RecontactNotificationModal({
 }
 
 window.App = function App() {
-  const [tab, setTab] = useState(() => { try { return new URLSearchParams(window.location.search).get("tab") || "pipeline"; } catch (e) { return "pipeline"; } });
+  const [tab, setTab] = useState(() => { try { return new URLSearchParams(window.location.search).get("tab") || "network"; } catch (e) { return "network"; } });
   const [isCmdKOpen, setCmdKOpen] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [hasAutoOpenedReminders, setHasAutoOpenedReminders] = useState(false);
@@ -7399,7 +7462,7 @@ window.App = function App() {
         const sVal = sItem[key];
         if (key === "notes") {
           mergedItem.notes = mergeNotesInternal(cVal, sVal);
-        } else if (["founders", "assets", "documents", "qa", "deckIngestHistory"].includes(key)) {
+        } else if (["founders", "assets", "documents", "qa", "deckIngestHistory", "interactions", "sharedDeals"].includes(key)) {
           mergedItem[key] = mergeSubListInternal(cVal, sVal);
         } else if (cVal && typeof cVal === "object" && !Array.isArray(cVal) && sVal && typeof sVal === "object" && !Array.isArray(sVal)) {
           mergedItem[key] = { ...sVal, ...cVal };
@@ -7526,6 +7589,17 @@ window.App = function App() {
       }
     };
     window.__slSyncNow = sync;
+    window.__slLogShared = (contactIds, dealIds, text) => {
+      const date = new Date().toISOString().slice(0, 10);
+      const names = Object.fromEntries(companies.map(c => [c.id, c.name]));
+      const upd = (l) => l.map(i => {
+        if (!contactIds.includes(i.id)) return i;
+        const entry = { id: "ix_" + Math.random().toString(36).slice(2, 10), date, text, dealIds, shared: true, via: "app", ts: Date.now() };
+        const sd = [...(i.sharedDeals || []).filter(s => !dealIds.includes(s.dealId)), ...dealIds.map(id => ({ dealId: id, name: names[id] || "deal", date }))];
+        return { ...i, interactions: [entry, ...(i.interactions || [])], sharedDeals: sd, lastContact: date, updatedAt: Date.now() };
+      });
+      setInvestors(upd); setLps(upd);
+    };
     const interval = setInterval(sync, 15000);
     const onVisible = () => { if (document.visibilityState === "visible") sync(); };
     document.addEventListener("visibilitychange", onVisible);

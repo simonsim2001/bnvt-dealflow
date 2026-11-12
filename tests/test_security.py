@@ -1,7 +1,7 @@
 """Security tests against an isolated server on port 8767 with APP_PASSWORD set."""
 import os, subprocess, sys, time, urllib.request, urllib.error, http.cookiejar, urllib.parse
 SRC = "/Users/simonlevy/.gemini/antigravity/scratch/bnvt-dealflow"
-env = dict(os.environ, PORT="8767", APP_PASSWORD="test-pass-123")
+env = dict(os.environ, PORT="8767", APP_PASSWORD="test-pass-123", AGENT_API_TOKEN="agent-tok-456")
 p = subprocess.Popen([sys.executable, "server.py"], cwd=SRC, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(15)
 B = "http://localhost:8767"
@@ -35,6 +35,11 @@ try:
     check("path traversal key rejected", code("/api/storage?key=../server", auth)[0] == 400)
     st, body = code("/api/storage", auth, data=b'{"key":"anthropic_api_key","value":"\\u2022\\u2022\\u2022\\u2022abcd"}')
     check("masked value write ignored", b"unchanged" in body)
+    check("agent API blocked without token (401)", code("/api/agent/help")[0] == 401)
+    bad = urllib.request.build_opener(NoRedirect); bad.addheaders = [("Authorization", "Bearer wrong")]
+    check("agent API wrong token rejected (401)", code("/api/agent/help", bad)[0] == 401)
+    good = urllib.request.build_opener(NoRedirect); good.addheaders = [("Authorization", "Bearer agent-tok-456")]
+    check("agent API works with token (200)", code("/api/agent/help", good)[0] == 200)
     tampered = urllib.request.build_opener(NoRedirect)
     tampered.addheaders = [("Cookie", "bnvt_session=9999999999.deadbeef")]
     check("forged cookie rejected", code("/api/storage?key=bnvt-dealflow-v1", tampered)[0] == 401)
